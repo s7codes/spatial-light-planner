@@ -7,8 +7,11 @@
     --border-color: #2a2f3a;    /* Subtle structural dividers */
     --text-main: #f3f4f6;       /* Primary readable text */
     --text-muted: #9ca3af;      /* Secondary labels & hints */
-    --accent-led: #ff9d42;      /* Warm RGB backlight default (2700K) */
+    
+    /* Dynamic Lighting Variables (Controlled via JavaScript) */
+    --accent-led: #ff9d42;      /* Warm RGB backlight default */
     --corner-led: #8b5cf6;      /* Ambient purple corner lamp glow */
+    --led-opacity: 1;           /* Master brightness multiplier (0 to 1) */
 }
 
 * {
@@ -52,6 +55,7 @@ body {
     background-color: var(--accent-led);
     border-radius: 50%;
     box-shadow: 0 0 10px var(--accent-led);
+    transition: background-color 0.2s, box-shadow 0.2s;
 }
 
 .logo h1 {
@@ -88,6 +92,12 @@ body {
     color: #000;
 }
 
+/* Style when Daylight Mode is active */
+.btn-ambient.daylight-active {
+    border-color: #3b82f6;
+    background-color: rgba(59, 130, 246, 0.15);
+}
+
 /* ==========================================================================
    3. WORKSPACE & SIDEBAR PANELS (3-Column Flexbox Architecture)
    ========================================================================== */
@@ -112,6 +122,12 @@ body {
 .inspector {
     border-left: 1px solid var(--border-color);
     justify-content: space-between;
+}
+
+.inspector-content {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
 }
 
 .sidebar h2 {
@@ -150,7 +166,7 @@ body {
 }
 
 /* ==========================================================================
-   4. INTERACTIVE 2D WALL CANVAS (Coordinate System Origin)
+   4. INTERACTIVE 2D WALL CANVAS & DAY/NIGHT MODES
    ========================================================================== */
 .canvas-area {
     flex: 1;
@@ -165,12 +181,22 @@ body {
     /* 300 cm x 250 cm physical wall scaled at 1 cm = 2.5 px */
     width: 750px;
     height: 625px;
-    position: relative;         /* Establishes (0,0) top-left coordinate origin for child items */
+    position: relative;
     background-color: #1c1f26;
     border: 2px solid #374151;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
     overflow: hidden;
-    transition: background-color 0.4s ease;
+    transition: background-color 0.4s ease, border-color 0.4s ease;
+}
+
+/* DAYLIGHT BLUEPRINT MODE (Lights Off, Measurement Grid Visible) */
+.wall.daylight-mode {
+    background-color: #e5e7eb;
+    background-image: 
+        linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+    background-size: 25px 25px; /* Every grid square = 10 cm x 10 cm */
+    border-color: #9ca3af;
 }
 
 /* ==========================================================================
@@ -183,59 +209,173 @@ body {
     justify-content: center;
     cursor: move;
     user-select: none;
+    z-index: 2;
+}
+
+/* Dedicated pseudo-element for adjustable LED glow opacity */
+.wall-item::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    opacity: var(--led-opacity);
+    transition: opacity 0.2s ease, box-shadow 0.2s ease;
+    z-index: -1;
+}
+
+/* Turn off all LED glows when Daylight Mode is active */
+.wall.daylight-mode .wall-item::before,
+.wall.daylight-mode .corner-led-glow {
+    opacity: 0 !important;
 }
 
 .item-label {
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.75);
+    color: rgba(255, 255, 255, 0.85);
     background-color: rgba(0, 0, 0, 0.65);
     padding: 2px 6px;
     border-radius: 4px;
     pointer-events: none;
 }
 
-/* Walnut Floating Shelf with Diffused LED Strip Backlight */
+/* Walnut Floating Shelf */
 .shelf {
     background-color: #5c4033;
     border: 1px solid #8b5a2b;
     border-radius: 2px;
-    box-shadow: 
-        0 8px 15px rgba(0, 0, 0, 0.6),
-        0 -15px 35px var(--accent-led),
-        0 10px 45px var(--accent-led);
-    z-index: 2;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 
-/* Matte Black Poster Frame with Top-Mounted Mini Spotlight Cone */
+.shelf::before {
+    box-shadow: 
+        0 -15px 35px var(--accent-led),
+        0 10px 45px var(--accent-led);
+}
+
+/* Matte Black Poster Frame */
 .poster {
     background-color: #262930;
     border: 6px solid #111317;
-    box-shadow: 
-        0 15px 25px rgba(0, 0, 0, 0.7),
-        0 -25px 50px rgba(255, 157, 66, 0.55);
-    z-index: 2;
+    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.5);
+}
+
+.poster::before {
+    box-shadow: 0 -25px 55px var(--accent-led);
 }
 
 /* Standing Corner RGB Floor Lamp Projection */
 .corner-led-glow {
     position: absolute;
-    right: -100px;
-    bottom: -50px;
-    width: 350px;
-    height: 600px;
-    background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 70%);
+    right: -120px;
+    bottom: -60px;
+    width: 420px;
+    height: 620px;
+    background: radial-gradient(circle, var(--corner-led) 0%, transparent 70%);
+    opacity: calc(var(--led-opacity) * 0.45);
     pointer-events: none;
     z-index: 1;
+    transition: opacity 0.3s ease;
 }
 
-/* Inspector & Budget Readout */
-.inspector-box {
+/* ==========================================================================
+   6. INSPECTOR CONTROLS (Color Pickers, Sliders & Presets)
+   ========================================================================== */
+.control-group {
     background-color: #222630;
-    padding: 15px;
+    padding: 12px 14px;
     border-radius: 6px;
-    font-size: 13px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.control-group label {
+    font-size: 12px;
+    font-weight: 600;
     color: var(--text-muted);
-    line-height: 1.5;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.color-Input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+input[type="color"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    cursor: pointer;
+}
+
+input[type="color"]::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+input[type="color"]::-webkit-color-swatch {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+}
+
+.hex-readout {
+    font-family: monospace;
+    font-size: 14px;
+    color: var(--text-main);
+    background-color: #181b22;
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    flex: 1;
+    text-align: center;
+}
+
+.slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#brightness-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-led);
+}
+
+input[type="range"] {
+    width: 100%;
+    cursor: pointer;
+    accent-color: var(--accent-led);
+}
+
+.preset-buttons {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.btn-preset {
+    background-color: #181b22;
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.1s;
+    text-align: left;
+    padding-left: 12px;
+}
+
+.btn-preset:hover {
+    border-color: var(--accent-led);
+    transform: translateX(2px);
 }
 
 .budget-box {

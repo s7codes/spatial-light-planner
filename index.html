@@ -15,7 +15,7 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.1</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.2</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -72,12 +72,47 @@
             </div>
         </section>
 
-        <!-- RIGHT SIDEBAR: Property Inspector & Cost Estimator -->
+        <!-- RIGHT SIDEBAR: Property Inspector & Lighting Controls -->
         <aside class="sidebar inspector">
-            <div>
-                <h2>Inspector</h2>
-                <div class="inspector-box" style="margin-top: 16px;">
-                    <p>Select an element on the wall to adjust dimensions, finishes, and RGB light temperature.</p>
+            <div class="inspector-content">
+                <h2>Lighting Controller</h2>
+                <p class="sidebar-hint">Adjust smart RGB lighting and brightness in real time.</p>
+
+                <!-- Control 1: Primary Backlight Color (Shelf & Spotlight) -->
+                <div class="control-group">
+                    <label for="accent-color-picker">Shelf & Spot RGB</label>
+                    <div class="color-Input-wrapper">
+                        <input type="color" id="accent-color-picker" value="#ff9d42">
+                        <span id="accent-hex-code" class="hex-readout">#FF9D42</span>
+                    </div>
+                </div>
+
+                <!-- Control 2: Corner Floor Lamp Color -->
+                <div class="control-group">
+                    <label for="corner-color-picker">Corner Lamp RGB</label>
+                    <div class="color-Input-wrapper">
+                        <input type="color" id="corner-color-picker" value="#8b5cf6">
+                        <span id="corner-hex-code" class="hex-readout">#8B5CF6</span>
+                    </div>
+                </div>
+
+                <!-- Control 3: Master Brightness Dimmer -->
+                <div class="control-group">
+                    <div class="slider-header">
+                        <label for="brightness-slider">Master Brightness</label>
+                        <span id="brightness-value">100%</span>
+                    </div>
+                    <input type="range" id="brightness-slider" min="0" max="100" value="100">
+                </div>
+
+                <!-- Control 4: Quick Scene Presets -->
+                <div class="control-group">
+                    <label>Quick Ambience Presets</label>
+                    <div class="preset-buttons">
+                        <button class="btn-preset" data-accent="#ff9d42" data-corner="#8b5cf6">Cozy Warm</button>
+                        <button class="btn-preset" data-accent="#00f2fe" data-corner="#ff0844">Cyberpunk</button>
+                        <button class="btn-preset" data-accent="#38ef7d" data-corner="#11998e">Forest Zen</button>
+                    </div>
                 </div>
             </div>
 
