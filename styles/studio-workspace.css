@@ -1,0 +1,256 @@
+/* ==========================================================================
+   1. DESIGN TOKENS & GLOBAL RESET (:root)
+   ========================================================================== */
+:root {
+    --bg-app: #0f1115;          /* Deep dark studio background */
+    --bg-panel: #181b22;        /* Sidebar & topbar surface color */
+    --border-color: #2a2f3a;    /* Subtle structural dividers */
+    --text-main: #f3f4f6;       /* Primary readable text */
+    --text-muted: #9ca3af;      /* Secondary labels & hints */
+    --accent-led: #ff9d42;      /* Warm RGB backlight default (2700K) */
+    --corner-led: #8b5cf6;      /* Ambient purple corner lamp glow */
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-app);
+    color: var(--text-main);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ==========================================================================
+   2. TOP APPLICATION BAR
+   ========================================================================== */
+.topbar {
+    height: 60px;
+    background-color: var(--bg-panel);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.logo-dot {
+    width: 12px;
+    height: 12px;
+    background-color: var(--accent-led);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--accent-led);
+}
+
+.logo h1 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.badge {
+    font-size: 12px;
+    background-color: #2a2f3a;
+    padding: 2px 8px;
+    border-radius: 4px;
+    color: var(--text-muted);
+}
+
+.wall-dimensions-display {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.btn-ambient {
+    background-color: #262b36;
+    color: var(--text-main);
+    border: 1px solid var(--accent-led);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.btn-ambient:hover {
+    background-color: var(--accent-led);
+    color: #000;
+}
+
+/* ==========================================================================
+   3. WORKSPACE & SIDEBAR PANELS (3-Column Flexbox Architecture)
+   ========================================================================== */
+.workspace {
+    display: flex;
+    flex: 1;
+}
+
+.sidebar {
+    width: 280px;
+    background-color: var(--bg-panel);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.catalog {
+    border-right: 1px solid var(--border-color);
+}
+
+.inspector {
+    border-left: 1px solid var(--border-color);
+    justify-content: space-between;
+}
+
+.sidebar h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+}
+
+.sidebar-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.catalog-group h3 {
+    font-size: 13px;
+    margin-bottom: 10px;
+    color: var(--text-main);
+}
+
+.catalog-item {
+    background-color: #222630;
+    border: 1px solid var(--border-color);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin-bottom: 8px;
+    cursor: grab;
+    transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.catalog-item:hover {
+    border-color: var(--accent-led);
+    transform: translateX(4px);
+}
+
+/* ==========================================================================
+   4. INTERACTIVE 2D WALL CANVAS (Coordinate System Origin)
+   ========================================================================== */
+.canvas-area {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image: radial-gradient(#2a2f3a 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.wall {
+    /* 300 cm x 250 cm physical wall scaled at 1 cm = 2.5 px */
+    width: 750px;
+    height: 625px;
+    position: relative;         /* Establishes (0,0) top-left coordinate origin for child items */
+    background-color: #1c1f26;
+    border: 2px solid #374151;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+    transition: background-color 0.4s ease;
+}
+
+/* ==========================================================================
+   5. MOUNTED WALL ITEMS & AMBIENT LIGHTING SIMULATION
+   ========================================================================== */
+.wall-item {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: move;
+    user-select: none;
+}
+
+.item-label {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.75);
+    background-color: rgba(0, 0, 0, 0.65);
+    padding: 2px 6px;
+    border-radius: 4px;
+    pointer-events: none;
+}
+
+/* Walnut Floating Shelf with Diffused LED Strip Backlight */
+.shelf {
+    background-color: #5c4033;
+    border: 1px solid #8b5a2b;
+    border-radius: 2px;
+    box-shadow: 
+        0 8px 15px rgba(0, 0, 0, 0.6),
+        0 -15px 35px var(--accent-led),
+        0 10px 45px var(--accent-led);
+    z-index: 2;
+}
+
+/* Matte Black Poster Frame with Top-Mounted Mini Spotlight Cone */
+.poster {
+    background-color: #262930;
+    border: 6px solid #111317;
+    box-shadow: 
+        0 15px 25px rgba(0, 0, 0, 0.7),
+        0 -25px 50px rgba(255, 157, 66, 0.55);
+    z-index: 2;
+}
+
+/* Standing Corner RGB Floor Lamp Projection */
+.corner-led-glow {
+    position: absolute;
+    right: -100px;
+    bottom: -50px;
+    width: 350px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.45) 0%, rgba(139, 92, 246, 0) 70%);
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Inspector & Budget Readout */
+.inspector-box {
+    background-color: #222630;
+    padding: 15px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.budget-box {
+    border-top: 1px solid var(--border-color);
+    padding-top: 16px;
+}
+
+.budget-box h3 {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.total-price {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent-led);
+}

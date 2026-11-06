@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spatial & Ambient Light Planner</title>
+    <!-- Link custom studio stylesheet -->
+    <link rel="stylesheet" href="styles/studio-workspace.css">
+    <!-- Load core planner logic after DOM parsing completes -->
+    <script src="scripts/planner-engine.js" defer></script>
+</head>
+<body>
+
+    <!-- 1. TOP APPLICATION BAR -->
+    <header class="topbar">
+        <div class="logo">
+            <span class="logo-dot"></span>
+            <h1>Spatial Studio <span class="badge">v0.1</span></h1>
+        </div>
+
+        <div class="wall-dimensions-display">
+            Target Wall: <strong>300 cm × 250 cm</strong> (Scale: 1 cm = 2.5 px)
+        </div>
+
+        <div class="actions">
+            <button id="theme-toggle-btn" class="btn-ambient">
+                🌙 Ambient Mode: ON
+            </button>
+        </div>
+    </header>
+
+    <!-- 2. MAIN STUDIO WORKSPACE (3-Column Layout) -->
+    <main class="workspace">
+
+        <!-- LEFT SIDEBAR: Component Catalog -->
+        <aside class="sidebar catalog">
+            <h2>Component Catalog</h2>
+            <p class="sidebar-hint">Select or drag elements onto the wall canvas.</p>
+
+            <div class="catalog-group">
+                <h3>Shelving & Storage</h3>
+                <div class="catalog-item">📏 Floating Shelf (110×26 cm)</div>
+                <div class="catalog-item">📦 Modular Cube (35×35 cm)</div>
+            </div>
+
+            <div class="catalog-group">
+                <h3>Decor & Smart Lighting</h3>
+                <div class="catalog-item">🖼️ Poster Frame (50×70 cm)</div>
+                <div class="catalog-item">💡 Mini Spotlight (Top-Mount)</div>
+                <div class="catalog-item">🌈 Corner LED Floor Lamp</div>
+            </div>
+        </aside>
+
+        <!-- CENTER AREA: Interactive 2D Wall Canvas -->
+        <section class="canvas-area">
+            <!-- 300x250 cm physical wall rendered at 750x625 px (1:2.5 scale) -->
+            <div id="wall" class="wall ambient-mode">
+                
+                <!-- Prototype Item 1: Walnut Floating Shelf with LED Backlight -->
+                <div class="wall-item shelf" style="left: 120px; top: 380px; width: 275px; height: 20px;">
+                    <span class="item-label">Floating Shelf (110 cm)</span>
+                </div>
+
+                <!-- Prototype Item 2: Poster Frame with Top Spotlight Glow -->
+                <div class="wall-item poster" style="left: 195px; top: 140px; width: 125px; height: 175px;">
+                    <span class="item-label">Poster (50×70 cm)</span>
+                </div>
+
+                <!-- Prototype Item 3: Ambient Corner Floor Lamp Projection -->
+                <div class="corner-led-glow"></div>
+
+            </div>
+        </section>
+
+        <!-- RIGHT SIDEBAR: Property Inspector & Cost Estimator -->
+        <aside class="sidebar inspector">
+            <div>
+                <h2>Inspector</h2>
+                <div class="inspector-box" style="margin-top: 16px;">
+                    <p>Select an element on the wall to adjust dimensions, finishes, and RGB light temperature.</p>
+                </div>
+            </div>
+
+            <div class="budget-box">
+                <h3>Estimated Setup Cost</h3>
+                <div class="total-price" id="total-price">$185.00</div>
+            </div>
+        </aside>
+
+    </main>
+
+</body>
+</html>
