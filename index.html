@@ -12,14 +12,19 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.4</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.5</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
-            Wall: <strong>300 × 250 cm</strong> <span class="scale-note">(1 cm = 2.5 px)</span>
+            Wall: <strong>300 x 250 cm</strong> <span class="scale-note">(1 cm = 2.5 px)</span>
         </div>
 
         <div class="actions">
+            <label class="snap-toggle">
+                <input type="checkbox" id="snap-grid-toggle">
+                <span>Snap 5cm</span>
+            </label>
+            <button id="reset-wall-btn" class="btn-secondary">Reset Layout</button>
             <button id="theme-toggle-btn" class="btn-ambient">
                 Ambient Mode: ON
             </button>
@@ -31,21 +36,21 @@
         <!-- Catalog Sidebar -->
         <aside class="sidebar catalog">
             <h2>Components</h2>
-            <p class="sidebar-hint">Click an item to mount it, then drag it on the wall to position.</p>
+            <p class="sidebar-hint">Click an item to mount it, then drag or use arrow keys to position.</p>
 
             <div class="catalog-group">
                 <h3>Shelving & Storage</h3>
-                <div class="catalog-item" data-type="shelf" data-name="Floating Shelf" data-price="45" data-width="275" data-height="20">
+                <div class="catalog-item" data-type="shelf" data-name="Floating Shelf" data-price="45" data-width="275" data-height="20" data-finish="walnut">
                     <div class="item-meta">
                         <span class="item-title">Floating Shelf</span>
-                        <span class="item-dims">110 × 26 cm</span>
+                        <span class="item-dims">110 x 26 cm</span>
                     </div>
                     <span class="item-price-tag">$45</span>
                 </div>
-                <div class="catalog-item" data-type="cube" data-name="Modular Cube" data-price="30" data-width="90" data-height="90">
+                <div class="catalog-item" data-type="cube" data-name="Modular Cube" data-price="30" data-width="90" data-height="90" data-finish="oak">
                     <div class="item-meta">
                         <span class="item-title">Modular Cube</span>
-                        <span class="item-dims">35 × 35 cm</span>
+                        <span class="item-dims">35 x 35 cm</span>
                     </div>
                     <span class="item-price-tag">$30</span>
                 </div>
@@ -53,21 +58,21 @@
 
             <div class="catalog-group">
                 <h3>Decor & Lighting</h3>
-                <div class="catalog-item" data-type="poster" data-name="Poster Frame" data-price="25" data-width="125" data-height="175">
+                <div class="catalog-item" data-type="poster" data-name="Poster Frame" data-price="25" data-width="125" data-height="175" data-finish="black">
                     <div class="item-meta">
                         <span class="item-title">Poster Frame</span>
-                        <span class="item-dims">50 × 70 cm</span>
+                        <span class="item-dims">50 x 70 cm</span>
                     </div>
                     <span class="item-price-tag">$25</span>
                 </div>
-                <div class="catalog-item" data-type="spotlight" data-name="Mini Spotlight" data-price="35" data-width="40" data-height="40">
+                <div class="catalog-item" data-type="spotlight" data-name="Mini Spotlight" data-price="35" data-width="40" data-height="40" data-finish="black">
                     <div class="item-meta">
                         <span class="item-title">Mini Spotlight</span>
                         <span class="item-dims">Top-mount LED</span>
                     </div>
                     <span class="item-price-tag">$35</span>
                 </div>
-                <div class="catalog-item" data-type="corner-lamp" data-name="Corner Floor Lamp" data-price="65" data-width="50" data-height="140">
+                <div class="catalog-item" data-type="corner-lamp" data-name="Corner Floor Lamp" data-price="65" data-width="50" data-height="140" data-finish="black">
                     <div class="item-meta">
                         <span class="item-title">Corner Floor Lamp</span>
                         <span class="item-dims">140 cm RGB bar</span>
@@ -90,7 +95,7 @@
                 <h2>Inspector</h2>
                 
                 <div id="inspector-box" class="inspector-box">
-                    <p>Select or drag an item on the wall to view coordinates or remove it.</p>
+                    <p>Select or drag an item on the wall to edit dimensions, finish, or remove it.</p>
                 </div>
 
                 <h2>Lighting</h2>

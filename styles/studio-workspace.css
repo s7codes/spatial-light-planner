@@ -77,6 +77,45 @@ body {
     margin-left: 4px;
 }
 
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.snap-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    margin-right: 4px;
+}
+
+.snap-toggle input {
+    accent-color: var(--accent-led);
+    cursor: pointer;
+}
+
+.btn-secondary {
+    background-color: #222630;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    padding: 7px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn-secondary:hover {
+    color: var(--text-main);
+    border-color: #4b5563;
+}
+
 .btn-ambient {
     background-color: #222630;
     color: var(--text-main);
@@ -277,9 +316,8 @@ body {
     white-space: nowrap;
 }
 
+/* Base item geometry & LED glow profiles */
 .wall-item.shelf {
-    background-color: #5c4033;
-    border: 1px solid #8b5a2b;
     border-radius: 2px;
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
@@ -288,8 +326,6 @@ body {
 }
 
 .wall-item.cube {
-    background-color: #4a5568;
-    border: 1px solid #718096;
     border-radius: 3px;
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
@@ -299,7 +335,8 @@ body {
 
 .wall-item.poster {
     background-color: #262930;
-    border: 6px solid #111317;
+    border-width: 6px;
+    border-style: solid;
     box-shadow: 0 15px 25px rgba(0, 0, 0, 0.5);
 }
 .wall-item.poster::before {
@@ -326,6 +363,43 @@ body {
     box-shadow: 0 0 40px var(--corner-led);
 }
 
+/* Surface Finish Variants */
+.wall-item.finish-walnut {
+    background-color: #5c4033;
+    border-color: #8b5a2b;
+}
+.wall-item.poster.finish-walnut {
+    background-color: #262930;
+    border-color: #5c4033;
+}
+
+.wall-item.finish-oak {
+    background-color: #c89d66;
+    border-color: #a67c46;
+}
+.wall-item.poster.finish-oak {
+    background-color: #262930;
+    border-color: #c89d66;
+}
+
+.wall-item.finish-black {
+    background-color: #1f2229;
+    border-color: #374151;
+}
+.wall-item.poster.finish-black {
+    background-color: #262930;
+    border-color: #111317;
+}
+
+.wall-item.finish-white {
+    background-color: #f3f4f6;
+    border-color: #cbd5e1;
+}
+.wall-item.poster.finish-white {
+    background-color: #262930;
+    border-color: #f3f4f6;
+}
+
 .corner-led-glow {
     position: absolute;
     right: -120px;
@@ -339,7 +413,7 @@ body {
     transition: opacity 0.3s ease;
 }
 
-/* Inspector controls */
+/* Inspector controls & property editors */
 .inspector-box {
     background-color: #222630;
     padding: 12px;
@@ -353,13 +427,77 @@ body {
 .selected-item-info {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
+}
+
+.selected-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .selected-item-title {
     font-weight: 600;
     color: var(--text-main);
     font-size: 13px;
+}
+
+.inspector-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.inspector-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.inspector-field label {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.dim-input {
+    background-color: #181b22;
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    width: 100%;
+}
+
+.dim-input:focus {
+    outline: none;
+    border-color: var(--accent-led);
+}
+
+.finish-swatches {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-top: 2px;
+}
+
+.btn-finish {
+    padding: 5px 4px;
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    background-color: #181b22;
+    color: var(--text-muted);
+    cursor: pointer;
+    text-align: center;
+}
+
+.btn-finish.active {
+    border-color: var(--accent-led);
+    color: var(--text-main);
+    font-weight: 600;
 }
 
 .collision-warning {
@@ -381,7 +519,7 @@ body {
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    margin-top: 4px;
+    margin-top: 2px;
     transition: background-color 0.15s;
 }
 
