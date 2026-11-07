@@ -15,7 +15,7 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.2</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.3</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -32,22 +32,32 @@
     <!-- 2. MAIN STUDIO WORKSPACE (3-Column Layout) -->
     <main class="workspace">
 
-        <!-- LEFT SIDEBAR: Component Catalog -->
+        <!-- LEFT SIDEBAR: Component Catalog (Click to Spawn) -->
         <aside class="sidebar catalog">
             <h2>Component Catalog</h2>
-            <p class="sidebar-hint">Select or drag elements onto the wall canvas.</p>
+            <p class="sidebar-hint">Click any item below to instantly mount it onto the wall canvas.</p>
 
             <div class="catalog-group">
                 <h3>Shelving & Storage</h3>
-                <div class="catalog-item">📏 Floating Shelf (110×26 cm)</div>
-                <div class="catalog-item">📦 Modular Cube (35×35 cm)</div>
+                <div class="catalog-item" data-type="shelf" data-name="Floating Shelf (110 cm)" data-price="45" data-width="275" data-height="20">
+                    📏 Floating Shelf (110 cm) <span class="item-price-tag">$45</span>
+                </div>
+                <div class="catalog-item" data-type="cube" data-name="Modular Cube Storage" data-price="30" data-width="90" data-height="90">
+                    📦 Modular Cube (35 cm) <span class="item-price-tag">$30</span>
+                </div>
             </div>
 
             <div class="catalog-group">
                 <h3>Decor & Smart Lighting</h3>
-                <div class="catalog-item">🖼️ Poster Frame (50×70 cm)</div>
-                <div class="catalog-item">💡 Mini Spotlight (Top-Mount)</div>
-                <div class="catalog-item">🌈 Corner LED Floor Lamp</div>
+                <div class="catalog-item" data-type="poster" data-name="Poster Frame (50×70 cm)" data-price="25" data-width="125" data-height="175">
+                    🖼️ Poster Frame (50×70 cm) <span class="item-price-tag">$25</span>
+                </div>
+                <div class="catalog-item" data-type="spotlight" data-name="Mini Top Spotlight" data-price="35" data-width="40" data-height="40">
+                    💡 Mini Spotlight (LED) <span class="item-price-tag">$35</span>
+                </div>
+                <div class="catalog-item" data-type="corner-lamp" data-name="Corner LED Floor Lamp" data-price="65" data-width="50" data-height="140">
+                    🌈 Corner Floor Lamp <span class="item-price-tag">$65</span>
+                </div>
             </div>
         </aside>
 
@@ -56,17 +66,9 @@
             <!-- 300x250 cm physical wall rendered at 750x625 px (1:2.5 scale) -->
             <div id="wall" class="wall ambient-mode">
                 
-                <!-- Prototype Item 1: Walnut Floating Shelf with LED Backlight -->
-                <div class="wall-item shelf" style="left: 120px; top: 380px; width: 275px; height: 20px;">
-                    <span class="item-label">Floating Shelf (110 cm)</span>
-                </div>
+                <!-- Dynamic wall items will be rendered here automatically by JavaScript -->
 
-                <!-- Prototype Item 2: Poster Frame with Top Spotlight Glow -->
-                <div class="wall-item poster" style="left: 195px; top: 140px; width: 125px; height: 175px;">
-                    <span class="item-label">Poster (50×70 cm)</span>
-                </div>
-
-                <!-- Prototype Item 3: Ambient Corner Floor Lamp Projection -->
+                <!-- Standing Corner RGB Floor Lamp Projection (Ambient Backdrop) -->
                 <div class="corner-led-glow"></div>
 
             </div>
@@ -75,10 +77,14 @@
         <!-- RIGHT SIDEBAR: Property Inspector & Lighting Controls -->
         <aside class="sidebar inspector">
             <div class="inspector-content">
-                <h2>Lighting Controller</h2>
-                <p class="sidebar-hint">Adjust smart RGB lighting and brightness in real time.</p>
+                <h2>Inspector & Lighting</h2>
+                
+                <!-- Dynamic Selection Box -->
+                <div id="inspector-box" class="inspector-box">
+                    <p>Click any mounted item on the wall to inspect properties or remove it.</p>
+                </div>
 
-                <!-- Control 1: Primary Backlight Color (Shelf & Spotlight) -->
+                <!-- Lighting Controllers -->
                 <div class="control-group">
                     <label for="accent-color-picker">Shelf & Spot RGB</label>
                     <div class="color-Input-wrapper">
@@ -87,7 +93,6 @@
                     </div>
                 </div>
 
-                <!-- Control 2: Corner Floor Lamp Color -->
                 <div class="control-group">
                     <label for="corner-color-picker">Corner Lamp RGB</label>
                     <div class="color-Input-wrapper">
@@ -96,7 +101,6 @@
                     </div>
                 </div>
 
-                <!-- Control 3: Master Brightness Dimmer -->
                 <div class="control-group">
                     <div class="slider-header">
                         <label for="brightness-slider">Master Brightness</label>
@@ -105,7 +109,6 @@
                     <input type="range" id="brightness-slider" min="0" max="100" value="100">
                 </div>
 
-                <!-- Control 4: Quick Scene Presets -->
                 <div class="control-group">
                     <label>Quick Ambience Presets</label>
                     <div class="preset-buttons">
@@ -116,9 +119,10 @@
                 </div>
             </div>
 
+            <!-- Total Budget Calculation Box -->
             <div class="budget-box">
                 <h3>Estimated Setup Cost</h3>
-                <div class="total-price" id="total-price">$185.00</div>
+                <div class="total-price" id="total-price">$0.00</div>
             </div>
         </aside>
 

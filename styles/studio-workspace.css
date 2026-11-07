@@ -2,16 +2,15 @@
    1. DESIGN TOKENS & GLOBAL RESET (:root)
    ========================================================================== */
 :root {
-    --bg-app: #0f1115;          /* Deep dark studio background */
-    --bg-panel: #181b22;        /* Sidebar & topbar surface color */
-    --border-color: #2a2f3a;    /* Subtle structural dividers */
-    --text-main: #f3f4f6;       /* Primary readable text */
-    --text-muted: #9ca3af;      /* Secondary labels & hints */
+    --bg-app: #0f1115;          
+    --bg-panel: #181b22;        
+    --border-color: #2a2f3a;    
+    --text-main: #f3f4f6;       
+    --text-muted: #9ca3af;      
     
-    /* Dynamic Lighting Variables (Controlled via JavaScript) */
-    --accent-led: #ff9d42;      /* Warm RGB backlight default */
-    --corner-led: #8b5cf6;      /* Ambient purple corner lamp glow */
-    --led-opacity: 1;           /* Master brightness multiplier (0 to 1) */
+    --accent-led: #ff9d42;      
+    --corner-led: #8b5cf6;      
+    --led-opacity: 1;           
 }
 
 * {
@@ -92,14 +91,13 @@ body {
     color: #000;
 }
 
-/* Style when Daylight Mode is active */
 .btn-ambient.daylight-active {
     border-color: #3b82f6;
     background-color: rgba(59, 130, 246, 0.15);
 }
 
 /* ==========================================================================
-   3. WORKSPACE & SIDEBAR PANELS (3-Column Flexbox Architecture)
+   3. WORKSPACE & SIDEBAR PANELS
    ========================================================================== */
 .workspace {
     display: flex;
@@ -127,7 +125,10 @@ body {
 .inspector-content {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 14px;
+    overflow-y: auto;
+    max-height: calc(100vh - 180px);
+    padding-right: 4px;
 }
 
 .sidebar h2 {
@@ -154,19 +155,29 @@ body {
     border: 1px solid var(--border-color);
     padding: 10px 12px;
     border-radius: 6px;
-    font-size: 14px;
+    font-size: 13px;
     margin-bottom: 8px;
-    cursor: grab;
-    transition: transform 0.15s ease, border-color 0.15s ease;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s;
 }
 
 .catalog-item:hover {
     border-color: var(--accent-led);
+    background-color: #2a2f3a;
     transform: translateX(4px);
 }
 
+.item-price-tag {
+    font-weight: 600;
+    color: var(--accent-led);
+    font-size: 12px;
+}
+
 /* ==========================================================================
-   4. INTERACTIVE 2D WALL CANVAS & DAY/NIGHT MODES
+   4. INTERACTIVE 2D WALL CANVAS & MODES
    ========================================================================== */
 .canvas-area {
     flex: 1;
@@ -178,7 +189,6 @@ body {
 }
 
 .wall {
-    /* 300 cm x 250 cm physical wall scaled at 1 cm = 2.5 px */
     width: 750px;
     height: 625px;
     position: relative;
@@ -189,30 +199,35 @@ body {
     transition: background-color 0.4s ease, border-color 0.4s ease;
 }
 
-/* DAYLIGHT BLUEPRINT MODE (Lights Off, Measurement Grid Visible) */
 .wall.daylight-mode {
     background-color: #e5e7eb;
     background-image: 
         linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
-    background-size: 25px 25px; /* Every grid square = 10 cm x 10 cm */
+    background-size: 25px 25px;
     border-color: #9ca3af;
 }
 
 /* ==========================================================================
-   5. MOUNTED WALL ITEMS & AMBIENT LIGHTING SIMULATION
+   5. DYNAMIC MOUNTED WALL ITEMS & LIGHTING
    ========================================================================== */
 .wall-item {
     position: absolute;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: move;
+    cursor: pointer;
     user-select: none;
     z-index: 2;
+    transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Dedicated pseudo-element for adjustable LED glow opacity */
+/* Visual highlight when an item is selected on the wall */
+.wall-item.selected {
+    outline: 2px dashed #3b82f6;
+    outline-offset: 3px;
+}
+
 .wall-item::before {
     content: "";
     position: absolute;
@@ -223,7 +238,6 @@ body {
     z-index: -1;
 }
 
-/* Turn off all LED glows when Daylight Mode is active */
 .wall.daylight-mode .wall-item::before,
 .wall.daylight-mode .corner-led-glow {
     opacity: 0 !important;
@@ -238,32 +252,57 @@ body {
     pointer-events: none;
 }
 
-/* Walnut Floating Shelf */
-.shelf {
+/* Item Types */
+.wall-item.shelf {
     background-color: #5c4033;
     border: 1px solid #8b5a2b;
     border-radius: 2px;
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
-
-.shelf::before {
-    box-shadow: 
-        0 -15px 35px var(--accent-led),
-        0 10px 45px var(--accent-led);
+.wall-item.shelf::before {
+    box-shadow: 0 -15px 35px var(--accent-led), 0 10px 45px var(--accent-led);
 }
 
-/* Matte Black Poster Frame */
-.poster {
+.wall-item.cube {
+    background-color: #4a5568;
+    border: 1px solid #718096;
+    border-radius: 4px;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
+}
+.wall-item.cube::before {
+    box-shadow: 0 -10px 25px var(--accent-led);
+}
+
+.wall-item.poster {
     background-color: #262930;
     border: 6px solid #111317;
     box-shadow: 0 15px 25px rgba(0, 0, 0, 0.5);
 }
-
-.poster::before {
+.wall-item.poster::before {
     box-shadow: 0 -25px 55px var(--accent-led);
 }
 
-/* Standing Corner RGB Floor Lamp Projection */
+.wall-item.spotlight {
+    background-color: #cbd5e1;
+    border-radius: 50%;
+    border: 2px solid #64748b;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+}
+.wall-item.spotlight::before {
+    box-shadow: 0 0 25px var(--accent-led);
+}
+
+.wall-item.corner-lamp {
+    background-color: #1e293b;
+    border: 2px solid #475569;
+    border-radius: 6px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.6);
+}
+.wall-item.corner-lamp::before {
+    box-shadow: 0 0 40px var(--corner-led);
+}
+
+/* Corner LED Ambient Glow */
 .corner-led-glow {
     position: absolute;
     right: -120px;
@@ -278,8 +317,47 @@ body {
 }
 
 /* ==========================================================================
-   6. INSPECTOR CONTROLS (Color Pickers, Sliders & Presets)
+   6. INSPECTOR CONTROLS & DELETE BUTTON
    ========================================================================== */
+.inspector-box {
+    background-color: #222630;
+    padding: 12px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    border: 1px solid var(--border-color);
+}
+
+.selected-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.selected-item-title {
+    font-weight: 600;
+    color: var(--text-main);
+    font-size: 14px;
+}
+
+.btn-danger {
+    background-color: #ef4444;
+    color: #fff;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    text-align: center;
+}
+
+.btn-danger:hover {
+    background-color: #dc2626;
+}
+
 .control-group {
     background-color: #222630;
     padding: 12px 14px;
