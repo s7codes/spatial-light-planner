@@ -37,6 +37,7 @@ const MAX_NAME_LENGTH = 40;
 
 const LABEL_GAP_PX = 3;
 const LABEL_SLIDE_STEP_PX = 4;
+const ITEM_LABEL_INSET_PX = 3; // clearance between an item label and the wall edge
 
 const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp'];
 const SAFE_ID_PATTERN = /^item-[a-z0-9-]{1,40}$/i;
@@ -199,6 +200,7 @@ let wallHeightPx = wallHeightCm * SCALE;
 let viewScale = 1;
 
 let labelMetrics = { single: 34, digit: 6, height: 18 };
+let itemLabelSizes = new Map();
 const alignLinePool = [];
 
 let historyStack = [];
@@ -498,10 +500,18 @@ function renderPlanner() {
         `;
     }).join('');
 
-    wallItemsLayer.querySelectorAll('.wall-item').forEach(el => {
+    const elements = [...wallItemsLayer.children];
+    elements.forEach(el => {
         el.addEventListener('mousedown', startDrag);
         el.addEventListener('click', (e) => e.stopPropagation());
     });
+
+    // Every label is measured before any is moved, so a render costs one layout and drag frames none
+    itemLabelSizes = new Map(elements.map(el => {
+        const label = el.querySelector('.item-label');
+        return [el.dataset.id, { width: label.offsetWidth, height: label.offsetHeight }];
+    }));
+    wallItems.forEach((item, index) => placeItemLabel(item, elements[index]));
 
     updateCollisionStates();
     updateDistanceGuides();
@@ -811,10 +821,29 @@ function updateInspectorLive(item) {
     document.getElementById('warning-attic').hidden = !intrudesAtticSlope(item);
 }
 
+// Lamps and spotlights carry labels wider than themselves, so near a wall edge the label
+// shifts just far enough to stay inside the wall instead of being clipped by it
+function labelShift(start, size, labelSize, limit) {
+    const labelStart = start + (size - labelSize) / 2;
+    const maxStart = Math.max(ITEM_LABEL_INSET_PX, limit - ITEM_LABEL_INSET_PX - labelSize);
+    return clamp(labelStart, ITEM_LABEL_INSET_PX, maxStart) - labelStart;
+}
+
+function placeItemLabel(item, el) {
+    const size = itemLabelSizes.get(item.id);
+    const label = el.querySelector('.item-label');
+    if (!size || !label) return;
+
+    const dx = labelShift(item.left, item.width, size.width, wallWidthPx);
+    const dy = labelShift(item.top, item.height, size.height, wallHeightPx);
+    label.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : '';
+}
+
 // Position-only updates skip renderPlanner so dragging and nudging never rebuild the DOM
 function syncItemPosition(item, el) {
     el.style.left = `${item.left}px`;
     el.style.top = `${item.top}px`;
+    placeItemLabel(item, el);
     updateCollisionStates();
     updateDistanceGuides();
     updateInspectorLive(item);
@@ -1840,8 +1869,8 @@ function paintItemLabel(ctx, item, el) {
     ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     const width = ctx.measureText(item.name).width + parseFloat(style.paddingLeft) * 2;
     const height = label.offsetHeight;
-    const centerX = item.left + item.width / 2;
-    const centerY = item.top + item.height / 2;
+    const centerX = item.left + item.width / 2 + labelShift(item.left, item.width, width, wallWidthPx);
+    const centerY = item.top + item.height / 2 + labelShift(item.top, item.height, height, wallHeightPx);
 
     ctx.fillStyle = style.backgroundColor;
     traceShape(ctx, { x: centerX - width / 2, y: centerY - height / 2, w: width, h: height, radius: parseFloat(style.borderTopLeftRadius) || 0, ellipse: false }, 0);

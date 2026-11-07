@@ -402,7 +402,9 @@ button:focus-visible {
 
 .wall {
     /* Default 300 x 250 cm at 2.5px per cm; the wall inputs resize it from JS.
-       It must never shrink as a flex item, or item coordinates would stop matching the wall. */
+       It must never shrink as a flex item, or item coordinates would stop matching the wall.
+       content-box keeps the border outside that area, so items on the right and bottom edges are not clipped. */
+    box-sizing: content-box;
     width: 750px;
     height: 625px;
     flex-shrink: 0;
@@ -427,10 +429,10 @@ button:focus-visible {
 
 .wall.daylight-mode {
     background-color: #e5e7eb;
-    background-image: 
+    background-image:
         linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
-    background-size: 25px 25px; /* 10x10 cm grid */
+    background-size: 25px 25px; /* 10 x 10 cm grid */
     border-color: #9ca3af;
 
     --guide-color: #2563eb;
