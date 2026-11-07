@@ -16,6 +16,11 @@
     box-sizing: border-box;
 }
 
+/* Component display rules would otherwise override the hidden attribute */
+[hidden] {
+    display: none !important;
+}
+
 body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     background-color: var(--bg-app);
@@ -83,7 +88,7 @@ body {
     gap: 10px;
 }
 
-.snap-toggle {
+.topbar-toggle {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -94,7 +99,7 @@ body {
     margin-right: 4px;
 }
 
-.snap-toggle input {
+.topbar-toggle input {
     accent-color: var(--accent-led);
     cursor: pointer;
 }
@@ -254,6 +259,15 @@ body {
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
     overflow: hidden;
     transition: background-color 0.3s ease, border-color 0.3s ease;
+
+    --guide-color: #60a5fa;
+    --guide-label-bg: rgba(15, 17, 21, 0.88);
+    --guide-label-text: #f3f4f6;
+
+    --attic-fill: rgba(239, 68, 68, 0.06);
+    --attic-hatch: rgba(248, 113, 113, 0.22);
+    --attic-edge: rgba(248, 113, 113, 0.8);
+    --attic-label: rgba(252, 165, 165, 0.9);
 }
 
 .wall.daylight-mode {
@@ -263,6 +277,21 @@ body {
         linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
     background-size: 25px 25px; /* 10x10 cm grid */
     border-color: #9ca3af;
+
+    --guide-color: #2563eb;
+    --guide-label-bg: rgba(255, 255, 255, 0.94);
+    --guide-label-text: #111827;
+
+    --attic-fill: rgba(220, 38, 38, 0.05);
+    --attic-hatch: rgba(220, 38, 38, 0.2);
+    --attic-edge: rgba(220, 38, 38, 0.75);
+    --attic-label: #b91c1c;
+}
+
+/* No z-index here on purpose, so items keep stacking against the glow and overlays */
+.wall-items {
+    position: absolute;
+    inset: 0;
 }
 
 /* Mounted wall elements */
@@ -411,6 +440,117 @@ body {
     pointer-events: none;
     z-index: 1;
     transition: opacity 0.3s ease;
+}
+
+/* Attic slope zone */
+.attic-zone {
+    /* 90 x 90 cm at 2.5px per cm */
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 225px;
+    height: 225px;
+    z-index: 1;
+    pointer-events: none;
+    clip-path: polygon(0 0, 100% 0, 100% 100%);
+    /* A "to bottom left" gradient puts its 50% line exactly on the diagonal, so the
+       first layer draws a 2px edge just inside the clipped triangle */
+    background:
+        linear-gradient(to bottom left,
+            transparent calc(50% - 2px),
+            var(--attic-edge) calc(50% - 2px),
+            var(--attic-edge) 50%,
+            transparent 50%),
+        repeating-linear-gradient(-45deg,
+            var(--attic-hatch) 0 1px,
+            transparent 1px 8px),
+        var(--attic-fill);
+}
+
+.attic-zone-label {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--attic-label);
+}
+
+/* Distance guides */
+.distance-guide {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    color: var(--guide-color);
+}
+
+.guide-x {
+    left: 0;
+    height: 0;
+    border-top: 1px dashed currentColor;
+}
+
+.guide-y {
+    top: 0;
+    width: 0;
+    border-left: 1px dashed currentColor;
+}
+
+.distance-guide::before,
+.distance-guide::after {
+    content: "";
+    position: absolute;
+    background-color: currentColor;
+}
+
+.guide-x::before,
+.guide-x::after {
+    top: -4px;
+    width: 1px;
+    height: 7px;
+}
+.guide-x::before { left: 0; }
+.guide-x::after { right: 0; }
+
+.guide-y::before,
+.guide-y::after {
+    left: -4px;
+    width: 7px;
+    height: 1px;
+}
+.guide-y::before { top: 0; }
+.guide-y::after { bottom: 0; }
+
+.guide-label {
+    position: absolute;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    color: var(--guide-label-text);
+    background-color: var(--guide-label-bg);
+    border: 1px solid var(--guide-color);
+    border-radius: 3px;
+}
+
+.guide-x .guide-label {
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.guide-y .guide-label {
+    top: 50%;
+    left: 0;
+    transform: translate(-50%, -50%);
 }
 
 /* Inspector controls & property editors */

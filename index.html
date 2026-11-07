@@ -12,7 +12,7 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.5</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.6</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -20,9 +20,13 @@
         </div>
 
         <div class="actions">
-            <label class="snap-toggle">
+            <label class="topbar-toggle">
                 <input type="checkbox" id="snap-grid-toggle">
                 <span>Snap 5cm</span>
+            </label>
+            <label class="topbar-toggle">
+                <input type="checkbox" id="attic-slope-toggle">
+                <span>Attic Slope</span>
             </label>
             <button id="reset-wall-btn" class="btn-secondary">Reset Layout</button>
             <button id="theme-toggle-btn" class="btn-ambient">
@@ -43,14 +47,14 @@
                 <div class="catalog-item" data-type="shelf" data-name="Floating Shelf" data-price="45" data-width="275" data-height="20" data-finish="walnut">
                     <div class="item-meta">
                         <span class="item-title">Floating Shelf</span>
-                        <span class="item-dims">110 x 26 cm</span>
+                        <span class="item-dims">110 x 8 cm</span>
                     </div>
                     <span class="item-price-tag">$45</span>
                 </div>
                 <div class="catalog-item" data-type="cube" data-name="Modular Cube" data-price="30" data-width="90" data-height="90" data-finish="oak">
                     <div class="item-meta">
                         <span class="item-title">Modular Cube</span>
-                        <span class="item-dims">35 x 35 cm</span>
+                        <span class="item-dims">36 x 36 cm</span>
                     </div>
                     <span class="item-price-tag">$30</span>
                 </div>
@@ -72,7 +76,7 @@
                     </div>
                     <span class="item-price-tag">$35</span>
                 </div>
-                <div class="catalog-item" data-type="corner-lamp" data-name="Corner Floor Lamp" data-price="65" data-width="50" data-height="140" data-finish="black">
+                <div class="catalog-item" data-type="corner-lamp" data-name="Corner Floor Lamp" data-price="65" data-width="50" data-height="350" data-finish="black">
                     <div class="item-meta">
                         <span class="item-title">Corner Floor Lamp</span>
                         <span class="item-dims">140 cm RGB bar</span>
@@ -85,6 +89,22 @@
         <!-- Wall Canvas -->
         <section class="canvas-area">
             <div id="wall" class="wall ambient-mode">
+                <div id="wall-items" class="wall-items"></div>
+
+                <div id="attic-zone" class="attic-zone" hidden>
+                    <div class="attic-zone-label">
+                        <span>Sloped ceiling</span>
+                        <span>90 x 90 cm</span>
+                    </div>
+                </div>
+
+                <div id="guide-x" class="distance-guide guide-x" hidden>
+                    <span class="guide-label"></span>
+                </div>
+                <div id="guide-y" class="distance-guide guide-y" hidden>
+                    <span class="guide-label"></span>
+                </div>
+
                 <div class="corner-led-glow"></div>
             </div>
         </section>
