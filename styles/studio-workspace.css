@@ -225,12 +225,14 @@ body {
     justify-content: space-between;
 }
 
+/* Grows into the space the budget box leaves, scrolling on its own so the total always stays in view */
 .inspector-content {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
     gap: 12px;
     overflow-y: auto;
-    max-height: calc(100vh - 160px);
     padding-right: 4px;
 }
 
@@ -315,6 +317,10 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
+}
+
+.io-wide {
+    grid-column: 1 / -1;
 }
 
 .io-status {
@@ -444,6 +450,14 @@ body {
 
 .wall-item.led-off::before {
     opacity: 0 !important;
+}
+
+.wall-item.locked {
+    cursor: default;
+}
+
+.item-label .lock-icon {
+    margin-right: 4px;
 }
 
 .item-label {
@@ -743,6 +757,12 @@ body {
     font-size: 13px;
 }
 
+.selected-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
 .inspector-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -775,6 +795,14 @@ body {
 .dim-input:focus {
     outline: none;
     border-color: var(--accent-led);
+}
+
+.dim-input:disabled,
+.btn-finish:disabled,
+.led-toggle:disabled,
+.btn-danger:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .finish-swatches {
@@ -855,6 +883,93 @@ body {
     background-color: #fff;
 }
 
+/* Padlock drawn with two pseudo-elements: a rounded shackle over a solid body */
+.lock-icon {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    width: 8px;
+    height: 10px;
+    vertical-align: -1px;
+}
+
+.lock-icon::before,
+.lock-icon::after {
+    content: "";
+    position: absolute;
+    box-sizing: border-box;
+}
+
+.lock-icon::before {
+    top: 0;
+    left: 1px;
+    width: 6px;
+    height: 6px;
+    border: 1.5px solid currentColor;
+    border-bottom: 0;
+    border-radius: 3px 3px 0 0;
+}
+
+.lock-icon::after {
+    bottom: 0;
+    left: 0;
+    width: 8px;
+    height: 5px;
+    border-radius: 1px;
+    background-color: currentColor;
+}
+
+.lock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: #fbbf24;
+    background-color: rgba(251, 191, 36, 0.12);
+}
+
+.lock-note {
+    padding: 5px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    background-color: rgba(251, 191, 36, 0.08);
+    color: #fbbf24;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.lock-note.is-flashing {
+    animation: lock-flash 0.6s ease;
+}
+
+@keyframes lock-flash {
+    30% {
+        background-color: rgba(251, 191, 36, 0.32);
+    }
+}
+
+.layer-readout {
+    margin-left: 4px;
+    color: var(--text-main);
+}
+
+.layer-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.layer-buttons .btn-secondary {
+    padding: 6px 4px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
 .collision-warning {
     color: #f87171;
     background-color: rgba(239, 68, 68, 0.12);
@@ -889,7 +1004,19 @@ body {
     border-radius: 4px;
 }
 
-.btn-danger:hover {
+.lock-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.lock-toggle.is-locked {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.45);
+}
+
+.btn-danger:hover:not(:disabled) {
     background-color: #b91c1c;
 }
 
@@ -1004,4 +1131,142 @@ input[type="range"] {
     font-size: 22px;
     font-weight: 700;
     color: var(--accent-led);
+}
+
+.btn-spec {
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* Spec sheet dialog */
+.spec-modal {
+    width: min(880px, calc(100vw - 48px));
+    max-width: none;
+    max-height: calc(100vh - 48px);
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--bg-panel);
+    color: var(--text-main);
+    box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.75);
+}
+
+.spec-modal::backdrop {
+    background-color: rgba(5, 7, 10, 0.72);
+}
+
+/* The panel fills the whole dialog, so only backdrop clicks ever target the dialog itself */
+.modal-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 50px);
+}
+
+.modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.modal-subtitle {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.modal-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 18px 22px 22px;
+    overflow-y: auto;
+}
+
+.spec-section h3 {
+    margin-bottom: 10px;
+    font-size: 12px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.spec-note {
+    margin: -4px 0 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.spec-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.spec-table th,
+.spec-table td {
+    padding: 7px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.spec-table thead th {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background-color: #1d2129;
+}
+
+.spec-table .num {
+    text-align: right;
+}
+
+.spec-table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.spec-table tfoot th,
+.spec-table tfoot td {
+    font-weight: 700;
+    border-top: 1px solid #3a4150;
+    border-bottom: 0;
+}
+
+.spec-table .grand-total {
+    font-size: 14px;
+    color: var(--accent-led);
+}
+
+.spec-table .spec-empty {
+    padding: 18px 10px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.clipboard-buffer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
 }

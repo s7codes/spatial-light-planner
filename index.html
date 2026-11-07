@@ -12,7 +12,7 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.8</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.9</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -105,7 +105,8 @@
                 <h3>Project File</h3>
                 <div class="io-buttons">
                     <button id="export-json-btn" class="btn-secondary">Export JSON</button>
-                    <button id="import-json-btn" class="btn-secondary">Import JSON</button>
+                    <button id="export-png-btn" class="btn-secondary">Export PNG</button>
+                    <button id="import-json-btn" class="btn-secondary io-wide">Import JSON</button>
                 </div>
                 <input type="file" id="import-file-input" accept=".json" hidden>
                 <p id="io-status" class="io-status" role="status" hidden></p>
@@ -197,10 +198,63 @@
             <div class="budget-box">
                 <h3>Estimated Cost</h3>
                 <div class="total-price" id="total-price">$0.00</div>
+                <button type="button" id="view-spec-btn" class="btn-secondary btn-spec">View Spec Sheet</button>
             </div>
         </aside>
 
     </main>
+
+    <dialog id="spec-modal" class="spec-modal" aria-labelledby="spec-modal-title">
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2 id="spec-modal-title">Installation Spec Sheet</h2>
+                    <p id="spec-modal-subtitle" class="modal-subtitle"></p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="copy-markdown-btn" class="btn-secondary">Copy as Markdown</button>
+                    <button type="button" id="close-spec-btn" class="btn-secondary">Close</button>
+                </div>
+            </header>
+
+            <div class="modal-body">
+                <section class="spec-section" aria-labelledby="bom-title">
+                    <h3 id="bom-title">Bill of Materials</h3>
+                    <table class="spec-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Item</th>
+                                <th scope="col">Dimensions</th>
+                                <th scope="col">Finish</th>
+                                <th scope="col" class="num">Qty</th>
+                                <th scope="col" class="num">Unit Price</th>
+                                <th scope="col" class="num">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bom-body"></tbody>
+                        <tfoot id="bom-foot"></tfoot>
+                    </table>
+                </section>
+
+                <section class="spec-section" aria-labelledby="mounting-title">
+                    <h3 id="mounting-title">Mounting & Drilling Coordinates</h3>
+                    <p id="spec-mounting-note" class="spec-note"></p>
+                    <table class="spec-table">
+                        <thead>
+                            <tr>
+                                <th scope="col">Item</th>
+                                <th scope="col">Size (W x H)</th>
+                                <th scope="col" class="num">From Left (X)</th>
+                                <th scope="col" class="num">From Ceiling (Y)</th>
+                                <th scope="col" class="num">From Floor (Bottom Edge)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mounting-body"></tbody>
+                    </table>
+                </section>
+            </div>
+        </div>
+    </dialog>
 
 </body>
 </html>

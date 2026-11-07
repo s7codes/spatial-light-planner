@@ -16,8 +16,18 @@ const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
 
 const STORAGE_KEY = 'spatial_studio_state_v1';
-const EXPORT_VERSION = '0.8';
+const EXPORT_VERSION = '0.9';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
+const PNG_FILENAME = 'spatial-studio-plan.png';
+const PNG_PIXEL_RATIO = 2;
+const SHADOW_SHIFT_PX = 10000;
+const CORNER_GLOW_ALPHA = 0.45; // mirrors the .corner-led-glow opacity factor
+const WALL_FILL = { ambient: '#1c1f26', daylight: '#e5e7eb' };
+const DAYLIGHT_GRID_PX = 10 * SCALE;
+
+const COPY_LABEL = 'Copy as Markdown';
+const MOUNTING_NOTE = "Distances in cm from the left wall edge, the ceiling, and the floor to the item's left, top, and bottom edges.";
+const LOCK_ICON_HTML = '<span class="lock-icon" aria-hidden="true"></span>';
 
 const HISTORY_LIMIT = 30;
 const MERGE_WINDOW_MS = 600;
@@ -73,6 +83,17 @@ const exportJsonBtn = document.getElementById('export-json-btn');
 const importJsonBtn = document.getElementById('import-json-btn');
 const importFileInput = document.getElementById('import-file-input');
 const ioStatus = document.getElementById('io-status');
+const exportPngBtn = document.getElementById('export-png-btn');
+
+const viewSpecBtn = document.getElementById('view-spec-btn');
+const specModal = document.getElementById('spec-modal');
+const specSubtitle = document.getElementById('spec-modal-subtitle');
+const specNote = document.getElementById('spec-mounting-note');
+const bomBody = document.getElementById('bom-body');
+const bomFoot = document.getElementById('bom-foot');
+const mountingBody = document.getElementById('mounting-body');
+const copyMarkdownBtn = document.getElementById('copy-markdown-btn');
+const closeSpecBtn = document.getElementById('close-spec-btn');
 
 const accentColorPicker = document.getElementById('accent-color-picker');
 const accentHexCode = document.getElementById('accent-hex-code');
@@ -106,18 +127,20 @@ const CATALOG_DEFAULTS = Object.fromEntries([...catalogItems].map(el => [el.data
 }]));
 
 const defaultItems = [
-    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true }
+    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false },
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false }
 ];
 
 let isAmbientMode = true;
 let selectedItemId = null;
 let wallItems = [];
-let justDragged = false;
+let ignoreWallClick = false;
 let suppressAltMenu = false;
 let idCounter = 0;
 let ioStatusTimer = 0;
 let fitFrame = 0;
+let copyLabelTimer = 0;
+let backdropPress = false;
 
 let wallWidthCm = DEFAULT_WALL_WIDTH_CM;
 let wallHeightCm = DEFAULT_WALL_HEIGHT_CM;
@@ -273,7 +296,8 @@ function sanitizeItem(raw, usedIds, bounds) {
         width,
         height,
         finish: FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish,
-        ledEnabled: typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true
+        ledEnabled: typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true,
+        locked: raw.locked === true
     };
 }
 
@@ -411,11 +435,12 @@ function renderPlanner() {
         const isSelected = item.id === selectedItemId ? 'selected' : '';
         const finishClass = item.finish ? `finish-${item.finish}` : 'finish-walnut';
         const ledClass = isLedOn(item) ? '' : 'led-off';
+        const lockClass = item.locked ? 'locked' : '';
         return `
-            <div class="wall-item ${item.type} ${finishClass} ${isSelected} ${ledClass}"
+            <div class="wall-item ${item.type} ${finishClass} ${isSelected} ${ledClass} ${lockClass}"
                  data-id="${escapeHtml(item.id)}"
                  style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;">
-                <span class="item-label">${escapeHtml(item.name)}</span>
+                <span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>
             </div>
         `;
     }).join('');
@@ -742,15 +767,29 @@ function syncItemPosition(item, el) {
     updateInspectorLive(item);
 }
 
+// A press that starts on an item, dragged or not, can end with the cursor off the item.
+// The click that follows would land on the wall and deselect, so it is swallowed.
+function guardNextWallClick() {
+    ignoreWallClick = true;
+    window.addEventListener('mouseup', () => setTimeout(() => { ignoreWallClick = false; }, 0), { once: true });
+}
+
 function startDrag(e) {
     if (e.button !== 0) return;
     e.stopPropagation();
+    guardNextWallClick();
 
     const el = e.currentTarget;
     const item = wallItems.find(i => i.id === el.dataset.id);
     if (!item) return;
 
     selectItem(item.id);
+
+    // Locked items can still be selected, they just never start a drag
+    if (item.locked) {
+        flashLockNote();
+        return;
+    }
 
     // The page never scrolls, so one layout read at drag start is enough unless the window resizes
     const wallRect = wallCanvas.getBoundingClientRect();
@@ -836,10 +875,6 @@ window.addEventListener('mouseup', () => {
     dragState = createIdleDragState();
     renderAlignGuides([]);
 
-    // A drag can end with the cursor just off the item; swallow the click that follows
-    justDragged = true;
-    setTimeout(() => { justDragged = false; }, 0);
-
     if (moved) commitLayoutChange();
 });
 
@@ -860,7 +895,8 @@ catalogItems.forEach(catalogEl => {
             width,
             height,
             finish: catalogEl.dataset.finish || 'walnut',
-            ledEnabled: true
+            ledEnabled: true,
+            locked: false
         };
 
         wallItems.push(newItem);
@@ -883,6 +919,9 @@ function selectItem(itemId) {
 }
 
 function removeItem(itemId) {
+    const target = wallItems.find(i => i.id === itemId);
+    if (!target || target.locked) return;
+
     wallItems = wallItems.filter(i => i.id !== itemId);
     selectedItemId = null;
     renderPlanner();
@@ -897,6 +936,8 @@ function duplicateSelectedItem() {
     const copy = {
         ...JSON.parse(JSON.stringify(source)),
         id: createItemId(),
+        // A copy starts unlocked so it can be placed right away
+        locked: false,
         left: clamp(source.left + DUPLICATE_OFFSET_PX, 0, wallWidthPx - source.width),
         top: clamp(source.top + DUPLICATE_OFFSET_PX, 0, wallHeightPx - source.height)
     };
@@ -908,6 +949,38 @@ function duplicateSelectedItem() {
     commitLayoutChange();
 }
 
+function toggleSelectedLock() {
+    const item = getSelectedItem();
+    if (!item) return;
+
+    item.locked = !item.locked;
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+// Swaps the item with its neighbor in wallItems, which is also the paint order in #wall-items
+function moveSelectedLayer(step) {
+    const index = wallItems.findIndex(i => i.id === selectedItemId);
+    const target = index + step;
+    if (index < 0 || target < 0 || target >= wallItems.length) return;
+
+    [wallItems[index], wallItems[target]] = [wallItems[target], wallItems[index]];
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+function flashLockNote() {
+    const note = document.getElementById('lock-note');
+    if (!note) return;
+
+    note.classList.remove('is-flashing');
+    // Reading layout restarts the animation when the user keeps trying to move a locked item
+    void note.offsetWidth;
+    note.classList.add('is-flashing');
+}
+
 function syncLedToggle(button, on) {
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-checked', String(on));
@@ -915,6 +988,8 @@ function syncLedToggle(button, on) {
 }
 
 function updateInspectorPanel() {
+    // Rebuilding the panel drops keyboard focus, so it is handed back to the same control afterwards
+    const focusedId = inspectorBox.contains(document.activeElement) ? document.activeElement.id : '';
     const item = getSelectedItem();
     if (!item) {
         inspectorBox.innerHTML = `<p>Select or drag an item on the wall to edit dimensions, finish, or remove it.</p>`;
@@ -923,26 +998,34 @@ function updateInspectorPanel() {
 
     const currentFinish = item.finish || 'walnut';
     const ledOn = isLedOn(item);
+    const locked = item.locked === true;
+    const lockedAttr = locked ? 'disabled' : '';
+    const layerIndex = wallItems.indexOf(item);
+    const layerCount = wallItems.length;
     const finishButtons = FINISHES.map(({ id, label }) => `
-        <button class="btn-finish ${currentFinish === id ? 'active' : ''}" data-finish="${id}">${label}</button>
+        <button class="btn-finish ${currentFinish === id ? 'active' : ''}" data-finish="${id}" ${lockedAttr}>${label}</button>
     `).join('');
 
     inspectorBox.innerHTML = `
         <div class="selected-item-info">
             <div class="selected-item-header">
                 <span class="selected-item-title">${escapeHtml(item.name)}</span>
-                <span>$${item.price}</span>
+                <span class="selected-item-meta">
+                    ${locked ? `<span class="lock-badge">${LOCK_ICON_HTML}Locked</span>` : ''}
+                    <span>$${item.price}</span>
+                </span>
             </div>
             <span>Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
+            ${locked ? '<p class="lock-note" id="lock-note">Position, size, finish, backlight and removal are locked. Press L or Unlock Item to edit.</p>' : ''}
 
             <div class="inspector-grid">
                 <div class="inspector-field">
                     <label for="edit-width-cm">Width (cm)</label>
-                    <input type="number" id="edit-width-cm" class="dim-input" min="${MIN_WIDTH_CM}" max="${wallWidthCm}" value="${toCm(item.width)}">
+                    <input type="number" id="edit-width-cm" class="dim-input" min="${MIN_WIDTH_CM}" max="${wallWidthCm}" value="${toCm(item.width)}" ${lockedAttr}>
                 </div>
                 <div class="inspector-field">
                     <label for="edit-height-cm">Height (cm)</label>
-                    <input type="number" id="edit-height-cm" class="dim-input" min="${MIN_HEIGHT_CM}" max="${wallHeightCm}" value="${toCm(item.height)}">
+                    <input type="number" id="edit-height-cm" class="dim-input" min="${MIN_HEIGHT_CM}" max="${wallHeightCm}" value="${toCm(item.height)}" ${lockedAttr}>
                 </div>
             </div>
 
@@ -951,17 +1034,26 @@ function updateInspectorPanel() {
                 <div class="finish-swatches">${finishButtons}</div>
             </div>
 
-            <button type="button" id="led-toggle-btn" class="led-toggle ${ledOn ? 'is-on' : ''}" role="switch" aria-checked="${ledOn}">
+            <button type="button" id="led-toggle-btn" class="led-toggle ${ledOn ? 'is-on' : ''}" role="switch" aria-checked="${ledOn}" ${lockedAttr}>
                 <span class="led-toggle-track" aria-hidden="true"><span class="led-toggle-thumb"></span></span>
                 <span class="led-toggle-text">Backlight LED: <strong class="led-toggle-state">${ledOn ? 'ON' : 'OFF'}</strong></span>
             </button>
+
+            <div class="inspector-field">
+                <label>Layer <span class="layer-readout">${layerIndex + 1} of ${layerCount}</span></label>
+                <div class="layer-buttons">
+                    <button type="button" class="btn-secondary" id="send-backward-btn" ${layerIndex === 0 ? 'disabled' : ''}>Send Backward</button>
+                    <button type="button" class="btn-secondary" id="bring-forward-btn" ${layerIndex === layerCount - 1 ? 'disabled' : ''}>Bring Forward</button>
+                </div>
+            </div>
 
             <div id="warning-overlap" class="collision-warning" hidden>Overlap detected with another item</div>
             <div id="warning-attic" class="collision-warning" hidden>Intrudes into sloped ceiling zone</div>
 
             <div class="inspector-actions">
+                <button type="button" class="btn-secondary lock-toggle ${locked ? 'is-locked' : ''}" id="lock-toggle-btn" aria-pressed="${locked}" title="${locked ? 'Unlock' : 'Lock'} (L)">${LOCK_ICON_HTML}${locked ? 'Unlock Item' : 'Lock Item'}</button>
                 <button class="btn-secondary" id="duplicate-item-btn" title="Duplicate (Ctrl+D)">Duplicate Item</button>
-                <button class="btn-danger" id="delete-item-btn" title="Remove (Delete)">Remove Item</button>
+                <button class="btn-danger" id="delete-item-btn" title="Remove (Delete)" ${lockedAttr}>Remove Item</button>
             </div>
         </div>
     `;
@@ -972,6 +1064,8 @@ function updateInspectorPanel() {
     const heightInput = document.getElementById('edit-height-cm');
 
     function applyDimensionChange() {
+        if (item.locked) return;
+
         const rawW = parseInt(widthInput.value, 10) || toCm(item.width);
         const rawH = parseInt(heightInput.value, 10) || toCm(item.height);
 
@@ -999,6 +1093,7 @@ function updateInspectorPanel() {
 
     inspectorBox.querySelectorAll('.btn-finish').forEach(btn => {
         btn.addEventListener('click', () => {
+            if (item.locked) return;
             item.finish = btn.dataset.finish;
             renderPlanner();
             updateInspectorPanel();
@@ -1008,6 +1103,7 @@ function updateInspectorPanel() {
 
     const ledToggleBtn = document.getElementById('led-toggle-btn');
     ledToggleBtn.addEventListener('click', () => {
+        if (item.locked) return;
         item.ledEnabled = !isLedOn(item);
         const el = getItemElement(item.id);
         if (el) el.classList.toggle('led-off', !item.ledEnabled);
@@ -1015,9 +1111,23 @@ function updateInspectorPanel() {
         commitLayoutChange();
     });
 
+    document.getElementById('send-backward-btn').addEventListener('click', () => moveSelectedLayer(-1));
+    document.getElementById('bring-forward-btn').addEventListener('click', () => moveSelectedLayer(1));
+    document.getElementById('lock-toggle-btn').addEventListener('click', toggleSelectedLock);
     document.getElementById('duplicate-item-btn').addEventListener('click', duplicateSelectedItem);
     document.getElementById('delete-item-btn').addEventListener('click', () => removeItem(item.id));
+
+    if (focusedId) {
+        const target = document.getElementById(focusedId);
+        if (target && !target.disabled) target.focus();
+    }
 }
+
+// Plain L toggles the lock; Ctrl/Cmd+L stays with the browser address bar
+const isLockShortcut = (e) =>
+    (e.key || '').toLowerCase() === 'l' &&
+    !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat &&
+    selectedItemId !== null && !dragState.isDragging && !isTextEntry(e.target);
 
 function handleModifierShortcut(e) {
     if (isTextEntry(e.target)) return false;
@@ -1054,7 +1164,14 @@ function handleItemKeys(e) {
     const item = getSelectedItem();
     if (!item) return;
 
-    if (e.key === 'Delete' || e.key === 'Backspace') {
+    const isRemoval = e.key === 'Delete' || e.key === 'Backspace';
+    if (item.locked && (isRemoval || NUDGE_KEYS[e.key])) {
+        e.preventDefault();
+        flashLockNote();
+        return;
+    }
+
+    if (isRemoval) {
         e.preventDefault();
         removeItem(item.id);
         return;
@@ -1076,12 +1193,21 @@ function handleItemKeys(e) {
 }
 
 window.addEventListener('keydown', (e) => {
+    // The spec sheet is modal, so nothing behind it may react to shortcuts
+    if (specModal.open) return;
+
     if (e.key === 'Alt' && dragState.isDragging) {
         // Alt or Option suspends magnetic alignment for as long as it is held
         e.preventDefault();
         dragState.altKey = true;
         suppressAltMenu = true;
         scheduleDragFrame();
+        return;
+    }
+
+    if (isLockShortcut(e)) {
+        e.preventDefault();
+        toggleSelectedLock();
         return;
     }
 
@@ -1106,7 +1232,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 wallCanvas.addEventListener('click', () => {
-    if (justDragged) return;
+    if (ignoreWallClick) return;
     if (selectedItemId !== null) {
         selectItem(null);
     }
@@ -1189,18 +1315,20 @@ function exportLayout() {
         brightness: Number(brightnessSlider.value)
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), EXPORT_FILENAME);
+    showIoStatus('Layout exported.', 'success');
+}
+
+function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = EXPORT_FILENAME;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     link.remove();
     // Revoking in the same tick can cancel the download in some browsers
     setTimeout(() => URL.revokeObjectURL(url), 0);
-
-    showIoStatus('Layout exported.', 'success');
 }
 
 function importLayoutText(text) {
@@ -1260,6 +1388,439 @@ importFileInput.addEventListener('change', () => {
     // Clearing the value lets the same file be picked again after editing it
     importFileInput.value = '';
 });
+
+const formatMoney = (value) => `$${value.toFixed(2)}`;
+const finishLabel = (id) => (FINISHES.find(f => f.id === id) || { label: id }).label;
+const markdownCell = (value) => String(value).replace(/\s+/g, ' ').replace(/\|/g, '\\|');
+const totalPrice = () => wallItems.reduce((sum, item) => sum + item.price, 0);
+
+function buildBomRows() {
+    const groups = new Map();
+    wallItems.forEach(item => {
+        const widthCm = toCm(item.width);
+        const heightCm = toCm(item.height);
+        const key = JSON.stringify([item.type, item.name, widthCm, heightCm, item.finish, item.price]);
+        const group = groups.get(key);
+        if (group) group.qty += 1;
+        else groups.set(key, { name: item.name, widthCm, heightCm, finish: item.finish, price: item.price, qty: 1 });
+    });
+
+    return [...groups.values()].sort((a, b) =>
+        a.name.localeCompare(b.name) || a.widthCm - b.widthCm || a.heightCm - b.heightCm || a.finish.localeCompare(b.finish));
+}
+
+// Installers work along the wall, so rows run left to right, then top to bottom
+function buildMountingRows() {
+    return [...wallItems]
+        .sort((a, b) => a.left - b.left || a.top - b.top)
+        .map(item => {
+            const topCm = toCm(item.top);
+            const heightCm = toCm(item.height);
+            return {
+                name: item.name,
+                size: `${toCm(item.width)} x ${heightCm} cm`,
+                left: toCm(item.left),
+                top: topCm,
+                floor: wallHeightCm - topCm - heightCm
+            };
+        });
+}
+
+function renderSpecSheet() {
+    const bomRows = buildBomRows();
+    const mountingRows = buildMountingRows();
+    const count = wallItems.length;
+
+    specSubtitle.textContent = `Wall ${wallWidthCm} x ${wallHeightCm} cm | ${count} item${count === 1 ? '' : 's'}`;
+    specNote.textContent = MOUNTING_NOTE;
+
+    bomBody.innerHTML = bomRows.length
+        ? bomRows.map(row => `
+            <tr>
+                <td>${escapeHtml(row.name)}</td>
+                <td>${row.widthCm} x ${row.heightCm} cm</td>
+                <td>${finishLabel(row.finish)}</td>
+                <td class="num">${row.qty}</td>
+                <td class="num">${formatMoney(row.price)}</td>
+                <td class="num">${formatMoney(row.price * row.qty)}</td>
+            </tr>`).join('')
+        : '<tr><td colspan="6" class="spec-empty">No items on the wall yet.</td></tr>';
+
+    bomFoot.innerHTML = `
+        <tr>
+            <th scope="row" colspan="3">Total</th>
+            <td class="num">${count}</td>
+            <td></td>
+            <td class="num grand-total">${formatMoney(totalPrice())}</td>
+        </tr>`;
+
+    mountingBody.innerHTML = mountingRows.length
+        ? mountingRows.map(row => `
+            <tr>
+                <td>${escapeHtml(row.name)}</td>
+                <td>${row.size}</td>
+                <td class="num">${row.left} cm</td>
+                <td class="num">${row.top} cm</td>
+                <td class="num">${row.floor} cm</td>
+            </tr>`).join('')
+        : '<tr><td colspan="5" class="spec-empty">No items to mount yet.</td></tr>';
+}
+
+function buildSpecMarkdown() {
+    const count = wallItems.length;
+    const total = formatMoney(totalPrice());
+
+    return [
+        '# Spatial Studio Spec Sheet',
+        '',
+        `Wall: ${wallWidthCm} x ${wallHeightCm} cm | Items: ${count} | Total: ${total}`,
+        '',
+        '## Bill of Materials',
+        '',
+        '| Item | Dimensions | Finish | Qty | Unit Price | Subtotal |',
+        '| :--- | :--- | :--- | ---: | ---: | ---: |',
+        ...buildBomRows().map(row =>
+            `| ${markdownCell(row.name)} | ${row.widthCm} x ${row.heightCm} cm | ${finishLabel(row.finish)} | ${row.qty} | ${formatMoney(row.price)} | ${formatMoney(row.price * row.qty)} |`),
+        `| **Total** | | | **${count}** | | **${total}** |`,
+        '',
+        '## Mounting & Drilling Coordinates',
+        '',
+        MOUNTING_NOTE,
+        '',
+        '| Item | Size (W x H) | From Left (X) | From Ceiling (Y) | From Floor (Bottom Edge) |',
+        '| :--- | :--- | ---: | ---: | ---: |',
+        ...buildMountingRows().map(row =>
+            `| ${markdownCell(row.name)} | ${row.size} | ${row.left} cm | ${row.top} cm | ${row.floor} cm |`)
+    ].join('\n');
+}
+
+function flashCopyLabel(text) {
+    clearTimeout(copyLabelTimer);
+    copyMarkdownBtn.textContent = text;
+    copyLabelTimer = setTimeout(() => { copyMarkdownBtn.textContent = COPY_LABEL; }, 2000);
+}
+
+// Fallback for contexts without the async clipboard API. The buffer lives inside the dialog
+// because everything outside an open modal dialog is inert and cannot be selected.
+function copyWithSelection(text) {
+    const buffer = document.createElement('textarea');
+    buffer.value = text;
+    buffer.setAttribute('readonly', '');
+    buffer.className = 'clipboard-buffer';
+    specModal.appendChild(buffer);
+    buffer.select();
+
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch {
+        copied = false;
+    }
+    buffer.remove();
+    copyMarkdownBtn.focus();
+    return copied;
+}
+
+async function copySpecMarkdown() {
+    const text = buildSpecMarkdown();
+    let copied = false;
+    try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+    } catch {
+        copied = copyWithSelection(text);
+    }
+    flashCopyLabel(copied ? 'Copied to Clipboard' : 'Copy failed');
+}
+
+function openSpecSheet() {
+    if (specModal.open || dragState.isDragging) return;
+
+    clearTimeout(copyLabelTimer);
+    copyMarkdownBtn.textContent = COPY_LABEL;
+    renderSpecSheet();
+    specModal.showModal();
+}
+
+viewSpecBtn.addEventListener('click', openSpecSheet);
+closeSpecBtn.addEventListener('click', () => specModal.close());
+copyMarkdownBtn.addEventListener('click', copySpecMarkdown);
+
+// Only a click that starts and ends on the backdrop closes the dialog, so dragging a text
+// selection out of the panel does not dismiss it
+specModal.addEventListener('mousedown', (e) => {
+    backdropPress = e.target === specModal;
+});
+specModal.addEventListener('click', (e) => {
+    if (backdropPress && e.target === specModal) specModal.close();
+    backdropPress = false;
+});
+
+function hexToRgb(hex) {
+    const value = parseInt(hex.slice(1), 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+}
+
+// Computed box-shadow lists read like "rgb(0, 0, 0) 0px 8px 15px 0px, ...", though some engines put the
+// color last. Color, offsets and blur are all the snapshot needs.
+function parseShadows(value) {
+    if (!value || value === 'none') return [];
+
+    const colorFirst = /(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px/g;
+    const colorLast = /(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px(?:\s+-?[\d.]+px)?\s+(rgba?\([^)]*\))/g;
+    const first = [...value.matchAll(colorFirst)].map(([, color, x, y, blur]) => ({ color, x, y, blur }));
+    const shadows = first.length ? first : [...value.matchAll(colorLast)].map(([, x, y, blur, color]) => ({ color, x, y, blur }));
+
+    return shadows.map(({ color, x, y, blur }) => ({ color, x: parseFloat(x), y: parseFloat(y), blur: parseFloat(blur) }));
+}
+
+function itemShape(item, radius) {
+    const percent = radius.endsWith('%') ? parseFloat(radius) : null;
+    return {
+        x: item.left,
+        y: item.top,
+        w: item.width,
+        h: item.height,
+        // A 50% radius is how the spotlight becomes a circle, or an ellipse once resized
+        ellipse: percent !== null && percent >= 50,
+        radius: percent !== null ? Math.min(item.width, item.height) * percent / 100 : parseFloat(radius) || 0
+    };
+}
+
+function traceShape(ctx, shape, inset) {
+    const x = shape.x + inset;
+    const y = shape.y + inset;
+    const w = Math.max(0, shape.w - inset * 2);
+    const h = Math.max(0, shape.h - inset * 2);
+
+    ctx.beginPath();
+    if (shape.ellipse) {
+        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        return;
+    }
+
+    const r = Math.max(0, Math.min(shape.radius - inset, w / 2, h / 2));
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
+
+// Paints only a shape's shadow: the shape itself is drawn far off canvas and the shadow is offset back.
+// Shadow offsets and blur ignore the canvas transform, so they are given in device pixels.
+function paintShadowOnly(ctx, shape, shadow, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = shadow.color;
+    ctx.shadowBlur = shadow.blur * PNG_PIXEL_RATIO;
+    ctx.shadowOffsetX = (shadow.x + SHADOW_SHIFT_PX) * PNG_PIXEL_RATIO;
+    ctx.shadowOffsetY = shadow.y * PNG_PIXEL_RATIO;
+    ctx.translate(-SHADOW_SHIFT_PX, 0);
+    traceShape(ctx, shape, 0);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.restore();
+}
+
+function paintWallBackground(ctx) {
+    ctx.fillStyle = isAmbientMode ? WALL_FILL.ambient : WALL_FILL.daylight;
+    ctx.fillRect(0, 0, wallWidthPx, wallHeightPx);
+    if (isAmbientMode) return;
+
+    // Same 1px lines every 10 cm as the Daylight Grid background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+    for (let x = 0; x < wallWidthPx; x += DAYLIGHT_GRID_PX) ctx.fillRect(x, 0, 1, wallHeightPx);
+    for (let y = 0; y < wallHeightPx; y += DAYLIGHT_GRID_PX) ctx.fillRect(0, y, wallWidthPx, 1);
+}
+
+function paintAtticZone(ctx, fontFamily) {
+    const wallStyle = getComputedStyle(wallCanvas);
+    const cssVar = (name) => wallStyle.getPropertyValue(name).trim();
+    const startX = wallWidthPx - ATTIC_SLOPE_PX;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(startX, 0);
+    ctx.lineTo(wallWidthPx, 0);
+    ctx.lineTo(wallWidthPx, ATTIC_SLOPE_PX);
+    ctx.closePath();
+    ctx.clip();
+
+    ctx.fillStyle = cssVar('--attic-fill');
+    ctx.fillRect(startX, 0, ATTIC_SLOPE_PX, ATTIC_SLOPE_PX);
+
+    // Hatch lines follow x + y = c, 8 px apart like the CSS repeating gradient
+    ctx.strokeStyle = cssVar('--attic-hatch');
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let c = startX; c <= wallWidthPx + ATTIC_SLOPE_PX; c += 8 * Math.SQRT2) {
+        ctx.moveTo(c, 0);
+        ctx.lineTo(c - ATTIC_SLOPE_PX, ATTIC_SLOPE_PX);
+    }
+    ctx.stroke();
+
+    // The clip keeps only the inner half of this 4px stroke, matching the 2px CSS edge band
+    ctx.strokeStyle = cssVar('--attic-edge');
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(startX, 0);
+    ctx.lineTo(wallWidthPx, ATTIC_SLOPE_PX);
+    ctx.stroke();
+
+    ctx.fillStyle = cssVar('--attic-label');
+    ctx.font = `600 10px ${fontFamily}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    [...atticZone.querySelectorAll('.attic-zone-label span')].forEach((span, index) => {
+        ctx.fillText(span.textContent.toUpperCase(), wallWidthPx - 10, 10 + index * 15);
+    });
+    ctx.restore();
+}
+
+function paintCornerGlow(ctx, brightness) {
+    const style = getComputedStyle(wallCanvas.querySelector('.corner-led-glow'));
+    const width = parseFloat(style.width);
+    const height = parseFloat(style.height);
+    const left = wallWidthPx - parseFloat(style.right) - width;
+    const top = wallHeightPx - parseFloat(style.bottom) - height;
+    const centerX = left + width / 2;
+    const centerY = top + height / 2;
+    // CSS "circle" without a size means farthest-corner, so the radius reaches the box corners
+    const radius = Math.hypot(width / 2, height / 2);
+    const [r, g, b] = hexToRgb(cornerColorPicker.value);
+
+    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+    // Fading to the same color at zero alpha avoids the gray fringe a plain "transparent" stop gives
+    gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, 0)`);
+
+    ctx.save();
+    ctx.globalAlpha = CORNER_GLOW_ALPHA * brightness;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(left, top, width, height);
+    ctx.restore();
+}
+
+// Mirrors the cabinet seam on the .storage background and the handle pair drawn by its ::after
+function paintStorageFront(ctx, item, el, border) {
+    const centerX = item.left + item.width / 2;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.fillRect(centerX - 1, item.top + border, 2, item.height - border * 2);
+
+    const handles = getComputedStyle(el, '::after');
+    const barWidth = parseFloat(handles.borderLeftWidth) || 0;
+    const contentWidth = parseFloat(handles.width) || 0;
+    const outerWidth = handles.boxSizing === 'border-box' ? contentWidth : contentWidth + barWidth * 2;
+    const top = item.top + border + (parseFloat(handles.top) || 0);
+    const height = parseFloat(handles.height) || 0;
+
+    ctx.fillStyle = handles.borderLeftColor;
+    ctx.fillRect(centerX - outerWidth / 2, top, barWidth, height);
+    ctx.fillRect(centerX + outerWidth / 2 - barWidth, top, barWidth, height);
+}
+
+function paintItemLabel(ctx, item, el) {
+    const label = el.querySelector('.item-label');
+    if (!label) return;
+
+    const style = getComputedStyle(label);
+    ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const width = ctx.measureText(item.name).width + parseFloat(style.paddingLeft) * 2;
+    const height = label.offsetHeight;
+    const centerX = item.left + item.width / 2;
+    const centerY = item.top + item.height / 2;
+
+    ctx.fillStyle = style.backgroundColor;
+    traceShape(ctx, { x: centerX - width / 2, y: centerY - height / 2, w: width, h: height, radius: parseFloat(style.borderTopLeftRadius) || 0, ellipse: false }, 0);
+    ctx.fill();
+
+    ctx.fillStyle = style.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(item.name, centerX, centerY);
+}
+
+// Item visuals come from the live computed styles, so the snapshot always matches the CSS on screen
+function paintItem(ctx, item, brightness) {
+    const el = getItemElement(item.id);
+    if (!el) return;
+
+    const style = getComputedStyle(el);
+    const shape = itemShape(item, style.borderTopLeftRadius);
+    const border = parseFloat(style.borderTopWidth) || 0;
+
+    // Same order the DOM paints in: drop shadow, LED glow, then the body over both
+    parseShadows(style.boxShadow).forEach(shadow => paintShadowOnly(ctx, shape, shadow, 1));
+    if (isAmbientMode && isLedOn(item) && brightness > 0) {
+        parseShadows(getComputedStyle(el, '::before').boxShadow)
+            .forEach(shadow => paintShadowOnly(ctx, shape, shadow, brightness));
+    }
+
+    if (border > 0) {
+        ctx.fillStyle = style.borderTopColor;
+        traceShape(ctx, shape, 0);
+        ctx.fill();
+    }
+    ctx.fillStyle = style.backgroundColor;
+    traceShape(ctx, shape, border);
+    ctx.fill();
+
+    if (item.type === 'storage') paintStorageFront(ctx, item, el, border);
+    paintItemLabel(ctx, item, el);
+}
+
+function paintCaption(ctx, fontFamily) {
+    const text = `${wallWidthCm} x ${wallHeightCm} cm | Scale 1:1 cm`;
+    const margin = 10;
+    const height = 20;
+    ctx.font = `600 11px ${fontFamily}`;
+    const width = ctx.measureText(text).width + 16;
+    const top = wallHeightPx - margin - height;
+
+    ctx.fillStyle = isAmbientMode ? 'rgba(15, 17, 21, 0.72)' : 'rgba(255, 255, 255, 0.82)';
+    traceShape(ctx, { x: margin, y: top, w: width, h: height, radius: 4, ellipse: false }, 0);
+    ctx.fill();
+
+    ctx.fillStyle = isAmbientMode ? 'rgba(243, 244, 246, 0.8)' : 'rgba(17, 24, 39, 0.75)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, margin + 8, top + height / 2);
+}
+
+function exportPng() {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(wallWidthPx * PNG_PIXEL_RATIO);
+    canvas.height = Math.round(wallHeightPx * PNG_PIXEL_RATIO);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        showIoStatus('PNG export failed: canvas is unavailable.', 'error');
+        return;
+    }
+
+    const fontFamily = getComputedStyle(document.body).fontFamily;
+    const brightness = Number(brightnessSlider.value) / 100;
+    ctx.scale(PNG_PIXEL_RATIO, PNG_PIXEL_RATIO);
+
+    // Same stacking as the live wall: background, attic zone, corner glow, then items in layer order
+    paintWallBackground(ctx);
+    if (atticSlopeToggle.checked) paintAtticZone(ctx, fontFamily);
+    if (isAmbientMode && brightness > 0) paintCornerGlow(ctx, brightness);
+    wallItems.forEach(item => paintItem(ctx, item, brightness));
+    paintCaption(ctx, fontFamily);
+
+    canvas.toBlob(blob => {
+        if (!blob) {
+            showIoStatus('PNG export failed.', 'error');
+            return;
+        }
+        downloadBlob(blob, PNG_FILENAME);
+        showIoStatus('Plan exported as PNG.', 'success');
+    }, 'image/png');
+}
+
+exportPngBtn.addEventListener('click', exportPng);
 
 themeToggleBtn.addEventListener('click', () => {
     isAmbientMode = !isAmbientMode;
