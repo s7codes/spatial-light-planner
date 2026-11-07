@@ -12,11 +12,16 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.7</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.8</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
-            Wall: <strong>300 x 250 cm</strong> <span class="scale-note">(1 cm = 2.5 px)</span>
+            <span class="wall-dim-label">Wall</span>
+            <input type="number" id="wall-width-input" class="wall-dim-input" min="150" max="400" step="1" value="300" aria-label="Wall width in cm" title="Wall width (150-400 cm)">
+            <span>x</span>
+            <input type="number" id="wall-height-input" class="wall-dim-input" min="150" max="300" step="1" value="250" aria-label="Wall height in cm" title="Wall height (150-300 cm)">
+            <span>cm</span>
+            <span id="scale-note" class="scale-note">(1 cm = 2.5 px)</span>
         </div>
 
         <div class="actions">
@@ -44,7 +49,7 @@
         <!-- Catalog Sidebar -->
         <aside class="sidebar catalog">
             <h2>Components</h2>
-            <p class="sidebar-hint">Click an item to mount it, then drag or use arrow keys to position.</p>
+            <p class="sidebar-hint">Click an item to mount it, then drag or use arrow keys to position. Hold Alt (Option on Mac) while dragging to skip alignment snapping.</p>
 
             <div class="catalog-group">
                 <h3>Shelving & Storage</h3>
@@ -61,6 +66,13 @@
                         <span class="item-dims">36 x 36 cm</span>
                     </div>
                     <span class="item-price-tag">$30</span>
+                </div>
+                <div class="catalog-item" data-type="storage" data-name="Compact Storage" data-price="55" data-width="187.5" data-height="95" data-finish="walnut">
+                    <div class="item-meta">
+                        <span class="item-title">Compact Storage</span>
+                        <span class="item-dims">75 x 38 cm</span>
+                    </div>
+                    <span class="item-price-tag">$55</span>
                 </div>
             </div>
 
@@ -112,10 +124,24 @@
                     </div>
                 </div>
 
-                <div id="guide-x" class="distance-guide guide-x" hidden>
+                <div id="align-guides" class="align-guides"></div>
+
+                <div id="guide-x" class="distance-guide ruler-h" hidden>
                     <span class="guide-label"></span>
                 </div>
-                <div id="guide-y" class="distance-guide guide-y" hidden>
+                <div id="guide-y" class="distance-guide ruler-v" hidden>
+                    <span class="guide-label"></span>
+                </div>
+                <div id="gap-left" class="distance-guide gap-guide ruler-h" hidden>
+                    <span class="guide-label"></span>
+                </div>
+                <div id="gap-right" class="distance-guide gap-guide ruler-h" hidden>
+                    <span class="guide-label"></span>
+                </div>
+                <div id="gap-up" class="distance-guide gap-guide ruler-v" hidden>
+                    <span class="guide-label"></span>
+                </div>
+                <div id="gap-down" class="distance-guide gap-guide ruler-v" hidden>
                     <span class="guide-label"></span>
                 </div>
 
@@ -127,7 +153,7 @@
         <aside class="sidebar inspector">
             <div class="inspector-content">
                 <h2>Inspector</h2>
-                
+
                 <div id="inspector-box" class="inspector-box">
                     <p>Select or drag an item on the wall to edit dimensions, finish, or remove it.</p>
                 </div>
