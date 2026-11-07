@@ -232,13 +232,23 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    cursor: grab;
     user-select: none;
     z-index: 2;
 }
 
+.wall-item.dragging {
+    cursor: grabbing;
+    z-index: 10;
+}
+
 .wall-item.selected {
     outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+.wall-item.colliding {
+    outline: 2px solid #ef4444 !important;
     outline-offset: 2px;
 }
 
@@ -350,6 +360,16 @@ body {
     font-weight: 600;
     color: var(--text-main);
     font-size: 13px;
+}
+
+.collision-warning {
+    color: #f87171;
+    background-color: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
 }
 
 .btn-danger {
