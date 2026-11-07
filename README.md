@@ -1,95 +1,144 @@
 # Spatial & Ambient Light Planner
 
-A 2D wall layout and lighting tool built to plan shelving, framed art, and ambient RGB lighting setups to scale before drilling into the wall.
+Live Demo: https://s7codes.github.io/spatial-light-planner/
 
-## Overview
+A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place them with centimeter precision, check them against overlaps and a sloped attic ceiling, preview the backlighting in a dark room, and hand off a bill of materials, drilling coordinates, or a high-resolution image of the finished plan.
 
-The canvas represents a physical room wall at a fixed `1 cm = 2.5 px` scale. The wall defaults to `300 x 250 cm` and can be resized anywhere from `150 x 150 cm` to `400 x 300 cm`. Items mounted from the catalog render at their proportional physical dimensions, allowing you to test spacing, measure exact mounting offsets and clearances, check how warm backlights or corner RGB lamps interact in dark room conditions, and hand off a spec sheet or image of the final plan.
+Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies.
 
-### Current Capabilities (v0.9)
-- **Item Locking:** Lock an item from the inspector or with `L`. A locked item can still be selected, duplicated, reordered, or unlocked, but it cannot be dragged, nudged, resized, refinished, have its backlight toggled, or be removed. The inspector shows a lock badge and note, and the item's wall label carries a padlock.
-- **Layer Ordering:** `Bring Forward` and `Send Backward` move the selected item one step up or down the paint order so it renders above or below overlapping items, with a live layer readout. Locking and reordering are both covered by undo/redo.
-- **Installation Spec Sheet:** `View Spec Sheet` opens an accessible modal with a grouped Bill of Materials (quantities, unit prices, subtotals, grand total) and a Mounting & Drilling table giving every item's distance from the left wall, the ceiling, and the floor. `Copy as Markdown` puts both tables on the clipboard.
-- **PNG Snapshot Export:** `Export PNG` renders the wall with the native Canvas 2D API at 2x pixel density and downloads `spatial-studio-plan.png`. It includes mode-correct backgrounds, LED glows at the current brightness, the attic slope, every item in layer order, and a dimensions caption.
-- **Smart Alignment Guides:** While dragging, an item's edges or center snap onto matching lines of other items (and the wall's horizontal center) once within `1 cm`, with a crisp guide drawn across the aligned items. Hold `Alt` / `Option` to place items freely.
-- **Gap Rulers:** The selected item shows the clearance to its nearest neighbor on each side as dashed rulers with `cm` readouts, alongside the wall-edge rulers. Labels never overlap.
-- **Configurable Wall Size & Auto-Fit Viewport:** Set the wall from `150-400 cm` wide and `150-300 cm` high. Items outside a shrunken wall are pushed back inside as a single undo step, and walls larger than the canvas are scaled to fit with pixel-accurate dragging.
-- **Per-Item Backlight LED:** Every item has its own `Backlight LED: ON / OFF` toggle, saved with the layout and covered by undo/redo.
-- **Undo / Redo History:** A bounded 30-step history covers every layout change, including drags, nudges, edits, locks, layer moves, wall size, Attic Slope, imports, and Reset Layout.
-- **Item Duplication:** `Duplicate Item` or `Ctrl+D` / `Cmd+D` clones the selected item `4 cm` down and to the right. The copy starts unlocked so it can be placed right away.
-- **JSON Export & Validated Import:** Save the full studio configuration to `spatial-studio-layout.json` and load it back later. Imports are validated and sanitized before anything is applied, and invalid files show an inline error without touching the current layout.
-- **Live Spatial Distance Guides:** Dashed X/Y rulers measure from the left wall edge and the ceiling to the selected item in real time.
-- **Attic Slope Mode:** A `90 x 90 cm` 45-degree sloped ceiling cut-out in the top-right corner, with exact intrusion detection and a dedicated inspector warning.
-- **Centimeter-Accurate Positioning:** Free dragging lands on whole centimeters, the `5 cm` snap toggle aligns to the grid, arrow keys nudge by exactly `1 cm`, and `Delete` / `Backspace` removes the selected item.
-- **Local State Persistence:** Wall size, layout, lighting, and Attic Slope state are saved to `localStorage` and pass through the same sanitizer as imports.
-- **Dual Canvas Modes & RGB Controls:** Switch between *Ambient Mode* and *Daylight Grid* (`10 x 10 cm` scale grid), with live RGB color pickers and master brightness dimmer.
+## Highlights
 
-## Technical Notes
+- **Precision placement:** Every position and size lives on a whole-centimeter grid. Dragging, arrow-key nudges, `5 cm` grid snapping, and magnetic alignment all land on exact centimeters, so on-screen readouts never drift from the stored layout.
+- **Live measurement:** Dashed rulers show the distance from the left wall and the ceiling, plus the clearance to the nearest neighbor on every side. Green guides appear whenever an edge or center lines up with another item or the wall center.
+- **Room constraints:** Configurable wall size (`150-400 x 150-300 cm`), AABB overlap warnings, and an optional `90 x 90 cm` 45-degree attic slope with exact intrusion detection.
+- **Lighting preview:** Per-item backlights, a corner floor lamp glow, RGB pickers, presets, and a master dimmer, with an Ambient Mode for night and a Daylight Grid for layout work.
+- **Editing workflow:** 30-step undo/redo, duplication, item locking, layer ordering, and three curated starter templates.
+- **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown), JSON export/import, and a 2x HiDPI PNG snapshot.
 
-### Locking Rules
-Locking protects what an installer has already measured. Drag, nudge, removal, size, finish, and backlight changes all check the flag, and the matching inspector controls are disabled. Trying to move or delete a locked item briefly highlights the lock note to explain why nothing happened. Layer order stays editable, and a wall resize still pushes locked items inside the new bounds, since nothing may sit outside the wall.
+## Architecture
 
-### Spec Sheet
-The Bill of Materials groups items by type, name, size in cm, finish, and price, then sorts by name. Mounting rows run left to right (then top to bottom), the order an installer works along a wall:
+### Coordinate Space
+The wall is modeled at `1 cm = 2.5 px`. Item geometry is stored in wall pixels, but every value is kept to a multiple of `2.5`, i.e. whole centimeters.
 
-```
-From Floor = wallHeightCm - topCm - heightCm
-```
+- Drag positions are quantized to `1 cm` (or `5 cm` with snapping on) before clamping.
+- Arrow keys step from the nearest whole centimeter.
+- Imports and saved state are rounded back onto the grid.
 
-The same rows feed both the modal and the Markdown copy. The dialog is a native `<dialog>` opened with `showModal()`, so focus moves into it, the page behind becomes inert, `Escape` closes it, and focus returns to the button that opened it. Only a click that starts and ends on the backdrop closes it, so dragging a text selection out of a table does not. Editor shortcuts are ignored while it is open.
+Wall pixel sizes are derived from the wall's centimeter dimensions. When the wall is larger than the canvas, it is scaled with a CSS `transform` and pointer deltas are divided by the same factor, so dragging stays 1:1 under the cursor at any fit level.
 
-### PNG Export
-The snapshot is drawn on an offscreen canvas sized to `wallWidthPx * 2` by `wallHeightPx * 2`, in the same stacking order as the live wall: background (and grid in daylight), attic slope, corner glow, then items in layer order and the caption.
+### Rendering Loop
+`mousemove` only records the pointer; a single `requestAnimationFrame` callback per frame applies the newest position. Each frame writes inline `left` / `top` styles and updates rulers, guides, and warnings in place, so the item DOM is never rebuilt during a drag.
 
-Item visuals are read from each element's computed style: fill, border width and color, corner radius, the drop shadow, and the `::before` glow. The PNG therefore always matches the CSS on screen. Shadows are painted on their own by drawing the shape far off canvas and offsetting only its shadow back into place. Because shadow offsets and blur ignore the canvas transform, they are scaled by the pixel ratio by hand.
+Wall bounds are read once per drag, and ruler label sizes are measured once at startup. No layout reads happen inside the frame loop. Alignment guide elements come from a small reusable pool.
 
-### Alignment Model
-Each drag frame first rounds the position to the active grid (`1 cm`, or `5 cm` with snapping on), then looks for alignment between the dragged item's start, center, and end lines and every other item's lines, plus the wall's horizontal center. The closest match within `1 cm` wins. Alignments that would need a half-centimeter position are skipped, so a guide is only ever drawn for an exact alignment.
+### CSS Custom Property Lighting Engine
+Glows are pure CSS. Each item's `::before` pseudo-element carries `box-shadow` layers tinted by `--accent-led`, the corner lamp and wall glow use `--corner-led`, and `--led-opacity` drives the master dimmer. JavaScript changes a lighting preset by setting three custom properties on the root element, with no per-item repaint logic.
 
-### Ruler Layout
-Gap rulers connect the active item to the nearest neighbor on each side whose projection overlaps it, along the center of the shared overlap. When a neighbor sits on the left or top, the wall-edge ruler on that side moves out to the item's far edge. Label sizes are measured once at startup, and labels that would collide slide along their own ruler, with no layout reads during a drag. Blue marks wall distances, pink marks gaps, and green marks alignment.
+Per-item backlights toggle a `.led-off` class, and Daylight Grid mode hides every glow through a single selector.
 
-### Viewport Scaling
-When the wall is larger than the canvas, `#wall` gets a CSS `transform: scale(factor)` and pointer deltas are divided by that factor, so the item stays under the cursor at any fit level.
+### Collision Math
+Items are axis-aligned rectangles, so item-to-item overlap is a standard AABB test. The attic slope is a right triangle with side `S = 225 px` whose diagonal follows `y = x - (wallWidthPx - S)`.
 
-### History Model
-History stores serialized snapshots of the items (including their backlight, lock state, and layer order), the wall size, and the Attic Slope flag, capped at 30 entries. Identical consecutive snapshots are dropped, a new change after an undo truncates the redo branch, and rapid nudges or wall-size spinner clicks merge into one step. Lighting colors and brightness are deliberately outside history.
-
-### Import Validation
-Imports accept a `wallItems` or `items` array. Wall size and all item geometry are rounded to whole centimeters and clamped to the wall, with files from v0.7 and earlier loading on the default `300 x 250 cm` wall. Unknown types are skipped and reported, and invalid finishes, sizes, and prices fall back to catalog values. `ledEnabled` defaults to on and `locked` to off unless they are explicit booleans. Names are length-limited and HTML-escaped, and files over 1 MB or 200 items are rejected.
-
-### Collision Model
-Items are axis-aligned rectangles, so item-to-item overlap uses a standard AABB test. The attic slope is a right triangle with side `S = 225 px` whose diagonal edge follows `y = x - (wallWidthPx - S)`, so checking the top-right corner of an item is an exact intersection test:
+For an axis-aligned box, the top-right corner is always the point that reaches furthest past that line, so testing that single corner is an exact intersection test:
 
 ```
 itemRight > wallWidthPx - S  &&  item.top < itemRight - (wallWidthPx - S)
 ```
 
-### Rendering Performance
-Drag input is coalesced with `requestAnimationFrame`, and the wall bounds are measured once per drag. Each frame writes inline styles for the item, rulers, and alignment guides in place, so the item DOM is never rebuilt mid-drag.
+### Magnetic Alignment & Gap Rulers
+During a drag, the item's start, center, and end lines on each axis are compared with the same three lines of every other item, plus the wall's horizontal center. The closest match within `1 cm` wins, provided the item stays inside the wall. A candidate that would need a half-centimeter position is skipped rather than approximated, so a guide line only ever marks an exact alignment. Holding `Alt` / `Option` suspends the magnet.
+
+Gap rulers find the nearest item on each side whose projection overlaps the active item, and measure along the center of that shared overlap. Labels are placed shortest ruler first; any label that would collide slides along its own ruler to the nearest clear spot.
+
+### Undo / Redo History
+History is a bounded stack of 30 serialized snapshots covering items (including backlight, lock state, and layer order), wall size, and the attic slope. Lighting colors and brightness are treated as preferences and left out.
+
+- Identical consecutive snapshots are dropped.
+- A new action after an undo truncates the redo branch.
+- Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size spinner clicks, become a single step.
+- A drag commits exactly one snapshot on `mouseup`, and only if the item moved.
+
+### XSS-Safe JSON Schema Sanitizer
+Saved state, imported files, and starter templates all pass through one `normalizeLayout()` function. Nothing is applied until the whole file validates, so a bad file never leaves a half-loaded wall.
+
+- **Wall:** dimensions are rounded to whole centimeters and clamped to the allowed range. Files from v0.7, which carry no wall size, load on the default `300 x 250 cm` wall.
+- **Items:** unknown types are skipped and reported. Invalid finishes, sizes, and prices fall back to catalog values read from the catalog markup itself. Geometry is snapped to whole centimeters and clamped inside the wall. `ledEnabled` and `locked` only accept real booleans.
+- **Names and ids:** names are trimmed, length-limited, and HTML-escaped wherever they are rendered. Valid unique ids are kept; duplicate or malformed ids are regenerated.
+- **Limits:** colors must be 6-digit hex, brightness is clamped to `0-100`, and files over 1 MB or 200 items are rejected.
+
+The export schema is versioned (`"1.0"`). Files from `0.7`, `0.8`, and `0.9` import unchanged.
+
+### Bill of Materials & Drilling Coordinates
+The spec sheet groups items by type, name, size in cm, finish, and price into a priced bill of materials. Every item is also listed left to right with its distance from the left wall, the ceiling, and the floor. Installers measure shelving up from the floor, so the bottom edge is derived as:
+
+```
+From Floor = wallHeightCm - topCm - heightCm
+```
+
+The same rows feed the modal tables and the `Copy as Markdown` export, which uses the async Clipboard API with a selection-based fallback.
+
+### HiDPI Canvas 2D PNG Renderer
+`Export PNG` draws the wall on an offscreen canvas at `wallWidthPx * 2` by `wallHeightPx * 2` with the native Canvas 2D API. It paints in the same stacking order as the live DOM: background or daylight grid, attic slope, corner glow, then items in layer order, and finally a dimensions caption.
+
+Item fills, borders, corner radii, drop shadows, and glow layers are read from each element's computed style, so the PNG always matches the CSS on screen without a second copy of the palette. Shadows are painted in isolation by drawing the shape far off canvas and offsetting only its shadow back into place. Shadow offsets and blur ignore the canvas transform, so they are scaled to device pixels by hand.
+
+### Accessibility
+- Both modals are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
+- Catalog entries are real buttons, so items can be mounted with `Enter` or `Space`.
+- Every button and input has a visible label, `aria-label`, or `title`, and buttons show a keyboard focus ring.
+- Inspector panel rebuilds hand keyboard focus back to the control that triggered them.
 
 ## Keyboard Shortcuts
 
-| Action | Shortcut |
+| Shortcut | Action |
 | --- | --- |
-| Nudge selected item by 1 cm | Arrow keys |
-| Place without alignment snapping | Hold `Alt` / `Option` while dragging |
-| Lock or unlock selected item | `L` |
-| Remove selected item | `Delete` / `Backspace` |
-| Duplicate selected item | `Ctrl+D` / `Cmd+D` |
-| Undo | `Ctrl+Z` / `Cmd+Z` |
-| Redo | `Ctrl+Y`, `Ctrl+Shift+Z` / `Cmd+Shift+Z` |
-| Close the spec sheet | `Escape` |
+| Drag item | Move item on the wall (with 1 cm magnetic alignment) |
+| Hold `Alt` / `Option` while dragging | Temporarily bypass magnetic alignment guides |
+| Arrow keys | Nudge the selected item by 1 cm |
+| `Ctrl + Z` / `Cmd + Z` | Undo the last layout action (up to 30 steps) |
+| `Ctrl + Y` / `Ctrl + Shift + Z` / `Cmd + Shift + Z` | Redo a layout action |
+| `Ctrl + D` / `Cmd + D` | Duplicate the selected item (+4 cm offset) |
+| `L` | Lock or unlock the selected item's position and properties |
+| `Delete` / `Backspace` | Remove the selected unlocked item |
+| `?` | Toggle the keyboard shortcuts guide |
+| `Escape` | Close the open modal or deselect the active item |
 
-## Project Structure
+Shortcuts are ignored while typing in a field, and the browser's own text undo keeps working inside number inputs.
 
-- `index.html` - Studio workspace layout, wall size controls, spec sheet dialog, and control bindings
-- `styles/studio-workspace.css` - Flexbox UI layout, surface finish themes, lighting layers, rulers, alignment guides, lock indicators, the attic slope zone, and the spec sheet modal
-- `scripts/planner-engine.js` - State management, undo/redo history, persistence, JSON and PNG export, import validation, wall sizing and viewport fit, drag-and-drop with alignment snapping, locking and layers, rulers, collision checks, and the spec sheet
+## Layout Templates
+
+| Template | Wall | Attic Slope | Composition |
+| --- | --- | --- | --- |
+| Studio Default | 300 x 250 cm | Off | Black poster frame centered above a walnut floating shelf |
+| Gallery & Storage | 320 x 250 cm | Off | Walnut storage unit near the floor, a mirrored pair of poster frames with top-mounted spotlights, a ledge shelf, and a corner floor lamp |
+| Attic Corner | 300 x 240 cm | On | Shelving, a modular cube, and lighting tucked beneath the slope with 12-24 cm of clearance |
+
+Every template is collision-free, and loading one is a single undo step that keeps your lighting colors.
 
 ## Running Locally
 
-No build step required. Clone the repository and open `index.html` via VS Code Live Server or any local static server.
+There is nothing to install or build.
+
+```bash
+git clone https://github.com/s7codes/spatial-light-planner.git
+cd spatial-light-planner
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000`. Any static server works (VS Code Live Server, `npx serve`), and opening `index.html` directly from disk works too.
+
+## Project Structure
+
+```
+index.html                    App shell, catalog, inspector, dialogs, and inline SVG favicon
+styles/studio-workspace.css   Layout, finish themes, lighting layers, rulers, guides, and dialogs
+scripts/planner-engine.js     State, history, persistence, sanitizer, drag engine, alignment,
+                              collision checks, spec sheet, and the Canvas 2D PNG renderer
+```
+
+## Browser Support
+
+Current versions of Chrome, Edge, Firefox, and Safari (15.4 or later, for the native `<dialog>` element).
 
 ## License
 

@@ -16,7 +16,7 @@ const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
 
 const STORAGE_KEY = 'spatial_studio_state_v1';
-const EXPORT_VERSION = '0.9';
+const EXPORT_VERSION = '1.0';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
 const PNG_FILENAME = 'spatial-studio-plan.png';
 const PNG_PIXEL_RATIO = 2;
@@ -95,6 +95,13 @@ const mountingBody = document.getElementById('mounting-body');
 const copyMarkdownBtn = document.getElementById('copy-markdown-btn');
 const closeSpecBtn = document.getElementById('close-spec-btn');
 
+const shortcutsBtn = document.getElementById('shortcuts-btn');
+const shortcutsModal = document.getElementById('shortcuts-modal');
+const closeShortcutsBtn = document.getElementById('close-shortcuts-btn');
+const templateButtons = document.querySelectorAll('.template-btn');
+
+const isModalOpen = () => specModal.open || shortcutsModal.open;
+
 const accentColorPicker = document.getElementById('accent-color-picker');
 const accentHexCode = document.getElementById('accent-hex-code');
 const cornerColorPicker = document.getElementById('corner-color-picker');
@@ -131,6 +138,50 @@ const defaultItems = [
     { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false }
 ];
 
+const templateItem = (type, leftCm, topCm, finish) => ({ type, left: leftCm * SCALE, top: topCm * SCALE, finish });
+
+// Positions are in cm. Every template is collision-free, and Attic Corner stays clear of the slope.
+const LAYOUT_TEMPLATES = {
+    'studio-default': {
+        label: 'Studio Default',
+        wallWidthCm: 300,
+        wallHeightCm: 250,
+        atticSlope: false,
+        items: defaultItems
+    },
+    'gallery-storage': {
+        label: 'Gallery & Storage',
+        wallWidthCm: 320,
+        wallHeightCm: 250,
+        atticSlope: false,
+        // Posters, spotlights and shelf share the 160 cm center line. A 75 cm unit cannot be centered on
+        // a 320 cm wall at whole-cm precision, so the storage sits 0.5 cm left of it.
+        items: [
+            templateItem('storage', 122, 170, 'walnut'),
+            templateItem('shelf', 105, 148, 'walnut'),
+            templateItem('poster', 102, 64, 'black'),
+            templateItem('poster', 168, 64, 'black'),
+            templateItem('spotlight', 119, 38, 'black'),
+            templateItem('spotlight', 185, 38, 'black'),
+            templateItem('corner-lamp', 284, 110, 'black')
+        ]
+    },
+    'attic-corner': {
+        label: 'Attic Corner',
+        wallWidthCm: 300,
+        wallHeightCm: 240,
+        atticSlope: true,
+        // The top shelf, cube and lamp tuck under the slope with 12 to 24 cm of clearance
+        items: [
+            templateItem('shelf', 150, 70, 'walnut'),
+            templateItem('cube', 196, 34, 'oak'),
+            templateItem('spotlight', 162, 40, 'black'),
+            templateItem('corner-lamp', 266, 100, 'black'),
+            templateItem('shelf', 30, 150, 'walnut')
+        ]
+    }
+};
+
 let isAmbientMode = true;
 let selectedItemId = null;
 let wallItems = [];
@@ -140,7 +191,6 @@ let idCounter = 0;
 let ioStatusTimer = 0;
 let fitFrame = 0;
 let copyLabelTimer = 0;
-let backdropPress = false;
 
 let wallWidthCm = DEFAULT_WALL_WIDTH_CM;
 let wallHeightCm = DEFAULT_WALL_HEIGHT_CM;
@@ -188,6 +238,9 @@ const isLedOn = (item) => item.ledEnabled !== false;
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[ch]));
+
+// A typed "?" belongs to any form control that has focus, so the guide shortcut stays out of all of them
+const isFormField = (el) => ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) || el.isContentEditable;
 
 const isTextEntry = (el) =>
     el.isContentEditable ||
@@ -1003,7 +1056,7 @@ function updateInspectorPanel() {
     const layerIndex = wallItems.indexOf(item);
     const layerCount = wallItems.length;
     const finishButtons = FINISHES.map(({ id, label }) => `
-        <button class="btn-finish ${currentFinish === id ? 'active' : ''}" data-finish="${id}" ${lockedAttr}>${label}</button>
+        <button class="btn-finish ${currentFinish === id ? 'active' : ''}" data-finish="${id}" aria-pressed="${currentFinish === id}" title="${label} finish" ${lockedAttr}>${label}</button>
     `).join('');
 
     inspectorBox.innerHTML = `
@@ -1042,8 +1095,8 @@ function updateInspectorPanel() {
             <div class="inspector-field">
                 <label>Layer <span class="layer-readout">${layerIndex + 1} of ${layerCount}</span></label>
                 <div class="layer-buttons">
-                    <button type="button" class="btn-secondary" id="send-backward-btn" ${layerIndex === 0 ? 'disabled' : ''}>Send Backward</button>
-                    <button type="button" class="btn-secondary" id="bring-forward-btn" ${layerIndex === layerCount - 1 ? 'disabled' : ''}>Bring Forward</button>
+                    <button type="button" class="btn-secondary" id="send-backward-btn" title="Move one layer down, behind overlapping items" ${layerIndex === 0 ? 'disabled' : ''}>Send Backward</button>
+                    <button type="button" class="btn-secondary" id="bring-forward-btn" title="Move one layer up, above overlapping items" ${layerIndex === layerCount - 1 ? 'disabled' : ''}>Bring Forward</button>
                 </div>
             </div>
 
@@ -1192,9 +1245,36 @@ function handleItemKeys(e) {
     saveState();
 }
 
+// ? toggles the guide but never stacks it on top of the spec sheet
+function handleShortcutsKey(e) {
+    if (shortcutsModal.open) {
+        e.preventDefault();
+        shortcutsModal.close();
+    } else if (!specModal.open && !dragState.isDragging) {
+        e.preventDefault();
+        openShortcuts();
+    }
+}
+
+// Dialogs close themselves on Escape; with none open it clears the selection, unless a field is being edited
+function handleEscape(e) {
+    if (selectedItemId === null || dragState.isDragging || isTextEntry(e.target)) return;
+    selectItem(null);
+}
+
 window.addEventListener('keydown', (e) => {
-    // The spec sheet is modal, so nothing behind it may react to shortcuts
-    if (specModal.open) return;
+    if (e.key === '?' && !isFormField(e.target)) {
+        handleShortcutsKey(e);
+        return;
+    }
+
+    // An open dialog is modal, so nothing behind it may react to shortcuts
+    if (isModalOpen()) return;
+
+    if (e.key === 'Escape') {
+        handleEscape(e);
+        return;
+    }
 
     if (e.key === 'Alt' && dragState.isDragging) {
         // Alt or Option suspends magnetic alignment for as long as it is held
@@ -1534,7 +1614,7 @@ async function copySpecMarkdown() {
 }
 
 function openSpecSheet() {
-    if (specModal.open || dragState.isDragging) return;
+    if (isModalOpen() || dragState.isDragging) return;
 
     clearTimeout(copyLabelTimer);
     copyMarkdownBtn.textContent = COPY_LABEL;
@@ -1546,14 +1626,47 @@ viewSpecBtn.addEventListener('click', openSpecSheet);
 closeSpecBtn.addEventListener('click', () => specModal.close());
 copyMarkdownBtn.addEventListener('click', copySpecMarkdown);
 
-// Only a click that starts and ends on the backdrop closes the dialog, so dragging a text
+// Only a click that starts and ends on the backdrop closes a dialog, so dragging a text
 // selection out of the panel does not dismiss it
-specModal.addEventListener('mousedown', (e) => {
-    backdropPress = e.target === specModal;
-});
-specModal.addEventListener('click', (e) => {
-    if (backdropPress && e.target === specModal) specModal.close();
-    backdropPress = false;
+function closeOnBackdropClick(dialog) {
+    let pressedBackdrop = false;
+    dialog.addEventListener('mousedown', (e) => {
+        pressedBackdrop = e.target === dialog;
+    });
+    dialog.addEventListener('click', (e) => {
+        if (pressedBackdrop && e.target === dialog) dialog.close();
+        pressedBackdrop = false;
+    });
+}
+
+closeOnBackdropClick(specModal);
+closeOnBackdropClick(shortcutsModal);
+
+function openShortcuts() {
+    if (isModalOpen() || dragState.isDragging) return;
+    shortcutsModal.showModal();
+}
+
+shortcutsBtn.addEventListener('click', openShortcuts);
+closeShortcutsBtn.addEventListener('click', () => shortcutsModal.close());
+
+function loadTemplate(key) {
+    const template = LAYOUT_TEMPLATES[key];
+    if (!template || dragState.isDragging) return;
+
+    // Templates run through the same sanitizer as imports, which fills in catalog sizes, names and prices
+    const layout = normalizeLayout(template);
+    selectedItemId = null;
+    applyLayoutSettings(layout);
+    renderPlanner();
+    applyAtticSlope();
+    updateInspectorPanel();
+    commitLayoutChange();
+    showIoStatus(`Loaded the ${template.label} template.`, 'success');
+}
+
+templateButtons.forEach(button => {
+    button.addEventListener('click', () => loadTemplate(button.dataset.template));
 });
 
 function hexToRgb(hex) {
@@ -1681,25 +1794,23 @@ function paintAtticZone(ctx, fontFamily) {
 
 function paintCornerGlow(ctx, brightness) {
     const style = getComputedStyle(wallCanvas.querySelector('.corner-led-glow'));
-    const width = parseFloat(style.width);
-    const height = parseFloat(style.height);
-    const left = wallWidthPx - parseFloat(style.right) - width;
-    const top = wallHeightPx - parseFloat(style.bottom) - height;
-    const centerX = left + width / 2;
-    const centerY = top + height / 2;
-    // CSS "circle" without a size means farthest-corner, so the radius reaches the box corners
-    const radius = Math.hypot(width / 2, height / 2);
+    const radiusX = parseFloat(style.width) / 2;
+    const radiusY = parseFloat(style.height) / 2;
+    const centerX = wallWidthPx - parseFloat(style.right) - radiusX;
+    const centerY = wallHeightPx - parseFloat(style.bottom) - radiusY;
     const [r, g, b] = hexToRgb(cornerColorPicker.value);
 
-    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+    ctx.save();
+    // The CSS "ellipse closest-side" gradient is a circle stretched to its box proportions
+    ctx.translate(centerX, centerY);
+    ctx.scale(1, radiusY / radiusX);
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radiusX);
     gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
     // Fading to the same color at zero alpha avoids the gray fringe a plain "transparent" stop gives
-    gradient.addColorStop(0.7, `rgba(${r}, ${g}, ${b}, 0)`);
-
-    ctx.save();
+    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
     ctx.globalAlpha = CORNER_GLOW_ALPHA * brightness;
     ctx.fillStyle = gradient;
-    ctx.fillRect(left, top, width, height);
+    ctx.fillRect(-radiusX, -radiusX, radiusX * 2, radiusX * 2);
     ctx.restore();
 }
 
