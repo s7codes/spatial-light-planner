@@ -12,7 +12,7 @@
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v0.6</span></h1>
+            <h1>Spatial Studio <span class="badge">v0.7</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -28,6 +28,10 @@
                 <input type="checkbox" id="attic-slope-toggle">
                 <span>Attic Slope</span>
             </label>
+            <div class="btn-group" role="group" aria-label="History">
+                <button id="undo-btn" class="btn-secondary" title="Undo (Ctrl+Z)" disabled>Undo</button>
+                <button id="redo-btn" class="btn-secondary" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
+            </div>
             <button id="reset-wall-btn" class="btn-secondary">Reset Layout</button>
             <button id="theme-toggle-btn" class="btn-ambient">
                 Ambient Mode: ON
@@ -83,6 +87,16 @@
                     </div>
                     <span class="item-price-tag">$65</span>
                 </div>
+            </div>
+
+            <div class="catalog-footer">
+                <h3>Project File</h3>
+                <div class="io-buttons">
+                    <button id="export-json-btn" class="btn-secondary">Export JSON</button>
+                    <button id="import-json-btn" class="btn-secondary">Import JSON</button>
+                </div>
+                <input type="file" id="import-file-input" accept=".json" hidden>
+                <p id="io-status" class="io-status" role="status" hidden></p>
             </div>
         </aside>
 
