@@ -1,0 +1,26 @@
+{
+  "name": "spatial-light-planner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "To-scale 2D wall planner for shelving, framed art, and ambient RGB lighting.",
+  "homepage": "https://s7codes.github.io/spatial-light-planner/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/s7codes/spatial-light-planner.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "serve": "node tests/support/static-server.js",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

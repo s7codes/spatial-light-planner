@@ -2,9 +2,11 @@
 
 Live Demo: https://s7codes.github.io/spatial-light-planner/
 
+[![E2E Tests](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml/badge.svg)](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml)
+
 A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place them with centimeter precision, check them against overlaps and a sloped attic ceiling, preview the backlighting in a dark room, and hand off a bill of materials, drilling coordinates, or a high-resolution image of the finished plan.
 
-Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies.
+Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies. Playwright is the only dev dependency, and it powers the end-to-end suite.
 
 ## Highlights
 
@@ -14,6 +16,7 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Lighting preview:** Per-item backlights, a corner floor lamp glow, RGB pickers, presets, and a master dimmer, with an Ambient Mode for night and a Daylight Grid for layout work.
 - **Editing workflow:** 30-step undo/redo, duplication, item locking, layer ordering, and three curated starter templates.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown), JSON export/import, and a 2x HiDPI PNG snapshot.
+- **Tested end to end:** 165 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -24,12 +27,14 @@ The wall is modeled at `1 cm = 2.5 px`. Item geometry is stored in wall pixels, 
 - Arrow keys step from the nearest whole centimeter.
 - Imports and saved state are rounded back onto the grid.
 
-Wall pixel sizes are derived from the wall's centimeter dimensions. When the wall is larger than the canvas, it is scaled with a CSS `transform` and pointer deltas are divided by the same factor, so dragging stays 1:1 under the cursor at any fit level.
+Wall pixel sizes are derived from the wall's centimeter dimensions. The wall uses `content-box` sizing, so its 2 px border sits outside that area and items flush with the right or bottom edge stay fully visible. When the wall is larger than the canvas, it is scaled with a CSS `transform` and pointer deltas are divided by the same factor, so dragging stays 1:1 under the cursor at any fit level.
 
 ### Rendering Loop
 `mousemove` only records the pointer; a single `requestAnimationFrame` callback per frame applies the newest position. Each frame writes inline `left` / `top` styles and updates rulers, guides, and warnings in place, so the item DOM is never rebuilt during a drag.
 
-Wall bounds are read once per drag, and ruler label sizes are measured once at startup. No layout reads happen inside the frame loop. Alignment guide elements come from a small reusable pool.
+Wall bounds are read once per drag, ruler label sizes are measured once at startup, and item label sizes once per render. No layout reads happen inside the frame loop. Alignment guide elements come from a small reusable pool.
+
+Lamps and spotlights carry labels wider than themselves. When such an item sits near a wall edge, its label is shifted just far enough to stay inside the wall, live during drags and in the PNG export, instead of being clipped.
 
 ### CSS Custom Property Lighting Engine
 Glows are pure CSS. Each item's `::before` pseudo-element carries `box-shadow` layers tinted by `--accent-led`, the corner lamp and wall glow use `--corner-led`, and `--led-opacity` drives the master dimmer. JavaScript changes a lighting preset by setting three custom properties on the root element, with no per-item repaint logic.
@@ -125,7 +130,46 @@ cd spatial-light-planner
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`. Any static server works (VS Code Live Server, `npx serve`), and opening `index.html` directly from disk works too.
+Then open `http://localhost:8000`. Any static server works (VS Code Live Server, `npx serve`, or `npm run serve` on port 4173), and opening `index.html` directly from disk works too.
+
+## Testing
+
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 165 tests in 11 spec files, one per feature area.
+
+```bash
+npm install
+npx playwright install chromium
+npm test
+```
+
+`npm run test:ui` opens the interactive runner, `npm run test:headed` shows the browser, and `npm run test:report` opens the last HTML report.
+
+| Spec | Covers |
+| --- | --- |
+| `placement` | Starter wall geometry, rulers, 1 cm nudges, whole-cm drags, 5 cm snapping, catalog sizes, spawn cascade, edge labels |
+| `collisions` | Attic slope rendering and the exact 45-degree intrusion test, overlap warnings, persistence |
+| `history` | 30-step undo/redo, merge windows, redo truncation, text field guards, reload behavior |
+| `editing` | Duplication, locking, layer and paint order, per-item backlights |
+| `alignment` | Gap rulers, magnetic alignment, `Alt` bypass, half-centimeter guard |
+| `wall-size` | Resizing, clamping, single-step history, auto-fit scaling, 1:1 drag tracking |
+| `layout-files` | JSON export schema, import validation and sanitizing, HTML escaping, 0.7-0.9 compatibility |
+| `templates` | All three templates: collision-free, on grid, labels inside the wall, one undo step |
+| `spec-sheet` | BOM grouping, drilling coordinates, Markdown export, clipboard fallback, dialog behavior |
+| `png-export` | 2x output size, finishes, glows, dimmer, daylight grid, attic slope, layer order |
+| `app-shell` | Zero failed requests, favicon, shortcuts guide, `Escape`, accessibility audit, responsive layout |
+
+How the suite is built:
+
+- `playwright.config.js` boots `tests/support/static-server.js`, a zero-dependency Node server, so the app is tested over HTTP as it is served in production.
+- Every test starts in a fresh browser context with clean storage, and fails on any uncaught exception or console error.
+- The engine is a classic script, so helpers read its state through `page.evaluate` instead of adding test hooks to the app.
+- Gap ruler readouts are compared with an independent implementation across 40 seeded random layouts.
+- PNG exports are decoded in the browser and sampled pixel by pixel through a custom `toBeNearColor` matcher.
+- Layout checks pass with Inter, DejaVu Sans, Liberation Sans, and FreeSans, so the result does not depend on the fonts installed on the CI runner.
+
+### Continuous Integration
+
+`.github/workflows/e2e.yml` runs the suite on every push to the main branch and on every pull request: Ubuntu, Node 22, and Chromium installed through Playwright. Failed tests are retried once with a trace, and the HTML report is uploaded as a build artifact.
 
 ## Project Structure
 
@@ -134,11 +178,15 @@ index.html                    App shell, catalog, inspector, dialogs, and inline
 styles/studio-workspace.css   Layout, finish themes, lighting layers, rulers, guides, and dialogs
 scripts/planner-engine.js     State, history, persistence, sanitizer, drag engine, alignment,
                               collision checks, spec sheet, and the Canvas 2D PNG renderer
+tests/*.spec.js               Playwright end-to-end specs, one per feature area
+tests/support/                Fixtures, shared helpers, and the zero-dependency static server
+playwright.config.js          Chromium project, local web server, and CI reporters
+.github/workflows/e2e.yml     Runs the suite on every push and pull request
 ```
 
 ## Browser Support
 
-Current versions of Chrome, Edge, Firefox, and Safari (15.4 or later, for the native `<dialog>` element).
+Current versions of Chrome, Edge, Firefox, and Safari (15.4 or later, for the native `<dialog>` element). The automated suite runs in Chromium.
 
 ## License
 
