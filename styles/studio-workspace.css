@@ -1,16 +1,13 @@
-/* ==========================================================================
-   1. DESIGN TOKENS & GLOBAL RESET (:root)
-   ========================================================================== */
 :root {
-    --bg-app: #0f1115;          
-    --bg-panel: #181b22;        
-    --border-color: #2a2f3a;    
-    --text-main: #f3f4f6;       
-    --text-muted: #9ca3af;      
-    
-    --accent-led: #ff9d42;      
-    --corner-led: #8b5cf6;      
-    --led-opacity: 1;           
+    --bg-app: #0f1115;
+    --bg-panel: #181b22;
+    --border-color: #2a2f3a;
+    --text-main: #f3f4f6;
+    --text-muted: #9ca3af;
+
+    --accent-led: #ff9d42;
+    --corner-led: #8b5cf6;
+    --led-opacity: 1;
 }
 
 * {
@@ -29,11 +26,9 @@ body {
     overflow: hidden;
 }
 
-/* ==========================================================================
-   2. TOP APPLICATION BAR
-   ========================================================================== */
+/* Top bar */
 .topbar {
-    height: 60px;
+    height: 56px;
     background-color: var(--bg-panel);
     border-bottom: 1px solid var(--border-color);
     display: flex;
@@ -49,68 +44,75 @@ body {
 }
 
 .logo-dot {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     background-color: var(--accent-led);
     border-radius: 50%;
-    box-shadow: 0 0 10px var(--accent-led);
+    box-shadow: 0 0 8px var(--accent-led);
     transition: background-color 0.2s, box-shadow 0.2s;
 }
 
 .logo h1 {
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 600;
+    letter-spacing: 0.2px;
 }
 
 .badge {
-    font-size: 12px;
+    font-size: 11px;
     background-color: #2a2f3a;
-    padding: 2px 8px;
+    padding: 2px 6px;
     border-radius: 4px;
     color: var(--text-muted);
+    margin-left: 4px;
 }
 
 .wall-dimensions-display {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-muted);
 }
 
+.scale-note {
+    opacity: 0.7;
+    margin-left: 4px;
+}
+
 .btn-ambient {
-    background-color: #262b36;
+    background-color: #222630;
     color: var(--text-main);
     border: 1px solid var(--accent-led);
-    padding: 8px 16px;
-    border-radius: 6px;
+    padding: 7px 14px;
+    border-radius: 5px;
     cursor: pointer;
+    font-size: 13px;
     font-weight: 500;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
 }
 
 .btn-ambient:hover {
     background-color: var(--accent-led);
-    color: #000;
+    color: #0f1115;
 }
 
 .btn-ambient.daylight-active {
     border-color: #3b82f6;
-    background-color: rgba(59, 130, 246, 0.15);
+    background-color: rgba(59, 130, 246, 0.12);
+    color: var(--text-main);
 }
 
-/* ==========================================================================
-   3. WORKSPACE & SIDEBAR PANELS
-   ========================================================================== */
+/* Main workspace layout */
 .workspace {
     display: flex;
     flex: 1;
 }
 
 .sidebar {
-    width: 280px;
+    width: 270px;
     background-color: var(--bg-panel);
-    padding: 20px;
+    padding: 18px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 18px;
 }
 
 .catalog {
@@ -125,49 +127,66 @@ body {
 .inspector-content {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 12px;
     overflow-y: auto;
-    max-height: calc(100vh - 180px);
+    max-height: calc(100vh - 160px);
     padding-right: 4px;
 }
 
 .sidebar h2 {
-    font-size: 14px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.8px;
     color: var(--text-muted);
+    margin-top: 4px;
 }
 
 .sidebar-hint {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-muted);
     line-height: 1.4;
 }
 
 .catalog-group h3 {
-    font-size: 13px;
-    margin-bottom: 10px;
-    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text-muted);
 }
 
 .catalog-item {
     background-color: #222630;
     border: 1px solid var(--border-color);
-    padding: 10px 12px;
-    border-radius: 6px;
-    font-size: 13px;
+    padding: 9px 12px;
+    border-radius: 5px;
     margin-bottom: 8px;
     cursor: pointer;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: transform 0.15s ease, border-color 0.15s ease, background-color 0.15s;
+    transition: border-color 0.15s ease, background-color 0.15s;
 }
 
 .catalog-item:hover {
     border-color: var(--accent-led);
-    background-color: #2a2f3a;
-    transform: translateX(4px);
+    background-color: #262b36;
+}
+
+.item-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.item-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-main);
+}
+
+.item-dims {
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 .item-price-tag {
@@ -176,9 +195,7 @@ body {
     font-size: 12px;
 }
 
-/* ==========================================================================
-   4. INTERACTIVE 2D WALL CANVAS & MODES
-   ========================================================================== */
+/* Wall canvas & grid */
 .canvas-area {
     flex: 1;
     display: flex;
@@ -189,6 +206,7 @@ body {
 }
 
 .wall {
+    /* 300 x 250 cm at 2.5px per cm */
     width: 750px;
     height: 625px;
     position: relative;
@@ -196,7 +214,7 @@ body {
     border: 2px solid #374151;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
     overflow: hidden;
-    transition: background-color 0.4s ease, border-color 0.4s ease;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 .wall.daylight-mode {
@@ -204,13 +222,11 @@ body {
     background-image: 
         linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
-    background-size: 25px 25px;
+    background-size: 25px 25px; /* 10x10 cm grid */
     border-color: #9ca3af;
 }
 
-/* ==========================================================================
-   5. DYNAMIC MOUNTED WALL ITEMS & LIGHTING
-   ========================================================================== */
+/* Mounted wall elements */
 .wall-item {
     position: absolute;
     display: flex;
@@ -219,13 +235,11 @@ body {
     cursor: pointer;
     user-select: none;
     z-index: 2;
-    transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Visual highlight when an item is selected on the wall */
 .wall-item.selected {
-    outline: 2px dashed #3b82f6;
-    outline-offset: 3px;
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
 }
 
 .wall-item::before {
@@ -248,11 +262,11 @@ body {
     color: rgba(255, 255, 255, 0.85);
     background-color: rgba(0, 0, 0, 0.65);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: 3px;
     pointer-events: none;
+    white-space: nowrap;
 }
 
-/* Item Types */
 .wall-item.shelf {
     background-color: #5c4033;
     border: 1px solid #8b5a2b;
@@ -266,7 +280,7 @@ body {
 .wall-item.cube {
     background-color: #4a5568;
     border: 1px solid #718096;
-    border-radius: 4px;
+    border-radius: 3px;
     box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.cube::before {
@@ -295,14 +309,13 @@ body {
 .wall-item.corner-lamp {
     background-color: #1e293b;
     border: 2px solid #475569;
-    border-radius: 6px;
+    border-radius: 4px;
     box-shadow: 0 10px 20px rgba(0, 0, 0, 0.6);
 }
 .wall-item.corner-lamp::before {
     box-shadow: 0 0 40px var(--corner-led);
 }
 
-/* Corner LED Ambient Glow */
 .corner-led-glow {
     position: absolute;
     right: -120px;
@@ -316,14 +329,12 @@ body {
     transition: opacity 0.3s ease;
 }
 
-/* ==========================================================================
-   6. INSPECTOR CONTROLS & DELETE BUTTON
-   ========================================================================== */
+/* Inspector controls */
 .inspector-box {
     background-color: #222630;
-    padding: 12px 14px;
-    border-radius: 6px;
-    font-size: 13px;
+    padding: 12px;
+    border-radius: 5px;
+    font-size: 12px;
     color: var(--text-muted);
     line-height: 1.5;
     border: 1px solid var(--border-color);
@@ -332,36 +343,36 @@ body {
 .selected-item-info {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
 }
 
 .selected-item-title {
     font-weight: 600;
     color: var(--text-main);
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .btn-danger {
-    background-color: #ef4444;
+    background-color: #dc2626;
     color: #fff;
     border: none;
     padding: 6px 10px;
     border-radius: 4px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
-    text-align: center;
+    margin-top: 4px;
+    transition: background-color 0.15s;
 }
 
 .btn-danger:hover {
-    background-color: #dc2626;
+    background-color: #b91c1c;
 }
 
 .control-group {
     background-color: #222630;
-    padding: 12px 14px;
-    border-radius: 6px;
+    padding: 10px 12px;
+    border-radius: 5px;
     border: 1px solid var(--border-color);
     display: flex;
     flex-direction: column;
@@ -369,14 +380,14 @@ body {
 }
 
 .control-group label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.4px;
 }
 
-.color-Input-wrapper {
+.color-input-wrapper {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -385,10 +396,10 @@ body {
 input[type="color"] {
     -webkit-appearance: none;
     appearance: none;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border: none;
-    border-radius: 6px;
+    border-radius: 4px;
     background: none;
     cursor: pointer;
 }
@@ -399,15 +410,15 @@ input[type="color"]::-webkit-color-swatch-wrapper {
 
 input[type="color"]::-webkit-color-swatch {
     border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
+    border-radius: 4px;
 }
 
 .hex-readout {
     font-family: monospace;
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-main);
     background-color: #181b22;
-    padding: 6px 10px;
+    padding: 5px 8px;
     border-radius: 4px;
     border: 1px solid var(--border-color);
     flex: 1;
@@ -421,7 +432,7 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 #brightness-value {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: var(--accent-led);
 }
@@ -442,33 +453,31 @@ input[type="range"] {
     background-color: #181b22;
     color: var(--text-main);
     border: 1px solid var(--border-color);
-    padding: 8px;
+    padding: 7px 10px;
     border-radius: 4px;
     font-size: 12px;
     cursor: pointer;
-    transition: border-color 0.2s, transform 0.1s;
     text-align: left;
-    padding-left: 12px;
+    transition: border-color 0.15s;
 }
 
 .btn-preset:hover {
     border-color: var(--accent-led);
-    transform: translateX(2px);
 }
 
 .budget-box {
     border-top: 1px solid var(--border-color);
-    padding-top: 16px;
+    padding-top: 14px;
 }
 
 .budget-box h3 {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--text-muted);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
 }
 
 .total-price {
-    font-size: 24px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--accent-led);
 }

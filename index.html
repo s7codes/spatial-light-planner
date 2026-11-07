@@ -4,14 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Spatial & Ambient Light Planner</title>
-    <!-- Link custom studio stylesheet -->
     <link rel="stylesheet" href="styles/studio-workspace.css">
-    <!-- Load core planner logic after DOM parsing completes -->
     <script src="scripts/planner-engine.js" defer></script>
 </head>
 <body>
 
-    <!-- 1. TOP APPLICATION BAR -->
     <header class="topbar">
         <div class="logo">
             <span class="logo-dot"></span>
@@ -19,75 +16,88 @@
         </div>
 
         <div class="wall-dimensions-display">
-            Target Wall: <strong>300 cm × 250 cm</strong> (Scale: 1 cm = 2.5 px)
+            Wall: <strong>300 × 250 cm</strong> <span class="scale-note">(1 cm = 2.5 px)</span>
         </div>
 
         <div class="actions">
             <button id="theme-toggle-btn" class="btn-ambient">
-                🌙 Ambient Mode: ON
+                Ambient Mode: ON
             </button>
         </div>
     </header>
 
-    <!-- 2. MAIN STUDIO WORKSPACE (3-Column Layout) -->
     <main class="workspace">
 
-        <!-- LEFT SIDEBAR: Component Catalog (Click to Spawn) -->
+        <!-- Catalog Sidebar -->
         <aside class="sidebar catalog">
-            <h2>Component Catalog</h2>
-            <p class="sidebar-hint">Click any item below to instantly mount it onto the wall canvas.</p>
+            <h2>Components</h2>
+            <p class="sidebar-hint">Click an item to add it to the wall canvas.</p>
 
             <div class="catalog-group">
                 <h3>Shelving & Storage</h3>
-                <div class="catalog-item" data-type="shelf" data-name="Floating Shelf (110 cm)" data-price="45" data-width="275" data-height="20">
-                    📏 Floating Shelf (110 cm) <span class="item-price-tag">$45</span>
+                <div class="catalog-item" data-type="shelf" data-name="Floating Shelf" data-price="45" data-width="275" data-height="20">
+                    <div class="item-meta">
+                        <span class="item-title">Floating Shelf</span>
+                        <span class="item-dims">110 × 26 cm</span>
+                    </div>
+                    <span class="item-price-tag">$45</span>
                 </div>
-                <div class="catalog-item" data-type="cube" data-name="Modular Cube Storage" data-price="30" data-width="90" data-height="90">
-                    📦 Modular Cube (35 cm) <span class="item-price-tag">$30</span>
+                <div class="catalog-item" data-type="cube" data-name="Modular Cube" data-price="30" data-width="90" data-height="90">
+                    <div class="item-meta">
+                        <span class="item-title">Modular Cube</span>
+                        <span class="item-dims">35 × 35 cm</span>
+                    </div>
+                    <span class="item-price-tag">$30</span>
                 </div>
             </div>
 
             <div class="catalog-group">
-                <h3>Decor & Smart Lighting</h3>
-                <div class="catalog-item" data-type="poster" data-name="Poster Frame (50×70 cm)" data-price="25" data-width="125" data-height="175">
-                    🖼️ Poster Frame (50×70 cm) <span class="item-price-tag">$25</span>
+                <h3>Decor & Lighting</h3>
+                <div class="catalog-item" data-type="poster" data-name="Poster Frame" data-price="25" data-width="125" data-height="175">
+                    <div class="item-meta">
+                        <span class="item-title">Poster Frame</span>
+                        <span class="item-dims">50 × 70 cm</span>
+                    </div>
+                    <span class="item-price-tag">$25</span>
                 </div>
-                <div class="catalog-item" data-type="spotlight" data-name="Mini Top Spotlight" data-price="35" data-width="40" data-height="40">
-                    💡 Mini Spotlight (LED) <span class="item-price-tag">$35</span>
+                <div class="catalog-item" data-type="spotlight" data-name="Mini Spotlight" data-price="35" data-width="40" data-height="40">
+                    <div class="item-meta">
+                        <span class="item-title">Mini Spotlight</span>
+                        <span class="item-dims">Top-mount LED</span>
+                    </div>
+                    <span class="item-price-tag">$35</span>
                 </div>
-                <div class="catalog-item" data-type="corner-lamp" data-name="Corner LED Floor Lamp" data-price="65" data-width="50" data-height="140">
-                    🌈 Corner Floor Lamp <span class="item-price-tag">$65</span>
+                <div class="catalog-item" data-type="corner-lamp" data-name="Corner Floor Lamp" data-price="65" data-width="50" data-height="140">
+                    <div class="item-meta">
+                        <span class="item-title">Corner Floor Lamp</span>
+                        <span class="item-dims">140 cm RGB bar</span>
+                    </div>
+                    <span class="item-price-tag">$65</span>
                 </div>
             </div>
         </aside>
 
-        <!-- CENTER AREA: Interactive 2D Wall Canvas -->
+        <!-- Wall Canvas -->
         <section class="canvas-area">
-            <!-- 300x250 cm physical wall rendered at 750x625 px (1:2.5 scale) -->
             <div id="wall" class="wall ambient-mode">
-                
-                <!-- Dynamic wall items will be rendered here automatically by JavaScript -->
-
-                <!-- Standing Corner RGB Floor Lamp Projection (Ambient Backdrop) -->
                 <div class="corner-led-glow"></div>
-
             </div>
         </section>
 
-        <!-- RIGHT SIDEBAR: Property Inspector & Lighting Controls -->
+        <!-- Inspector & Lighting Sidebar -->
         <aside class="sidebar inspector">
             <div class="inspector-content">
-                <h2>Inspector & Lighting</h2>
+                <h2>Inspector</h2>
                 
-                <!-- Dynamic Selection Box -->
                 <div id="inspector-box" class="inspector-box">
-                    <p>Click any mounted item on the wall to inspect properties or remove it.</p>
+                    <p>Select an item on the wall to view dimensions or remove it.</p>
                 </div>
 
-                <!-- Lighting Controllers -->
+                <h2>Lighting</h2>
+
                 <div class="control-group">
                     <label for="accent-color-picker">Shelf & Spot RGB</label>
-                    <div class="color-Input-wrapper">
+                    <div class="color-input-wrapper">
                         <input type="color" id="accent-color-picker" value="#ff9d42">
                         <span id="accent-hex-code" class="hex-readout">#FF9D42</span>
                     </div>
@@ -95,7 +105,7 @@
 
                 <div class="control-group">
                     <label for="corner-color-picker">Corner Lamp RGB</label>
-                    <div class="color-Input-wrapper">
+                    <div class="color-input-wrapper">
                         <input type="color" id="corner-color-picker" value="#8b5cf6">
                         <span id="corner-hex-code" class="hex-readout">#8B5CF6</span>
                     </div>
@@ -103,25 +113,24 @@
 
                 <div class="control-group">
                     <div class="slider-header">
-                        <label for="brightness-slider">Master Brightness</label>
+                        <label for="brightness-slider">Brightness</label>
                         <span id="brightness-value">100%</span>
                     </div>
                     <input type="range" id="brightness-slider" min="0" max="100" value="100">
                 </div>
 
                 <div class="control-group">
-                    <label>Quick Ambience Presets</label>
+                    <label>Presets</label>
                     <div class="preset-buttons">
-                        <button class="btn-preset" data-accent="#ff9d42" data-corner="#8b5cf6">Cozy Warm</button>
-                        <button class="btn-preset" data-accent="#00f2fe" data-corner="#ff0844">Cyberpunk</button>
-                        <button class="btn-preset" data-accent="#38ef7d" data-corner="#11998e">Forest Zen</button>
+                        <button class="btn-preset" data-accent="#ff9d42" data-corner="#8b5cf6">Warm Walnut</button>
+                        <button class="btn-preset" data-accent="#00f2fe" data-corner="#ff0844">Neon Contrast</button>
+                        <button class="btn-preset" data-accent="#38ef7d" data-corner="#11998e">Soft Green</button>
                     </div>
                 </div>
             </div>
 
-            <!-- Total Budget Calculation Box -->
             <div class="budget-box">
-                <h3>Estimated Setup Cost</h3>
+                <h3>Estimated Cost</h3>
                 <div class="total-price" id="total-price">$0.00</div>
             </div>
         </aside>

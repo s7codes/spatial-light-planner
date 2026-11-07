@@ -1,9 +1,5 @@
-/**
- * Spatial & Ambient Light Planner - Core Engine (v0.3)
- * Handles state management, dynamic item spawning, budget calculation, and lighting controls.
- */
+const SCALE = 2.5; // 1 cm = 2.5 px
 
-// 1. SELECT DOM ELEMENTS
 const wallCanvas = document.getElementById('wall');
 const themeToggleBtn = document.getElementById('theme-toggle-btn');
 const catalogItems = document.querySelectorAll('.catalog-item');
@@ -18,23 +14,18 @@ const brightnessSlider = document.getElementById('brightness-slider');
 const brightnessValue = document.getElementById('brightness-value');
 const presetButtons = document.querySelectorAll('.btn-preset');
 
-// 2. APPLICATION STATE
 let isAmbientMode = true;
-let selectedItemId = null; // ID of currently selected wall item
+let selectedItemId = null;
 
-// Initial wall items array (Starting with our default prototype items)
 let wallItems = [
-    { id: 'item-1', type: 'shelf', name: 'Floating Shelf (110 cm)', price: 45, left: 120, top: 380, width: 275, height: 20 },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame (50×70 cm)', price: 25, left: 195, top: 140, width: 125, height: 175 }
+    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20 },
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175 }
 ];
 
-// 3. RENDER WALL ITEMS & CALCULATE TOTAL BUDGET
 function renderPlanner() {
-    // Keep the corner LED glow element inside the wall
     const cornerGlowHTML = `<div class="corner-led-glow"></div>`;
     
-    // Generate HTML for all items currently in the state array
-    let itemsHTML = wallItems.map(item => {
+    const itemsHTML = wallItems.map(item => {
         const isSelected = item.id === selectedItemId ? 'selected' : '';
         return `
             <div class="wall-item ${item.type} ${isSelected}" 
@@ -47,92 +38,92 @@ function renderPlanner() {
 
     wallCanvas.innerHTML = itemsHTML + cornerGlowHTML;
 
-    // Attach click listeners to freshly rendered wall items
     document.querySelectorAll('.wall-item').forEach(el => {
         el.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent wall click event
+            e.stopPropagation();
             selectItem(el.dataset.id);
         });
     });
 
-    // Calculate total budget
     const totalPrice = wallItems.reduce((sum, item) => sum + item.price, 0);
     totalPriceDisplay.textContent = `$${totalPrice.toFixed(2)}`;
 }
 
-// 4. SPAWN NEW ITEM FROM CATALOG
 catalogItems.forEach(catalogEl => {
     catalogEl.addEventListener('click', () => {
-        const type = catalogEl.dataset.type;
-        const name = catalogEl.dataset.name;
-        const price = parseFloat(catalogEl.dataset.price);
-        const width = parseInt(catalogEl.dataset.width);
-        const height = parseInt(catalogEl.dataset.height);
+        // Offset each new item slightly so multiple spawns don't stack invisibly
+        const offset = (wallItems.length * 20) % 160;
 
-        // Generate a unique ID using timestamp
         const newItem = {
             id: 'item-' + Date.now(),
-            type: type,
-            name: name,
-            price: price,
-            left: 220 + (wallItems.length * 15) % 150, // Stagger default spawn position
-            top: 250 + (wallItems.length * 15) % 100,
-            width: width,
-            height: height
+            type: catalogEl.dataset.type,
+            name: catalogEl.dataset.name,
+            price: parseFloat(catalogEl.dataset.price),
+            left: 200 + offset,
+            top: 220 + offset,
+            width: parseInt(catalogEl.dataset.width, 10),
+            height: parseInt(catalogEl.dataset.height, 10)
         };
 
         wallItems.push(newItem);
-        selectItem(newItem.id); // Auto-select the newly added item
+        selectItem(newItem.id);
         renderPlanner();
     });
 });
 
-// 5. SELECT ITEM & UPDATE INSPECTOR PANEL
+function resetInspectorText() {
+    inspectorBox.innerHTML = `<p>Select an item on the wall to view dimensions or remove it.</p>`;
+}
+
 function selectItem(itemId) {
     selectedItemId = itemId;
-    renderPlanner(); // Re-render to update visual selection outline
+    renderPlanner();
 
     const item = wallItems.find(i => i.id === itemId);
     if (!item) {
-        inspectorBox.innerHTML = `<p>Click any mounted item on the wall to inspect properties or remove it.</p>`;
+        resetInspectorText();
         return;
     }
 
+    const widthCm = Math.round(item.width / SCALE);
+    const heightCm = Math.round(item.height / SCALE);
+    const leftCm = Math.round(item.left / SCALE);
+    const topCm = Math.round(item.top / SCALE);
+
     inspectorBox.innerHTML = `
         <div class="selected-item-info">
-            <span class="selected-item-title">📌 ${item.name}</span>
-            <span>Price: <strong>$${item.price}</strong></span>
-            <span>Position: X: ${item.left}px, Y: ${item.top}px</span>
-            <button class="btn-danger" id="delete-item-btn">Remove from Wall</button>
+            <span class="selected-item-title">${item.name}</span>
+            <span>Size: <strong>${widthCm} × ${heightCm} cm</strong></span>
+            <span>Offset: <strong>${leftCm} cm (X), ${topCm} cm (Y)</strong></span>
+            <span>Cost: <strong>$${item.price}</strong></span>
+            <button class="btn-danger" id="delete-item-btn">Remove Item</button>
         </div>
     `;
 
-    // Attach delete handler
     document.getElementById('delete-item-btn').addEventListener('click', () => {
         wallItems = wallItems.filter(i => i.id !== itemId);
         selectedItemId = null;
-        inspectorBox.innerHTML = `<p>Click any mounted item on the wall to inspect properties or remove it.</p>`;
+        resetInspectorText();
         renderPlanner();
     });
 }
 
-// Deselect when clicking empty wall space
 wallCanvas.addEventListener('click', () => {
-    selectedItemId = null;
-    renderPlanner();
-    inspectorBox.innerHTML = `<p>Click any mounted item on the wall to inspect properties or remove it.</p>`;
+    if (selectedItemId !== null) {
+        selectedItemId = null;
+        renderPlanner();
+        resetInspectorText();
+    }
 });
 
-// 6. TOGGLE AMBIENT VS. DAYLIGHT MODE
 themeToggleBtn.addEventListener('click', () => {
     isAmbientMode = !isAmbientMode;
     wallCanvas.classList.toggle('daylight-mode', !isAmbientMode);
     themeToggleBtn.classList.toggle('daylight-active', !isAmbientMode);
 
-    themeToggleBtn.textContent = isAmbientMode ? '🌙 Ambient Mode: ON' : '☀️ Daylight Grid: ON';
+    themeToggleBtn.textContent = isAmbientMode ? 'Ambient Mode: ON' : 'Daylight Grid: ON';
 });
 
-// 7. REAL-TIME RGB COLOR & BRIGHTNESS CONTROLS
 function updateAccentColor(hexColor) {
     document.documentElement.style.setProperty('--accent-led', hexColor);
     accentHexCode.textContent = hexColor.toUpperCase();
@@ -162,5 +153,4 @@ presetButtons.forEach(button => {
     });
 });
 
-// Initial Render on Page Load
 renderPlanner();
