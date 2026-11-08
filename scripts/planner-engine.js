@@ -16,7 +16,7 @@ const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
 
 const STORAGE_KEY = 'spatial_studio_state_v1';
-const EXPORT_VERSION = '1.0';
+const EXPORT_VERSION = '1.3';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
 const PNG_FILENAME = 'spatial-studio-plan.png';
 const PNG_PIXEL_RATIO = 2;
@@ -40,6 +40,9 @@ const LABEL_GAP_PX = 3;
 const LABEL_SLIDE_STEP_PX = 4;
 const ITEM_LABEL_INSET_PX = 3; // clearance between an item label and the wall edge
 const CATALOG_DRAG_THRESHOLD_PX = 6;
+const MARQUEE_THRESHOLD_PX = 3;
+const PRESS_TRAVEL_PX = 3; // below this a press on a group member is a click, not a move
+const MENU_EDGE_PX = 8;
 
 const RESIZE_HANDLES_HTML = ['e', 's', 'se']
     .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
@@ -71,6 +74,8 @@ const canvasArea = document.querySelector('.canvas-area');
 const wallItemsLayer = document.getElementById('wall-items');
 const atticZone = document.getElementById('attic-zone');
 const alignLayer = document.getElementById('align-guides');
+const marqueeBox = document.getElementById('selection-marquee');
+const selectionBounds = document.getElementById('selection-bounds');
 
 const wallWidthInput = document.getElementById('wall-width-input');
 const wallHeightInput = document.getElementById('wall-height-input');
@@ -117,6 +122,10 @@ const brightnessSlider = document.getElementById('brightness-slider');
 const brightnessValue = document.getElementById('brightness-value');
 const presetButtons = document.querySelectorAll('.btn-preset');
 
+const contextMenu = document.getElementById('context-menu');
+const contextMenuTitle = document.getElementById('context-menu-title');
+const contextMenuButtons = [...contextMenu.querySelectorAll('.context-menu-item')];
+
 const createRuler = (id) => {
     const el = document.getElementById(id);
     return { el, label: el.querySelector('.guide-label'), spec: null };
@@ -141,8 +150,8 @@ const CATALOG_DEFAULTS = Object.fromEntries([...catalogItems].map(el => [el.data
 }]));
 
 const defaultItems = [
-    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false }
+    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null },
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null }
 ];
 
 const templateItem = (type, leftCm, topCm, finish) => ({ type, left: leftCm * SCALE, top: topCm * SCALE, finish });
@@ -190,7 +199,8 @@ const LAYOUT_TEMPLATES = {
 };
 
 let isAmbientMode = true;
-let selectedItemId = null;
+// Kept in selection order; layer order comes from wallItems whenever it matters
+let selectedItemIds = [];
 let wallItems = [];
 let ignoreWallClick = false;
 let wallClickGuard = 0;
@@ -214,16 +224,24 @@ let historyStack = [];
 let historyIndex = -1;
 let lastHistoryPush = { mergeKey: null, time: 0 };
 
+// A drag always moves the whole selection; a single item is simply a group of one
 const createIdleDragState = () => ({
     isDragging: false,
     itemId: null,
-    element: null,
+    members: [],
+    excludedIds: new Set(),
+    bounds: null,
+    group: false,
+    blocked: false,
+    travelled: false,
     wallRect: null,
     scale: 1,
     offsetX: 0,
     offsetY: 0,
     pointerX: 0,
     pointerY: 0,
+    pressX: 0,
+    pressY: 0,
     startLeft: 0,
     startTop: 0,
     altKey: false,
@@ -267,7 +285,26 @@ let catalogDrag = createIdleCatalogDrag();
 let suppressCatalogClick = false;
 let catalogClickGuard = 0;
 
-const isPointerBusy = () => dragState.isDragging || resizeState.active || catalogDrag.active;
+const createIdleMarquee = () => ({
+    pending: false,
+    active: false,
+    baseIds: [],
+    hitIds: [],
+    elements: [],
+    wallRect: null,
+    scale: 1,
+    originX: 0,
+    originY: 0,
+    pressX: 0,
+    pressY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    frameId: 0
+});
+
+let marquee = createIdleMarquee();
+
+const isPointerBusy = () => dragState.isDragging || resizeState.active || catalogDrag.active || marquee.active;
 
 const cloneDefaults = () => JSON.parse(JSON.stringify(defaultItems));
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
@@ -275,11 +312,26 @@ const quantize = (px, step) => Math.round(px / step) * step;
 const toCm = (px) => Math.round(px / SCALE);
 const isWholeCm = (px) => Math.abs(px / SCALE - Math.round(px / SCALE)) < EPSILON;
 const formatOffset = (item) => `${toCm(item.left)} cm (X), ${toCm(item.top)} cm (Y)`;
-const getSelectedItem = () => wallItems.find(i => i.id === selectedItemId);
+const formatFootprint = (box) => `${toCm(box.width)} x ${toCm(box.height)} cm`;
+const isSelected = (itemId) => selectedItemIds.includes(itemId);
+const getSelectedItems = () => wallItems.filter(item => selectedItemIds.includes(item.id));
+// The single-item editors only apply when exactly one item is selected
+const getSelectedItem = () => (selectedItemIds.length === 1 ? wallItems.find(i => i.id === selectedItemIds[0]) : undefined);
 const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-item[data-id="${itemId}"]`);
 const createItemId = () => `item-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
 const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const isLedOn = (item) => item.ledEnabled !== false;
+const ledColorOf = (item) => (isHexColor(item.itemLedColor)
+    ? item.itemLedColor
+    : (item.type === 'corner-lamp' ? cornerColorPicker : accentColorPicker).value);
+
+function getBounds(items) {
+    const left = Math.min(...items.map(i => i.left));
+    const top = Math.min(...items.map(i => i.top));
+    const right = Math.max(...items.map(i => i.left + i.width));
+    const bottom = Math.max(...items.map(i => i.top + i.height));
+    return { left, top, width: right - left, height: bottom - top };
+}
 
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, ch => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -403,7 +455,9 @@ function sanitizeItem(raw, usedIds, bounds) {
         height,
         finish: FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish,
         ledEnabled: typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true,
-        locked: raw.locked === true
+        locked: raw.locked === true,
+        // Files from before v1.3 have no per-item color, so those items follow the global lighting
+        itemLedColor: isHexColor(raw.itemLedColor) ? raw.itemLedColor.toLowerCase() : null
     };
 }
 
@@ -524,7 +578,7 @@ function restoreHistoryStep(step) {
     setWallDimensions(snapshot.wallWidthCm, snapshot.wallHeightCm);
     wallItems = snapshot.items;
     atticSlopeToggle.checked = snapshot.atticSlope;
-    if (!getSelectedItem()) selectedItemId = null;
+    selectedItemIds = selectedItemIds.filter(id => wallItems.some(item => item.id === id));
 
     renderPlanner();
     applyAtticSlope();
@@ -538,14 +592,15 @@ const redo = () => restoreHistoryStep(1);
 
 function renderPlanner() {
     wallItemsLayer.innerHTML = wallItems.map(item => {
-        const isSelected = item.id === selectedItemId ? 'selected' : '';
+        const selectedClass = isSelected(item.id) ? 'selected' : '';
         const finishClass = item.finish ? `finish-${item.finish}` : 'finish-walnut';
         const ledClass = isLedOn(item) ? '' : 'led-off';
         const lockClass = item.locked ? 'locked' : '';
+        const ledColor = isHexColor(item.itemLedColor) ? ` --item-color: ${item.itemLedColor};` : '';
         return `
-            <div class="wall-item ${item.type} ${finishClass} ${isSelected} ${ledClass} ${lockClass}"
+            <div class="wall-item ${item.type} ${finishClass} ${selectedClass} ${ledClass} ${lockClass}"
                  data-id="${escapeHtml(item.id)}"
-                 style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;">
+                 style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;${ledColor}">
                 <span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>
             </div>
         `;
@@ -567,6 +622,7 @@ function renderPlanner() {
         flagWallEdges(item, elements[index]);
     });
     syncResizeHandles();
+    syncSelectionBounds();
 
     updateCollisionStates();
     updateDistanceGuides();
@@ -699,7 +755,8 @@ function setRuler(ruler, spec) {
     }
 }
 
-function findNeighborGaps(item) {
+// The excluded ids are the selection itself, so a group measures only to items outside it
+function findNeighborGaps(item, excludedIds) {
     const right = item.left + item.width;
     const bottom = item.top + item.height;
     const nearest = {};
@@ -709,7 +766,7 @@ function findNeighborGaps(item) {
     };
 
     wallItems.forEach(other => {
-        if (other.id === item.id) return;
+        if (excludedIds.has(other.id)) return;
         const otherRight = other.left + other.width;
         const otherBottom = other.top + other.height;
         // A neighbor only counts when its projection overlaps the active item on the other axis
@@ -753,14 +810,16 @@ function pickOuterEdge(near, far, from, limit) {
     return first > 0 && first < limit ? first : second;
 }
 
+// A multi-selection is measured as one box, the same box the group drag snaps with
 function updateDistanceGuides() {
-    const item = getSelectedItem();
-    if (!item) {
+    const selected = getSelectedItems();
+    if (!selected.length) {
         Object.values(rulers).forEach(ruler => setRuler(ruler, null));
         return;
     }
 
-    const gaps = findNeighborGaps(item);
+    const item = selected.length === 1 ? selected[0] : getBounds(selected);
+    const gaps = findNeighborGaps(item, new Set(selectedItemIds));
     const right = item.left + item.width;
     const bottom = item.top + item.height;
 
@@ -783,10 +842,10 @@ function updateDistanceGuides() {
     placeRulerLabels();
 }
 
-function getAlignTargets(item, axis) {
+function getAlignTargets(excludedIds, axis) {
     const targets = axis === 'x' ? [{ value: wallWidthPx / 2, other: null }] : [];
     wallItems.forEach(other => {
-        if (other.id === item.id) return;
+        if (excludedIds.has(other.id)) return;
         const start = axis === 'x' ? other.left : other.top;
         const size = axis === 'x' ? other.width : other.height;
         targets.push(
@@ -867,13 +926,17 @@ function renderAlignGuides(lines) {
     });
 }
 
-function updateInspectorLive(item) {
+function updateInspectorLive() {
     const posReadout = document.getElementById('inspector-pos-readout');
-    if (!posReadout || !item) return;
+    const selected = getSelectedItems();
+    if (!posReadout || !selected.length) return;
 
-    posReadout.textContent = formatOffset(item);
-    document.getElementById('warning-overlap').hidden = !hasOverlap(item);
-    document.getElementById('warning-attic').hidden = !intrudesAtticSlope(item);
+    const box = selected.length === 1 ? selected[0] : getBounds(selected);
+    posReadout.textContent = formatOffset(box);
+    const footprint = document.getElementById('batch-footprint-readout');
+    if (footprint) footprint.textContent = formatFootprint(box);
+    document.getElementById('warning-overlap').hidden = !selected.some(hasOverlap);
+    document.getElementById('warning-attic').hidden = !selected.some(intrudesAtticSlope);
 }
 
 // Lamps and spotlights carry labels wider than themselves, so near a wall edge the label
@@ -901,15 +964,32 @@ function flagWallEdges(item, el) {
     el.classList.toggle('flush-bottom', item.top + item.height >= wallHeightPx - EPSILON);
 }
 
-// Position-only updates skip renderPlanner so dragging and nudging never rebuild the DOM
-function syncItemPosition(item, el) {
-    el.style.left = `${item.left}px`;
-    el.style.top = `${item.top}px`;
-    placeItemLabel(item, el);
-    flagWallEdges(item, el);
+// Position-only updates skip renderPlanner so dragging and nudging never rebuild the DOM.
+// Each member gets its inline styles first, then the shared readouts run once for the whole group.
+function syncPositions(members) {
+    members.forEach(({ item, element }) => {
+        if (!element) return;
+        element.style.left = `${item.left}px`;
+        element.style.top = `${item.top}px`;
+        placeItemLabel(item, element);
+        flagWallEdges(item, element);
+    });
     updateCollisionStates();
     updateDistanceGuides();
-    updateInspectorLive(item);
+    updateInspectorLive();
+    syncSelectionBounds();
+}
+
+function syncSelectionBounds() {
+    const selected = getSelectedItems();
+    selectionBounds.hidden = selected.length < 2;
+    if (selected.length < 2) return;
+
+    const box = getBounds(selected);
+    selectionBounds.style.left = `${box.left}px`;
+    selectionBounds.style.top = `${box.top}px`;
+    selectionBounds.style.width = `${box.width}px`;
+    selectionBounds.style.height = `${box.height}px`;
 }
 
 // A press that starts on an item, dragged or not, can end with the cursor off the item.
@@ -951,7 +1031,7 @@ function syncItemSize(item, el) {
     flagWallEdges(item, el);
     updateCollisionStates();
     updateDistanceGuides();
-    updateInspectorLive(item);
+    updateInspectorLive();
     syncInspectorSize(item);
 }
 
@@ -1061,64 +1141,110 @@ function startDrag(e) {
     const item = wallItems.find(i => i.id === el.dataset.id);
     if (!item) return;
 
-    selectItem(item.id);
-
-    // Locked items can still be selected, they just never start a drag
-    if (item.locked) {
-        flashLockNote();
+    if (e.shiftKey) {
+        toggleInSelection(item.id);
         return;
     }
 
+    // Pressing a member of a multi-selection keeps the group so the whole set can be dragged
+    const group = selectedItemIds.length > 1 && isSelected(item.id);
+    if (!group) selectItem(item.id);
+
+    const members = getSelectedItems();
+    const blocked = members.some(member => member.locked);
+
+    // Locked items can still be selected, they just never start a drag
+    if (blocked) flashLockNote();
+    if (blocked && !group) return;
+
     // The page never scrolls, so one layout read at drag start is enough unless the window resizes
     const wallRect = wallCanvas.getBoundingClientRect();
+    const bounds = members.length === 1 ? { ...members[0] } : getBounds(members);
 
     dragState = {
         ...createIdleDragState(),
         isDragging: true,
         itemId: item.id,
-        element: el,
+        members: members.map(member => ({
+            item: member,
+            element: getItemElement(member.id),
+            startLeft: member.left,
+            startTop: member.top,
+            // Members already inside the slope may move out of it; only new intrusions block a group
+            clearOfSlope: !intrudesAtticSlope(member)
+        })),
+        excludedIds: new Set(members.map(member => member.id)),
+        bounds,
+        group,
+        blocked,
         wallRect,
         scale: viewScale,
-        offsetX: (e.clientX - wallRect.left) / viewScale - item.left,
-        offsetY: (e.clientY - wallRect.top) / viewScale - item.top,
+        offsetX: (e.clientX - wallRect.left) / viewScale - bounds.left,
+        offsetY: (e.clientY - wallRect.top) / viewScale - bounds.top,
         pointerX: e.clientX,
         pointerY: e.clientY,
-        startLeft: item.left,
-        startTop: item.top,
+        pressX: e.clientX,
+        pressY: e.clientY,
+        startLeft: bounds.left,
+        startTop: bounds.top,
         altKey: e.altKey
     };
 
     if (e.altKey) suppressAltMenu = true;
-    el.classList.add('dragging');
+    if (!blocked) dragState.members.forEach(({ element }) => element?.classList.add('dragging'));
+}
+
+function groupFitsAt(dx, dy) {
+    return dragState.members.every(({ item, startLeft, startTop, clearOfSlope }) =>
+        !clearOfSlope || !intrudesAtticSlope({ ...item, left: startLeft + dx, top: startTop + dy }));
+}
+
+// A group moves as one rigid block. When the wanted spot pushes a member into the slope, the block
+// slides along whichever axis is still free, and otherwise holds its last valid position.
+function resolveGroupOffset(dx, dy) {
+    const lastDx = dragState.bounds.left - dragState.startLeft;
+    const lastDy = dragState.bounds.top - dragState.startTop;
+    const candidates = [[dx, dy], [dx, lastDy], [lastDx, dy]];
+    return candidates.find(([cx, cy]) => groupFitsAt(cx, cy)) || [lastDx, lastDy];
 }
 
 function applyDragFrame() {
     dragState.frameId = 0;
+    if (dragState.blocked) return;
 
-    const item = wallItems.find(i => i.id === dragState.itemId);
-    if (!item) return;
-
-    const { wallRect, scale, pointerX, pointerY, offsetX, offsetY } = dragState;
+    const { wallRect, scale, pointerX, pointerY, offsetX, offsetY, members, excludedIds } = dragState;
     const step = snapGridToggle.checked ? SNAP_STEP_PX : CM_STEP_PX;
+    const box = { ...dragState.bounds };
 
     // Screen deltas are divided by the view scale so the item stays under the cursor at any fit level
     const localX = (pointerX - wallRect.left) / scale;
     const localY = (pointerY - wallRect.top) / scale;
 
-    item.left = clamp(quantize(localX - offsetX, step), 0, wallWidthPx - item.width);
-    item.top = clamp(quantize(localY - offsetY, step), 0, wallHeightPx - item.height);
+    // Clamping the bounding box keeps every member inside the wall without bending the group
+    box.left = clamp(quantize(localX - offsetX, step), 0, wallWidthPx - box.width);
+    box.top = clamp(quantize(localY - offsetY, step), 0, wallHeightPx - box.height);
 
-    let lines = [];
-    if (!dragState.altKey) {
-        const xTargets = getAlignTargets(item, 'x');
-        const yTargets = getAlignTargets(item, 'y');
-        item.left = snapAxis(item, 'x', item.left, xTargets);
-        item.top = snapAxis(item, 'y', item.top, yTargets);
-        lines = [...collectAlignLines(item, 'x', xTargets), ...collectAlignLines(item, 'y', yTargets)];
+    const xTargets = dragState.altKey ? [] : getAlignTargets(excludedIds, 'x');
+    const yTargets = dragState.altKey ? [] : getAlignTargets(excludedIds, 'y');
+    box.left = snapAxis(box, 'x', box.left, xTargets);
+    box.top = snapAxis(box, 'y', box.top, yTargets);
+
+    let dx = box.left - dragState.startLeft;
+    let dy = box.top - dragState.startTop;
+    if (members.length > 1) {
+        [dx, dy] = resolveGroupOffset(dx, dy);
+        box.left = dragState.startLeft + dx;
+        box.top = dragState.startTop + dy;
     }
 
-    syncItemPosition(item, dragState.element);
-    renderAlignGuides(lines);
+    members.forEach(member => {
+        member.item.left = member.startLeft + dx;
+        member.item.top = member.startTop + dy;
+    });
+    dragState.bounds = box;
+
+    syncPositions(members);
+    renderAlignGuides([...collectAlignLines(box, 'x', xTargets), ...collectAlignLines(box, 'y', yTargets)]);
 }
 
 // High polling-rate mice fire several events per frame; only the latest one matters
@@ -1141,11 +1267,19 @@ window.addEventListener('mousemove', (e) => {
         return;
     }
 
+    if (marquee.pending) {
+        trackMarquee(e);
+        return;
+    }
+
     if (!dragState.isDragging) return;
 
     dragState.pointerX = e.clientX;
     dragState.pointerY = e.clientY;
     dragState.altKey = e.altKey;
+    if (!dragState.travelled) {
+        dragState.travelled = Math.hypot(e.clientX - dragState.pressX, e.clientY - dragState.pressY) > PRESS_TRAVEL_PX;
+    }
     if (e.altKey) suppressAltMenu = true;
     scheduleDragFrame();
 });
@@ -1158,18 +1292,141 @@ window.addEventListener('mouseup', () => {
         applyDragFrame();
     }
 
-    const item = wallItems.find(i => i.id === dragState.itemId);
-    const moved = item && (item.left !== dragState.startLeft || item.top !== dragState.startTop);
+    const { members, group, travelled, itemId } = dragState;
+    const moved = members.some(({ item, startLeft, startTop }) => item.left !== startLeft || item.top !== startTop);
 
-    dragState.element.classList.remove('dragging');
+    members.forEach(({ element }) => element?.classList.remove('dragging'));
     dragState = createIdleDragState();
     renderAlignGuides([]);
 
     if (moved) commitLayoutChange();
+    // A plain click on one member of a group narrows the selection to that member
+    if (group && !travelled) selectItem(itemId);
 });
 
 window.addEventListener('mouseup', () => {
     if (resizeState.active) finishResize();
+});
+
+// The border scales with the wall, so it comes off after converting to wall space
+function toWallPoint(clientX, clientY, wallRect, scale) {
+    return {
+        x: clamp((clientX - wallRect.left) / scale - WALL_BORDER_PX, 0, wallWidthPx),
+        y: clamp((clientY - wallRect.top) / scale - WALL_BORDER_PX, 0, wallHeightPx)
+    };
+}
+
+// Items stop their own presses, so a press that reaches the wall started on bare wall
+wallCanvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    // A new press means the last one has released and its click has fired, so a guard it left behind
+    // is stale. Clearing it here keeps a quick click right after a drag from being swallowed.
+    wallClickGuard++;
+    ignoreWallClick = false;
+    if (isPointerBusy() || isModalOpen()) return;
+
+    // No text selection while the box is dragged out; the blur stands in for the focus change it cancels
+    e.preventDefault();
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+
+    const wallRect = wallCanvas.getBoundingClientRect();
+    const origin = toWallPoint(e.clientX, e.clientY, wallRect, viewScale);
+    marquee = {
+        ...createIdleMarquee(),
+        pending: true,
+        baseIds: e.shiftKey ? [...selectedItemIds] : [],
+        wallRect,
+        scale: viewScale,
+        originX: origin.x,
+        originY: origin.y,
+        pressX: e.clientX,
+        pressY: e.clientY,
+        pointerX: e.clientX,
+        pointerY: e.clientY
+    };
+});
+
+function trackMarquee(e) {
+    marquee.pointerX = e.clientX;
+    marquee.pointerY = e.clientY;
+
+    if (!marquee.active) {
+        if (Math.hypot(e.clientX - marquee.pressX, e.clientY - marquee.pressY) <= MARQUEE_THRESHOLD_PX) return;
+        startMarquee();
+    }
+
+    if (!marquee.frameId) marquee.frameId = requestAnimationFrame(applyMarqueeFrame);
+}
+
+function startMarquee() {
+    marquee.active = true;
+    marquee.elements = [...wallItemsLayer.querySelectorAll('.wall-item')];
+    // The release can land on an item or the wall; either way its click belongs to the box
+    guardNextWallClick();
+
+    // Grips, rulers and the group outline describe the old selection, so they step aside until the release
+    wallItemsLayer.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+    Object.values(rulers).forEach(ruler => setRuler(ruler, null));
+    selectionBounds.hidden = true;
+    marqueeBox.hidden = false;
+    document.body.classList.add('is-selecting');
+}
+
+// Hits use the same AABB test as collisions, so touching an item edge does not count as crossing it
+function applyMarqueeFrame() {
+    marquee.frameId = 0;
+
+    const { wallRect, scale, originX, originY, pointerX, pointerY } = marquee;
+    const point = toWallPoint(pointerX, pointerY, wallRect, scale);
+    const box = {
+        left: Math.min(originX, point.x),
+        top: Math.min(originY, point.y),
+        width: Math.abs(point.x - originX),
+        height: Math.abs(point.y - originY)
+    };
+
+    marqueeBox.style.left = `${box.left}px`;
+    marqueeBox.style.top = `${box.top}px`;
+    marqueeBox.style.width = `${box.width}px`;
+    marqueeBox.style.height = `${box.height}px`;
+
+    const ids = new Set(marquee.baseIds);
+    wallItems.forEach(item => {
+        if (isOverlapping(box, item)) ids.add(item.id);
+    });
+    marquee.hitIds = [...ids];
+    marquee.elements.forEach(el => el.classList.toggle('selected', ids.has(el.dataset.id)));
+}
+
+function endMarquee() {
+    if (marquee.frameId) cancelAnimationFrame(marquee.frameId);
+    marqueeBox.hidden = true;
+    document.body.classList.remove('is-selecting');
+    marquee = createIdleMarquee();
+}
+
+// Escape or a lost window puts the selection back as it was before the box was drawn
+function cancelMarquee() {
+    endMarquee();
+    setSelection(selectedItemIds);
+}
+
+window.addEventListener('mouseup', () => {
+    if (!marquee.pending) return;
+
+    // Short of the threshold this was a plain click, which the wall click handler deals with
+    if (!marquee.active) {
+        marquee = createIdleMarquee();
+        return;
+    }
+
+    if (marquee.frameId) {
+        cancelAnimationFrame(marquee.frameId);
+        applyMarqueeFrame();
+    }
+    const ids = marquee.hitIds;
+    endMarquee();
+    setSelection(ids);
 });
 
 function mountCatalogItem(catalogEl, left, top) {
@@ -1184,11 +1441,12 @@ function mountCatalogItem(catalogEl, left, top) {
         height: parseFloat(catalogEl.dataset.height),
         finish: catalogEl.dataset.finish || 'walnut',
         ledEnabled: true,
-        locked: false
+        locked: false,
+        itemLedColor: null
     };
 
     wallItems.push(newItem);
-    selectedItemId = newItem.id;
+    selectedItemIds = [newItem.id];
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
@@ -1331,68 +1589,108 @@ window.addEventListener('blur', () => {
     if (catalogDrag.active) endCatalogDrag();
     else if (catalogDrag.pending) catalogDrag = createIdleCatalogDrag();
     if (resizeState.active) cancelResize();
+    if (marquee.active) cancelMarquee();
+    else if (marquee.pending) marquee = createIdleMarquee();
+    closeContextMenu();
 });
 
-function selectItem(itemId) {
-    selectedItemId = itemId;
+function setSelection(ids) {
+    const unique = [...new Set(ids)];
+    selectedItemIds = unique.filter(id => wallItems.some(item => item.id === id));
 
     wallItemsLayer.querySelectorAll('.wall-item').forEach(el => {
-        el.classList.toggle('selected', el.dataset.id === itemId);
+        el.classList.toggle('selected', isSelected(el.dataset.id));
     });
     syncResizeHandles();
+    syncSelectionBounds();
 
     updateInspectorPanel();
     updateDistanceGuides();
 }
 
-function removeItem(itemId) {
-    const target = wallItems.find(i => i.id === itemId);
-    if (!target || target.locked) return;
+const selectItem = (itemId) => setSelection(itemId ? [itemId] : []);
 
-    wallItems = wallItems.filter(i => i.id !== itemId);
-    selectedItemId = null;
+function toggleInSelection(itemId) {
+    setSelection(isSelected(itemId)
+        ? selectedItemIds.filter(id => id !== itemId)
+        : [...selectedItemIds, itemId]);
+}
+
+const selectAll = () => setSelection(wallItems.map(item => item.id));
+
+// Locked items survive a removal and stay selected, so the user can see what was skipped
+function removeItems(ids) {
+    const removable = new Set(wallItems.filter(item => ids.includes(item.id) && !item.locked).map(item => item.id));
+    if (!removable.size) return;
+
+    wallItems = wallItems.filter(item => !removable.has(item.id));
+    selectedItemIds = selectedItemIds.filter(id => !removable.has(id));
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
 }
 
-function duplicateSelectedItem() {
-    const source = getSelectedItem();
-    if (!source) return;
+const removeSelectedItems = () => removeItems(selectedItemIds);
 
-    const copy = {
+// Copies keep their relative layout, so the offset is clamped for the group box, not per item
+function duplicateSelectedItem() {
+    const sources = getSelectedItems();
+    if (!sources.length) return;
+
+    const box = getBounds(sources);
+    const dx = clamp(DUPLICATE_OFFSET_PX, -box.left, wallWidthPx - box.left - box.width);
+    const dy = clamp(DUPLICATE_OFFSET_PX, -box.top, wallHeightPx - box.top - box.height);
+
+    const copies = sources.map(source => ({
         ...JSON.parse(JSON.stringify(source)),
         id: createItemId(),
         // A copy starts unlocked so it can be placed right away
         locked: false,
-        left: clamp(source.left + DUPLICATE_OFFSET_PX, 0, wallWidthPx - source.width),
-        top: clamp(source.top + DUPLICATE_OFFSET_PX, 0, wallHeightPx - source.height)
-    };
+        left: source.left + dx,
+        top: source.top + dy
+    }));
 
-    wallItems.push(copy);
-    selectedItemId = copy.id;
+    wallItems.push(...copies);
+    selectedItemIds = copies.map(copy => copy.id);
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
 }
 
+// A mixed selection locks everything first; only a fully locked selection unlocks
 function toggleSelectedLock() {
-    const item = getSelectedItem();
-    if (!item) return;
+    const items = getSelectedItems();
+    if (!items.length) return;
 
-    item.locked = !item.locked;
+    const lock = items.some(item => !item.locked);
+    items.forEach(item => { item.locked = lock; });
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
 }
 
-// Swaps the item with its neighbor in wallItems, which is also the paint order in #wall-items
-function moveSelectedLayer(step) {
-    const index = wallItems.findIndex(i => i.id === selectedItemId);
-    const target = index + step;
-    if (index < 0 || target < 0 || target >= wallItems.length) return;
+function canMoveLayer(step) {
+    return wallItems.some((item, index) => {
+        const neighbor = wallItems[index + step];
+        return isSelected(item.id) && neighbor && !isSelected(neighbor.id);
+    });
+}
 
-    [wallItems[index], wallItems[target]] = [wallItems[target], wallItems[index]];
+// wallItems is also the paint order in #wall-items. Walking from the leading end lets every selected
+// item hop over its unselected neighbor once, so a group shifts one layer and keeps its inner order.
+function moveSelectedLayer(step) {
+    if (!canMoveLayer(step)) return;
+
+    const indexes = wallItems.map((_, index) => index);
+    if (step > 0) indexes.reverse();
+    indexes.forEach(index => {
+        const target = index + step;
+        const neighbor = wallItems[target];
+        if (isSelected(wallItems[index].id) && neighbor && !isSelected(neighbor.id)) {
+            [wallItems[index], wallItems[target]] = [neighbor, wallItems[index]];
+        }
+    });
+
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
@@ -1414,24 +1712,70 @@ function syncLedToggle(button, on) {
     button.querySelector('.led-toggle-state').textContent = on ? 'ON' : 'OFF';
 }
 
-function updateInspectorPanel() {
-    // Rebuilding the panel drops keyboard focus, so it is handed back to the same control afterwards
-    const focusedId = inspectorBox.contains(document.activeElement) ? document.activeElement.id : '';
-    const item = getSelectedItem();
-    if (!item) {
-        inspectorBox.innerHTML = `<p>Select or drag an item on the wall to edit dimensions, finish, or remove it.</p>`;
-        return;
-    }
+const EMPTY_INSPECTOR_HTML = `
+    <p>Select or drag an item on the wall to edit dimensions, finish, or remove it.
+    Shift-click items or drag across empty wall to select several.</p>`;
 
-    const currentFinish = item.finish || 'walnut';
+const finishButtonsHtml = (activeFinish, disabled) => FINISHES.map(({ id, label }) => `
+    <button class="btn-finish ${activeFinish === id ? 'active' : ''}" data-finish="${id}" aria-pressed="${activeFinish === id}" title="${label} finish" ${disabled ? 'disabled' : ''}>${label}</button>
+`).join('');
+
+const layerFieldHtml = (readout) => `
+    <div class="inspector-field">
+        <label>Layer${readout ? ` <span class="layer-readout">${readout}</span>` : ''}</label>
+        <div class="layer-buttons">
+            <button type="button" class="btn-secondary" id="send-backward-btn" title="Move one layer down, behind overlapping items" ${canMoveLayer(-1) ? '' : 'disabled'}>Send Backward</button>
+            <button type="button" class="btn-secondary" id="bring-forward-btn" title="Move one layer up, above overlapping items" ${canMoveLayer(1) ? '' : 'disabled'}>Bring Forward</button>
+        </div>
+    </div>`;
+
+const WARNINGS_HTML = `
+    <div id="warning-overlap" class="collision-warning" hidden>Overlap detected with another item</div>
+    <div id="warning-attic" class="collision-warning" hidden>Intrudes into sloped ceiling zone</div>`;
+
+const formatPrice = (value) => `$${Math.round(value * 100) / 100}`;
+
+function applyFinish(finish) {
+    const targets = getSelectedItems().filter(item => !item.locked && item.finish !== finish);
+    if (!targets.length) return;
+
+    targets.forEach(item => { item.finish = finish; });
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+// Live preview while the picker is open: only the inline custom property changes, nothing is rebuilt
+function setItemLedColor(item, color) {
+    if (!item || item.locked) return;
+
+    item.itemLedColor = isHexColor(color) ? color.toLowerCase() : null;
+    const el = getItemElement(item.id);
+    if (el && item.itemLedColor) el.style.setProperty('--item-color', item.itemLedColor);
+    else if (el) el.style.removeProperty('--item-color');
+    syncItemLedField();
+}
+
+function syncItemLedField() {
+    const picker = document.getElementById('item-led-color');
+    const item = getSelectedItem();
+    if (!picker || !item) return;
+
+    const custom = isHexColor(item.itemLedColor);
+    const color = ledColorOf(item);
+    const readout = document.getElementById('item-led-hex');
+    if (picker.value !== color) picker.value = color;
+    readout.textContent = custom ? color.toUpperCase() : 'Global';
+    readout.title = custom ? 'This item overrides the global lighting color' : `Following the global color ${color.toUpperCase()}`;
+    readout.classList.toggle('is-global', !custom);
+    document.getElementById('item-led-reset').disabled = !custom || item.locked;
+}
+
+function renderItemInspector(item) {
     const ledOn = isLedOn(item);
     const locked = item.locked === true;
     const lockedAttr = locked ? 'disabled' : '';
     const layerIndex = wallItems.indexOf(item);
-    const layerCount = wallItems.length;
-    const finishButtons = FINISHES.map(({ id, label }) => `
-        <button class="btn-finish ${currentFinish === id ? 'active' : ''}" data-finish="${id}" aria-pressed="${currentFinish === id}" title="${label} finish" ${lockedAttr}>${label}</button>
-    `).join('');
 
     inspectorBox.innerHTML = `
         <div class="selected-item-info">
@@ -1458,7 +1802,7 @@ function updateInspectorPanel() {
 
             <div class="inspector-field">
                 <label>Surface Finish</label>
-                <div class="finish-swatches">${finishButtons}</div>
+                <div class="finish-swatches">${finishButtonsHtml(item.finish || 'walnut', locked)}</div>
             </div>
 
             <button type="button" id="led-toggle-btn" class="led-toggle ${ledOn ? 'is-on' : ''}" role="switch" aria-checked="${ledOn}" ${lockedAttr}>
@@ -1467,15 +1811,16 @@ function updateInspectorPanel() {
             </button>
 
             <div class="inspector-field">
-                <label>Layer <span class="layer-readout">${layerIndex + 1} of ${layerCount}</span></label>
-                <div class="layer-buttons">
-                    <button type="button" class="btn-secondary" id="send-backward-btn" title="Move one layer down, behind overlapping items" ${layerIndex === 0 ? 'disabled' : ''}>Send Backward</button>
-                    <button type="button" class="btn-secondary" id="bring-forward-btn" title="Move one layer up, above overlapping items" ${layerIndex === layerCount - 1 ? 'disabled' : ''}>Bring Forward</button>
+                <label for="item-led-color">Independent LED Color</label>
+                <div class="color-input-wrapper">
+                    <input type="color" id="item-led-color" value="${ledColorOf(item)}" title="LED color for this item only" ${lockedAttr}>
+                    <span id="item-led-hex" class="hex-readout"></span>
+                    <button type="button" id="item-led-reset" class="btn-secondary led-reset" title="Follow the global lighting color again">Use Global</button>
                 </div>
             </div>
 
-            <div id="warning-overlap" class="collision-warning" hidden>Overlap detected with another item</div>
-            <div id="warning-attic" class="collision-warning" hidden>Intrudes into sloped ceiling zone</div>
+            ${layerFieldHtml(`${layerIndex + 1} of ${wallItems.length}`)}
+            ${WARNINGS_HTML}
 
             <div class="inspector-actions">
                 <button type="button" class="btn-secondary lock-toggle ${locked ? 'is-locked' : ''}" id="lock-toggle-btn" aria-pressed="${locked}" title="${locked ? 'Unlock' : 'Lock'} (L)">${LOCK_ICON_HTML}${locked ? 'Unlock Item' : 'Lock Item'}</button>
@@ -1484,8 +1829,6 @@ function updateInspectorPanel() {
             </div>
         </div>
     `;
-
-    updateInspectorLive(item);
 
     const widthInput = document.getElementById('edit-width-cm');
     const heightInput = document.getElementById('edit-height-cm');
@@ -1511,22 +1854,12 @@ function updateInspectorPanel() {
         heightInput.value = clampedH;
 
         renderPlanner();
-        updateInspectorLive(item);
+        updateInspectorLive();
         commitLayoutChange();
     }
 
     widthInput.addEventListener('change', applyDimensionChange);
     heightInput.addEventListener('change', applyDimensionChange);
-
-    inspectorBox.querySelectorAll('.btn-finish').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (item.locked) return;
-            item.finish = btn.dataset.finish;
-            renderPlanner();
-            updateInspectorPanel();
-            commitLayoutChange();
-        });
-    });
 
     const ledToggleBtn = document.getElementById('led-toggle-btn');
     ledToggleBtn.addEventListener('click', () => {
@@ -1538,11 +1871,83 @@ function updateInspectorPanel() {
         commitLayoutChange();
     });
 
+    // Dragging inside the picker fires input many times and change once, so the history gets one step
+    const ledPicker = document.getElementById('item-led-color');
+    ledPicker.addEventListener('input', () => setItemLedColor(item, ledPicker.value));
+    ledPicker.addEventListener('change', () => {
+        setItemLedColor(item, ledPicker.value);
+        commitLayoutChange();
+    });
+    document.getElementById('item-led-reset').addEventListener('click', () => {
+        setItemLedColor(item, null);
+        commitLayoutChange();
+    });
+    syncItemLedField();
+}
+
+function renderBatchInspector(items) {
+    const count = items.length;
+    const lockedCount = items.filter(item => item.locked).length;
+    const removable = count - lockedCount;
+    const allLocked = lockedCount === count;
+    const sharedFinish = items.every(item => item.finish === items[0].finish) ? items[0].finish : null;
+    const total = items.reduce((sum, item) => sum + item.price, 0);
+    const lockNote = lockedCount
+        ? `<p class="lock-note" id="lock-note">${lockedCount} of ${count} items are locked, so the group stays in place. Finish changes and removal skip locked items.</p>`
+        : '';
+
+    inspectorBox.innerHTML = `
+        <div class="selected-item-info is-batch">
+            <div class="selected-item-header">
+                <span class="selected-item-title" id="batch-count">${count} items selected</span>
+                <span class="selected-item-meta">
+                    ${lockedCount ? `<span class="lock-badge">${LOCK_ICON_HTML}${lockedCount} Locked</span>` : ''}
+                    <span>${formatPrice(total)}</span>
+                </span>
+            </div>
+            <span>Group: <strong id="inspector-pos-readout">${formatOffset(getBounds(items))}</strong></span>
+            <span>Footprint: <strong id="batch-footprint-readout">${formatFootprint(getBounds(items))}</strong></span>
+            ${lockNote}
+
+            <div class="inspector-field">
+                <label>Surface Finish</label>
+                <div class="finish-swatches">${finishButtonsHtml(sharedFinish, allLocked)}</div>
+            </div>
+
+            ${layerFieldHtml('')}
+            ${WARNINGS_HTML}
+
+            <div class="inspector-actions">
+                <button type="button" class="btn-secondary lock-toggle ${allLocked ? 'is-locked' : ''}" id="lock-toggle-btn" aria-pressed="${allLocked}" title="${allLocked ? 'Unlock' : 'Lock'} all selected items (L)">${LOCK_ICON_HTML}${allLocked ? 'Unlock All' : 'Lock All'}</button>
+                <button class="btn-secondary" id="duplicate-item-btn" title="Duplicate the selection (Ctrl+D)">Duplicate ${count} Items</button>
+                <button class="btn-danger" id="delete-item-btn" title="Remove the unlocked items (Delete)" ${removable ? '' : 'disabled'}>Remove ${removable} Item${removable === 1 ? '' : 's'}</button>
+            </div>
+        </div>
+    `;
+}
+
+function updateInspectorPanel() {
+    // Rebuilding the panel drops keyboard focus, so it is handed back to the same control afterwards
+    const focusedId = inspectorBox.contains(document.activeElement) ? document.activeElement.id : '';
+    const selected = getSelectedItems();
+
+    if (!selected.length) {
+        inspectorBox.innerHTML = EMPTY_INSPECTOR_HTML;
+        return;
+    }
+
+    if (selected.length === 1) renderItemInspector(selected[0]);
+    else renderBatchInspector(selected);
+    updateInspectorLive();
+
+    inspectorBox.querySelectorAll('.btn-finish').forEach(btn => {
+        btn.addEventListener('click', () => applyFinish(btn.dataset.finish));
+    });
     document.getElementById('send-backward-btn').addEventListener('click', () => moveSelectedLayer(-1));
     document.getElementById('bring-forward-btn').addEventListener('click', () => moveSelectedLayer(1));
     document.getElementById('lock-toggle-btn').addEventListener('click', toggleSelectedLock);
     document.getElementById('duplicate-item-btn').addEventListener('click', duplicateSelectedItem);
-    document.getElementById('delete-item-btn').addEventListener('click', () => removeItem(item.id));
+    document.getElementById('delete-item-btn').addEventListener('click', removeSelectedItems);
 
     if (focusedId) {
         const target = document.getElementById(focusedId);
@@ -1550,11 +1955,120 @@ function updateInspectorPanel() {
     }
 }
 
+const isContextMenuOpen = () => !contextMenu.hidden;
+
+const CONTEXT_ACTIONS = {
+    duplicate: duplicateSelectedItem,
+    forward: () => moveSelectedLayer(1),
+    backward: () => moveSelectedLayer(-1),
+    lock: toggleSelectedLock,
+    delete: removeSelectedItems
+};
+
+function syncContextMenu() {
+    const items = getSelectedItems();
+    const allLocked = items.every(item => item.locked);
+    const lockLabel = allLocked ? 'Unlock' : 'Lock';
+    const state = {
+        duplicate: { disabled: false },
+        forward: { disabled: !canMoveLayer(1) },
+        backward: { disabled: !canMoveLayer(-1) },
+        lock: { disabled: false, label: items.length > 1 ? `${lockLabel} All` : lockLabel },
+        delete: { disabled: allLocked }
+    };
+
+    contextMenuTitle.textContent = items.length === 1 ? items[0].name : `${items.length} items selected`;
+    contextMenuButtons.forEach(button => {
+        const { disabled, label } = state[button.dataset.action];
+        button.disabled = disabled;
+        if (label) button.querySelector('.context-menu-label').textContent = label;
+    });
+}
+
+// Measured once visible, then flipped across the cursor wherever it would run past the viewport
+function openContextMenu(clientX, clientY) {
+    syncContextMenu();
+    contextMenu.hidden = false;
+
+    const width = contextMenu.offsetWidth;
+    const height = contextMenu.offsetHeight;
+    const flipX = clientX + width + MENU_EDGE_PX > window.innerWidth;
+    const flipY = clientY + height + MENU_EDGE_PX > window.innerHeight;
+    const left = clamp(flipX ? clientX - width : clientX, MENU_EDGE_PX, window.innerWidth - width - MENU_EDGE_PX);
+    const top = clamp(flipY ? clientY - height : clientY, MENU_EDGE_PX, window.innerHeight - height - MENU_EDGE_PX);
+
+    contextMenu.style.left = `${left}px`;
+    contextMenu.style.top = `${top}px`;
+    contextMenu.style.transformOrigin = `${flipX ? 'right' : 'left'} ${flipY ? 'bottom' : 'top'}`;
+    // The panel takes focus rather than its first item, so a mouse open shows no highlighted row
+    // while the arrow keys still start from the top or the bottom
+    contextMenu.focus({ preventScroll: true });
+}
+
+function closeContextMenu() {
+    if (contextMenu.hidden) return;
+    contextMenu.hidden = true;
+    if (contextMenu.contains(document.activeElement)) document.activeElement.blur();
+}
+
+// While the menu is open the arrows walk its items and Escape or Tab dismisses it. Any other key closes
+// the menu and carries on, so the shortcut printed next to an item still does its job.
+function handleContextMenuKey(e) {
+    const enabled = contextMenuButtons.filter(button => !button.disabled);
+    const index = enabled.indexOf(document.activeElement);
+    const moves = {
+        ArrowDown: index + 1,
+        ArrowUp: index < 0 ? enabled.length - 1 : index - 1,
+        Home: 0,
+        End: enabled.length - 1
+    };
+
+    if (e.key in moves) {
+        e.preventDefault();
+        enabled[(moves[e.key] + enabled.length) % enabled.length]?.focus();
+        return true;
+    }
+    if (e.key === 'Escape' || e.key === 'Tab') {
+        e.preventDefault();
+        closeContextMenu();
+        return true;
+    }
+    // Enter and Space press the focused item through the button's own activation
+    if ((e.key === 'Enter' || e.key === ' ') && contextMenu.contains(e.target)) return true;
+
+    closeContextMenu();
+    return false;
+}
+
+wallItemsLayer.addEventListener('contextmenu', (e) => {
+    const el = e.target.closest('.wall-item');
+    if (!el) return;
+
+    e.preventDefault();
+    if (isPointerBusy() || isModalOpen()) return;
+    if (!isSelected(el.dataset.id)) selectItem(el.dataset.id);
+    openContextMenu(e.clientX, e.clientY);
+});
+
+contextMenu.addEventListener('contextmenu', (e) => e.preventDefault());
+
+contextMenu.addEventListener('click', (e) => {
+    const button = e.target.closest('.context-menu-item');
+    if (!button || button.disabled) return;
+    closeContextMenu();
+    CONTEXT_ACTIONS[button.dataset.action]();
+});
+
+// Capture phase, so a press anywhere else closes the menu before that press does its own work
+window.addEventListener('mousedown', (e) => {
+    if (isContextMenuOpen() && !contextMenu.contains(e.target)) closeContextMenu();
+}, true);
+
 // Plain L toggles the lock; Ctrl/Cmd+L stays with the browser address bar
 const isLockShortcut = (e) =>
     (e.key || '').toLowerCase() === 'l' &&
     !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat &&
-    selectedItemId !== null && !isPointerBusy() && !isTextEntry(e.target);
+    selectedItemIds.length > 0 && !isPointerBusy() && !isTextEntry(e.target);
 
 function handleModifierShortcut(e) {
     if (isTextEntry(e.target)) return false;
@@ -1573,49 +2087,77 @@ function handleModifierShortcut(e) {
         return true;
     }
 
-    if (key === 'd' && selectedItemId) {
+    if (key === 'd' && selectedItemIds.length) {
         // Stops the browser bookmark dialog; holding the keys should not spawn a stack of copies
         e.preventDefault();
         if (!e.repeat && !isPointerBusy()) duplicateSelectedItem();
         return true;
     }
 
+    // Ctrl+A would otherwise select the page text around the wall
+    if (key === 'a' && !e.shiftKey) {
+        e.preventDefault();
+        if (!isPointerBusy()) selectAll();
+        return true;
+    }
+
     return false;
+}
+
+// A group nudge clamps the shared offset to the group box, so members never squeeze against a wall
+// edge out of formation. Like a group drag it refuses to push a member newly into the slope.
+function nudgeSelection(items, dx, dy) {
+    const box = getBounds(items);
+    const stepX = clamp(dx * SCALE, -box.left, wallWidthPx - box.left - box.width);
+    const stepY = clamp(dy * SCALE, -box.top, wallHeightPx - box.top - box.height);
+    const blocked = items.length > 1 && items.some(item =>
+        !intrudesAtticSlope(item) && intrudesAtticSlope({ ...item, left: item.left + stepX, top: item.top + stepY }));
+    if (blocked || (!stepX && !stepY)) return false;
+
+    items.forEach(item => {
+        item.left += stepX;
+        item.top += stepY;
+    });
+    return true;
 }
 
 // Arrow keys for 1cm nudging, Delete/Backspace to remove
 function handleItemKeys(e) {
-    if (!selectedItemId || isPointerBusy()) return;
+    if (!selectedItemIds.length || isPointerBusy()) return;
     if (e.target.tagName === 'INPUT') return; // Do not trigger while typing numbers in inputs
 
-    const item = getSelectedItem();
-    if (!item) return;
+    const items = getSelectedItems();
+    if (!items.length) return;
 
     const isRemoval = e.key === 'Delete' || e.key === 'Backspace';
-    if (item.locked && (isRemoval || NUDGE_KEYS[e.key])) {
-        e.preventDefault();
+    const nudge = NUDGE_KEYS[e.key];
+    if (!isRemoval && !nudge) return;
+    e.preventDefault();
+
+    // Removal skips locked members, but a single locked member is enough to hold a group in place
+    const locked = isRemoval ? items.every(item => item.locked) : items.some(item => item.locked);
+    if (locked) {
         flashLockNote();
         return;
     }
 
     if (isRemoval) {
-        e.preventDefault();
-        removeItem(item.id);
+        removeSelectedItems();
         return;
     }
 
-    const nudge = NUDGE_KEYS[e.key];
-    if (!nudge) return;
-    e.preventDefault();
-
-    // Step from the nearest whole cm so older off-grid positions land back on it
     const [dx, dy] = nudge;
-    if (dx) item.left = clamp((toCm(item.left) + dx) * SCALE, 0, wallWidthPx - item.width);
-    if (dy) item.top = clamp((toCm(item.top) + dy) * SCALE, 0, wallHeightPx - item.height);
+    if (items.length === 1) {
+        // Step from the nearest whole cm so older off-grid positions land back on it
+        const [item] = items;
+        if (dx) item.left = clamp((toCm(item.left) + dx) * SCALE, 0, wallWidthPx - item.width);
+        if (dy) item.top = clamp((toCm(item.top) + dy) * SCALE, 0, wallHeightPx - item.height);
+    } else if (!nudgeSelection(items, dx, dy)) {
+        return;
+    }
 
-    const el = getItemElement(item.id);
-    if (el) syncItemPosition(item, el);
-    pushHistory(`nudge:${item.id}`);
+    syncPositions(items.map(item => ({ item, element: getItemElement(item.id) })));
+    pushHistory(`nudge:${selectedItemIds.join(',')}`);
     saveState();
 }
 
@@ -1632,18 +2174,21 @@ function handleShortcutsKey(e) {
 
 // Dialogs close themselves on Escape; with none open it clears the selection, unless a field is being edited
 function handleEscape(e) {
-    if (selectedItemId === null || isPointerBusy() || isTextEntry(e.target)) return;
+    if (!selectedItemIds.length || isPointerBusy() || isTextEntry(e.target)) return;
     selectItem(null);
 }
 
 window.addEventListener('keydown', (e) => {
-    // Escape abandons a catalog drag or a grip resize before anything else sees the key
-    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active)) {
+    // Escape abandons a catalog drag, a grip resize or a selection box before anything else sees the key
+    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active || marquee.active)) {
         e.preventDefault();
         if (catalogDrag.active) endCatalogDrag();
         if (resizeState.active) cancelResize();
+        if (marquee.active) cancelMarquee();
         return;
     }
+
+    if (isContextMenuOpen() && handleContextMenuKey(e)) return;
 
     if (e.key === '?' && !isFormField(e.target)) {
         handleShortcutsKey(e);
@@ -1693,17 +2238,16 @@ window.addEventListener('keyup', (e) => {
     }
 });
 
-wallCanvas.addEventListener('click', () => {
-    if (ignoreWallClick) return;
-    if (selectedItemId !== null) {
-        selectItem(null);
-    }
+// Shift keeps the selection, so a missed Shift-click does not throw away a group
+wallCanvas.addEventListener('click', (e) => {
+    if (ignoreWallClick || e.shiftKey) return;
+    if (selectedItemIds.length) selectItem(null);
 });
 
 function applyAtticSlope() {
     atticZone.hidden = !atticSlopeToggle.checked;
     updateCollisionStates();
-    updateInspectorLive(getSelectedItem());
+    updateInspectorLive();
 }
 
 atticSlopeToggle.addEventListener('change', () => {
@@ -1746,7 +2290,7 @@ wallHeightInput.addEventListener('change', handleWallResize);
 resetWallBtn.addEventListener('click', () => {
     setWallDimensions(DEFAULT_WALL_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM);
     wallItems = cloneDefaults();
-    selectedItemId = null;
+    selectedItemIds = [];
     atticSlopeToggle.checked = false;
     updateAccentColor('#ff9d42', false);
     updateCornerColor('#8b5cf6', false);
@@ -1804,7 +2348,7 @@ function importLayoutText(text) {
     // Validation finishes before anything is applied, so a bad file never leaves a half-loaded wall
     const layout = normalizeLayout(data);
 
-    selectedItemId = null;
+    selectedItemIds = [];
     applyLayoutSettings(layout);
     renderPlanner();
     applyAtticSlope();
@@ -2038,7 +2582,7 @@ function loadTemplate(key) {
 
     // Templates run through the same sanitizer as imports, which fills in catalog sizes, names and prices
     const layout = normalizeLayout(template);
-    selectedItemId = null;
+    selectedItemIds = [];
     applyLayoutSettings(layout);
     renderPlanner();
     applyAtticSlope();
@@ -2228,7 +2772,7 @@ function paintAfterLayer(ctx, item, el, border) {
     shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, 0, shadow, alpha));
 }
 
-// The wash is a clipped trapezoid fading from the accent color, read from the spotlight's ::after box
+// The wash is a clipped trapezoid fading from the item's LED color, read from the spotlight's ::after box
 function paintSpotlightCone(ctx, item, el, border) {
     const cone = getComputedStyle(el, '::after');
     const alpha = parseFloat(cone.opacity);
@@ -2239,7 +2783,7 @@ function paintSpotlightCone(ctx, item, el, border) {
     const points = parsePolygon(cone.clipPath, parseFloat(cone.width), parseFloat(cone.height));
     if (!points.length) return;
 
-    const [r, g, b] = hexToRgb(accentColorPicker.value);
+    const [r, g, b] = hexToRgb(ledColorOf(item));
     const gradient = ctx.createLinearGradient(0, y, 0, y + parseFloat(cone.height));
     gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
     gradient.addColorStop(SPOTLIGHT_CONE_FADE, `rgba(${r}, ${g}, ${b}, 0)`);
@@ -2475,6 +3019,7 @@ function updateAccentColor(hexColor, shouldSave = true) {
     document.documentElement.style.setProperty('--accent-led', hexColor);
     accentHexCode.textContent = hexColor.toUpperCase();
     accentColorPicker.value = hexColor;
+    syncItemLedField();
     if (shouldSave) saveState();
 }
 
@@ -2482,6 +3027,7 @@ function updateCornerColor(hexColor, shouldSave = true) {
     document.documentElement.style.setProperty('--corner-led', hexColor);
     cornerHexCode.textContent = hexColor.toUpperCase();
     cornerColorPicker.value = hexColor;
+    syncItemLedField();
     if (shouldSave) saveState();
 }
 
@@ -2508,6 +3054,7 @@ presetButtons.forEach(button => {
 });
 
 window.addEventListener('resize', () => {
+    closeContextMenu();
     if (fitFrame) return;
     fitFrame = requestAnimationFrame(() => {
         fitFrame = 0;

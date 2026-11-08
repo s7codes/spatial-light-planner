@@ -764,6 +764,8 @@ button:focus-visible {
     user-select: none;
     z-index: 2;
 
+    /* --item-color is set inline only on items with their own LED color; the rest follow the global picker */
+    --led-color: var(--item-color, var(--accent-led));
     --sheen-highlight: rgba(255, 255, 255, 0);
     --sheen-shade: rgba(0, 0, 0, 0);
     --sheen-band: 4px;
@@ -842,7 +844,7 @@ button:focus-visible {
     --item-drop: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.shelf::before {
-    box-shadow: 0 -15px 35px var(--accent-led), 0 10px 45px var(--accent-led);
+    box-shadow: 0 -15px 35px var(--led-color), 0 10px 45px var(--led-color);
 }
 
 .wall-item.cube {
@@ -850,7 +852,7 @@ button:focus-visible {
     --item-drop: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.cube::before {
-    box-shadow: 0 -10px 25px var(--accent-led);
+    box-shadow: 0 -10px 25px var(--led-color);
 }
 
 /* Two-door cabinet front: a center seam on the background and a pair of handles on ::after */
@@ -880,7 +882,7 @@ button:focus-visible {
     pointer-events: none;
 }
 .wall-item.storage::before {
-    box-shadow: 0 -12px 30px var(--accent-led), 0 12px 30px var(--accent-led);
+    box-shadow: 0 -12px 30px var(--led-color), 0 12px 30px var(--led-color);
 }
 
 /* The frame is the border, the mat is the background, and ::after is the artwork set back behind the mat */
@@ -892,7 +894,7 @@ button:focus-visible {
     border-style: solid;
 }
 .wall-item.poster::before {
-    box-shadow: 0 -25px 55px var(--accent-led);
+    box-shadow: 0 -25px 55px var(--led-color);
 }
 .wall-item.poster::after {
     content: "";
@@ -915,7 +917,7 @@ button:focus-visible {
     border: 2px solid #64748b;
 }
 .wall-item.spotlight::before {
-    box-shadow: 0 0 25px var(--accent-led);
+    box-shadow: 0 0 25px var(--led-color);
 }
 /* Light wash falling from the fixture. Its z-index keeps it under later items' bodies but inside
    this item's stacking context, and it starts below the body so it never tints the fixture itself. */
@@ -927,13 +929,14 @@ button:focus-visible {
     width: 260%;
     height: 420%;
     clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
-    background-image: linear-gradient(to bottom, var(--accent-led), transparent 85%);
+    background-image: linear-gradient(to bottom, var(--led-color), transparent 85%);
     opacity: calc(var(--led-opacity) * 0.22);
     pointer-events: none;
     z-index: -1;
 }
 
 .wall-item.corner-lamp {
+    --led-color: var(--item-color, var(--corner-led));
     --frame: 2px;
     --item-drop: 0 10px 20px rgba(0, 0, 0, 0.6);
     background-color: #1e293b;
@@ -941,7 +944,7 @@ button:focus-visible {
     border-radius: 4px;
 }
 .wall-item.corner-lamp::before {
-    box-shadow: 0 0 40px var(--corner-led);
+    box-shadow: 0 0 40px var(--led-color);
 }
 /* LED diffuser running down the bar. Like the spotlight wash it has no transition, so an export taken
    right after a mode or LED change reads the final state from the computed style. */
@@ -953,8 +956,8 @@ button:focus-visible {
     left: calc(50% - 3px);
     width: 6px;
     border-radius: 3px;
-    background-color: var(--corner-led);
-    box-shadow: 0 0 6px var(--corner-led), 0 0 14px var(--corner-led);
+    background-color: var(--led-color);
+    box-shadow: 0 0 6px var(--led-color), 0 0 14px var(--led-color);
     opacity: var(--led-opacity);
     pointer-events: none;
 }
@@ -1270,6 +1273,29 @@ body.is-placing * {
     transform: translate(-50%, -50%);
 }
 
+/* Dashed box around a multi-selection: the box the group snaps, clamps and measures with */
+.selection-bounds {
+    position: absolute;
+    z-index: 4;
+    pointer-events: none;
+    outline: 1px dashed rgba(96, 165, 250, 0.75);
+    outline-offset: 5px;
+}
+
+.selection-marquee {
+    position: absolute;
+    z-index: 6;
+    pointer-events: none;
+    border: 1px solid #3b82f6;
+    background-color: rgba(59, 130, 246, 0.15);
+}
+
+body.is-selecting,
+body.is-selecting * {
+    cursor: crosshair !important;
+    user-select: none;
+}
+
 /* Alignment guides, shown only while dragging */
 .align-guides {
     position: absolute;
@@ -1333,7 +1359,8 @@ body.is-placing * {
     font-variant-numeric: tabular-nums;
 }
 
-#inspector-pos-readout {
+#inspector-pos-readout,
+#batch-footprint-readout {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     color: var(--text-main);
@@ -1502,6 +1529,20 @@ body.is-placing * {
 .led-toggle.is-on .led-toggle-thumb {
     transform: translateX(12px);
     background-color: #fff;
+}
+
+/* The readout says "Global" while the item follows the shared picker */
+.hex-readout.is-global {
+    color: var(--text-muted);
+    font-family: inherit;
+    letter-spacing: 0.02em;
+}
+
+.led-reset {
+    flex-shrink: 0;
+    height: 30px;
+    padding: 0 9px;
+    font-size: 11px;
 }
 
 /* Padlock drawn with two pseudo-elements: a rounded shackle over a solid body */
@@ -2068,6 +2109,121 @@ kbd {
     font-weight: 600;
     line-height: 1.4;
     text-align: center;
+}
+
+/* Context menu: a frosted panel at the cursor, kept outside the scaled wall so fixed positioning
+   follows the viewport */
+.context-menu {
+    position: fixed;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    min-width: 212px;
+    padding: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    background-color: #11141bea;
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 60%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(140%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 0 0 1px rgba(0, 0, 0, 0.45),
+        0 18px 40px -12px rgba(0, 0, 0, 0.75),
+        0 4px 12px rgba(0, 0, 0, 0.35);
+    color: var(--text-main);
+    outline: none;
+    animation: menu-in 120ms var(--ease-out);
+}
+
+@keyframes menu-in {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+
+.context-menu-title {
+    max-width: 240px;
+    padding: 6px 10px 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+
+.context-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    height: 30px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--text-main);
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color var(--motion), color var(--motion);
+}
+
+.context-menu-item:hover:not(:disabled),
+.context-menu-item:focus-visible {
+    outline: none;
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.context-menu-item:disabled {
+    color: var(--text-faint);
+    cursor: default;
+}
+
+.context-menu-item kbd {
+    min-width: 0;
+    padding: 0 5px;
+    border-color: var(--hairline);
+    background-color: rgba(255, 255, 255, 0.03);
+    box-shadow: none;
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-weight: 500;
+}
+
+.context-menu-item.is-danger {
+    color: #fca5a5;
+}
+
+.context-menu-item.is-danger:hover:not(:disabled),
+.context-menu-item.is-danger:focus-visible {
+    background-color: rgba(239, 68, 68, 0.16);
+    color: #fecaca;
+}
+
+.context-menu-item.is-danger:disabled {
+    color: var(--text-faint);
+}
+
+.context-menu-separator {
+    height: 1px;
+    margin: 4px 6px;
+    background-color: var(--hairline);
+}
+
+.shortcut-note {
+    margin-top: -8px;
+    font-size: 12px;
+    line-height: 1.9;
+    color: var(--text-muted);
+}
+
+.shortcut-note kbd {
+    font-size: 10.5px;
 }
 
 /* Accent tints follow the live preset where color-mix() exists. A fallback inside the base rules would not

@@ -18,6 +18,13 @@ export const loadLayout = (page, layout) =>
 
 export const selectItemById = (page, id) => page.evaluate((itemId) => selectItem(itemId), id);
 
+export const selectItemsById = (page, ids) => page.evaluate((list) => setSelection(list), ids);
+
+// Sorted, so assertions do not depend on the order items joined the selection
+export const selectedIds = (page) => page.evaluate(() => [...selectedItemIds].sort());
+
+export const itemOrder = (page) => page.evaluate(() => wallItems.map((item) => item.id));
+
 export const getItem = (page, id) =>
   page.evaluate((itemId) => {
     const item = wallItems.find((entry) => entry.id === itemId);
@@ -263,3 +270,29 @@ export async function wallScreenPixels(page, points) {
     points.map(([x, y]) => [x + WALL_BORDER, y + WALL_BORDER]),
   );
 }
+
+// Draws a selection box between two wall coordinates, optionally holding Shift or keeping the button down
+export async function drawMarquee(page, from, to, { hold = false, shift = false, steps = 8 } = {}) {
+  const start = await wallPoint(page, ...from);
+  const end = await wallPoint(page, ...to);
+  if (shift) await page.keyboard.down('Shift');
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps });
+  await nextFrame(page);
+  if (hold) return;
+  await page.mouse.up();
+  if (shift) await page.keyboard.up('Shift');
+}
+
+// Without a position Playwright presses the item's center, which also suits a 20 px tall shelf
+export async function openContextMenu(page, id, position) {
+  await itemLocator(page, id).click({ button: 'right', ...(position && { position }) });
+  await expect(page.locator('#context-menu')).toBeVisible();
+}
+
+export const contextMenuItem = (page, action) => page.locator(`#context-menu [data-action="${action}"]`);
+
+// Computed ::before shadows resolve var(--led-color), so this is the glow color the screen actually shows
+export const glowShadow = (page, id) =>
+  page.evaluate((itemId) => getComputedStyle(getItemElement(itemId), '::before').boxShadow, id);

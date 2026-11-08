@@ -66,7 +66,7 @@ test.describe('JSON export', () => {
 
     expect(name).toBe('spatial-studio-layout.json');
     expect(file).toMatchObject({
-      version: '1.0',
+      version: '1.3',
       wallWidthCm: 333,
       wallHeightCm: 222,
       atticSlope: false,
