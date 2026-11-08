@@ -14,6 +14,14 @@ const WALL_WIDTH_LIMITS_CM = [150, 400];
 const WALL_HEIGHT_LIMITS_CM = [150, 300];
 const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
+const ZOOM_LIMITS = [0.5, 2.5];
+const ZOOM_BUTTON_STEP = 0.25;
+const ZOOM_WHEEL_STEP = 0.1;
+const PAN_KEEP_PX = 80; // this much of the wall always stays inside the canvas
+const RULER_PIN_PX = 4; // a ruler whose wall edge has left the canvas parks this far inside it
+const SHARE_HASH_PREFIX = '#plan=';
+const MAX_SHARE_CHARS = 2 * 1024 * 1024;
+const SHARE_LABEL = 'Copy Share Link';
 
 // Before v1.6 a single layout lived under the legacy key. Projects now keep a small index plus one
 // key per layout, so autosave only ever rewrites the layout that is open.
@@ -162,6 +170,10 @@ const closeProjectsBtn = document.getElementById('close-projects-btn');
 const rulerX = document.getElementById('ruler-x');
 const rulerY = document.getElementById('ruler-y');
 const rulerCorner = document.getElementById('ruler-corner');
+const zoomOutBtn = document.getElementById('zoom-out-btn');
+const zoomResetBtn = document.getElementById('zoom-reset-btn');
+const zoomInBtn = document.getElementById('zoom-in-btn');
+const copyShareLinkBtn = document.getElementById('copy-share-link-btn');
 const closeShortcutsBtn = document.getElementById('close-shortcuts-btn');
 const templateButtons = document.querySelectorAll('.template-btn');
 
@@ -282,6 +294,13 @@ let wallHeightCm = DEFAULT_WALL_HEIGHT_CM;
 let wallWidthPx = wallWidthCm * SCALE;
 let wallHeightPx = wallHeightCm * SCALE;
 let viewScale = 1;
+let fitScale = 1;
+// The view sits on top of the fit: viewScale = fitScale * userZoom, and the pan moves the wall's center
+let userZoom = 1;
+let panX = 0;
+let panY = 0;
+let spaceHeld = false;
+let shareLabelTimer = 0;
 let fittedCanvasSize = '';
 
 let labelMetrics = { single: 34, digit: 6, height: 18 };
@@ -389,8 +408,15 @@ const createIdleGuideDrag = () => ({
 
 let guideDrag = createIdleGuideDrag();
 
+const createIdlePan = () => ({ active: false, startX: 0, startY: 0, startPanX: 0, startPanY: 0, pointerX: 0, pointerY: 0, frameId: 0 });
+let panState = createIdlePan();
+
+// Kept in memory only: copies made here paste back here with their groups and stacking order
+let clipboardState = { items: [], pasteCount: 0 };
+
 const isPointerBusy = () =>
-    dragState.isDragging || resizeState.active || catalogDrag.active || marquee.active || guideDrag.active;
+    dragState.isDragging || resizeState.active || catalogDrag.active || marquee.active || guideDrag.active || panState.active;
+const isDefaultView = () => userZoom === 1 && panX === 0 && panY === 0;
 
 const cloneDefaults = () => JSON.parse(JSON.stringify(defaultItems));
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
@@ -471,10 +497,13 @@ function fitWallToViewport() {
     );
 
     // A collapsed canvas reports no usable size; keep full scale instead of shrinking to nothing
-    viewScale = fit > 0 ? fit : 1;
-    wallCanvas.style.transform = viewScale < 1 ? `scale(${viewScale})` : '';
-    scaleNote.textContent = viewScale < 1
-        ? `(1 cm = 2.5 px, fit ${Math.round(viewScale * 100)}%)`
+    fitScale = fit > 0 ? fit : 1;
+    viewScale = fitScale * userZoom;
+    clampPan();
+    applyWallTransform();
+    // The note describes the fit only; the zoom HUD owns the zoom level
+    scaleNote.textContent = fitScale < 1
+        ? `(1 cm = 2.5 px, fit ${Math.round(fitScale * 100)}%)`
         : '(1 cm = 2.5 px)';
 
     // Item offsets are stored in wall space, so a resize mid-drag only needs fresh screen bounds
@@ -490,7 +519,138 @@ function fitWallToViewport() {
         catalogDrag.canvasRect = canvasArea.getBoundingClientRect();
     }
     layoutRulers();
+    syncZoomHud();
 }
+
+// The default view writes exactly what earlier versions wrote, so the resting geometry never changes.
+// Otherwise the wall scales about its center (the canvas center) and the pan shifts that center.
+function applyWallTransform() {
+    wallCanvas.style.transform = isDefaultView()
+        ? (viewScale < 1 ? `scale(${viewScale})` : '')
+        : `translate(${panX}px, ${panY}px) scale(${viewScale})`;
+}
+
+// However far the view is pushed, part of the wall stays in sight, so it can always be grabbed back
+function clampPan() {
+    const reachX = Math.max(0, (canvasArea.clientWidth + (wallWidthPx + WALL_BORDER_PX * 2) * viewScale) / 2 - PAN_KEEP_PX);
+    const reachY = Math.max(0, (canvasArea.clientHeight + (wallHeightPx + WALL_BORDER_PX * 2) * viewScale) / 2 - PAN_KEEP_PX);
+    panX = Math.round(clamp(panX, -reachX, reachX));
+    panY = Math.round(clamp(panY, -reachY, reachY));
+}
+
+function syncZoomHud() {
+    const percent = `${Math.round(userZoom * 100)}%`;
+    zoomResetBtn.textContent = percent;
+    zoomResetBtn.setAttribute('aria-label', `Reset zoom and pan, now ${percent}`);
+    zoomOutBtn.disabled = userZoom <= ZOOM_LIMITS[0] + EPSILON;
+    zoomInBtn.disabled = userZoom >= ZOOM_LIMITS[1] - EPSILON;
+}
+
+// Keeps the screen point under (clientX, clientY) fixed. A wall point p sits at center + pan + s * p,
+// so holding that sum steady while s changes gives pan' = q - (s' / s) * (q - pan), q measured from
+// the canvas center, which is also the wall's transform origin.
+function zoomTo(nextZoom, clientX, clientY) {
+    const zoom = clamp(Math.round(nextZoom * 1000) / 1000, ZOOM_LIMITS[0], ZOOM_LIMITS[1]);
+    if (zoom === userZoom || isPointerBusy() || isModalOpen()) return;
+
+    const canvasRect = canvasArea.getBoundingClientRect();
+    const centerX = canvasRect.left + canvasRect.width / 2;
+    const centerY = canvasRect.top + canvasRect.height / 2;
+    const qx = (clientX ?? centerX) - centerX;
+    const qy = (clientY ?? centerY) - centerY;
+    const ratio = zoom / userZoom;
+    panX = qx - ratio * (qx - panX);
+    panY = qy - ratio * (qy - panY);
+    userZoom = zoom;
+    fitWallToViewport();
+}
+
+// Buttons and shortcuts move to the next quarter step, so a wheel zoom of 110% steps to 125% or 100%
+function stepZoom(direction) {
+    const steps = userZoom / ZOOM_BUTTON_STEP;
+    const next = direction > 0 ? Math.floor(steps + EPSILON) + 1 : Math.ceil(steps - EPSILON) - 1;
+    zoomTo(next * ZOOM_BUTTON_STEP);
+}
+
+function resetView() {
+    if (isPointerBusy()) return;
+    userZoom = 1;
+    panX = 0;
+    panY = 0;
+    fitWallToViewport();
+}
+
+// A click on the HUD leaves focus where it was, so Space still pans straight afterwards
+[zoomOutBtn, zoomResetBtn, zoomInBtn].forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
+zoomOutBtn.addEventListener('click', () => stepZoom(-1));
+zoomInBtn.addEventListener('click', () => stepZoom(1));
+zoomResetBtn.addEventListener('click', resetView);
+
+// Ctrl or Cmd with the wheel (a trackpad pinch arrives the same way) zooms about the pointer.
+// The delta is scaled, so a mouse notch is one 10% step and a pinch moves smoothly.
+canvasArea.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const delta = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
+    if (!delta) return;
+    zoomTo(userZoom - clamp(delta / 100, -1, 1) * ZOOM_WHEEL_STEP, e.clientX, e.clientY);
+}, { passive: false });
+
+function startPan(e) {
+    panState = {
+        ...createIdlePan(),
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        startPanX: panX,
+        startPanY: panY,
+        pointerX: e.clientX,
+        pointerY: e.clientY
+    };
+    document.body.classList.add('is-panning');
+    canvasArea.classList.add('is-panning');
+}
+
+// Only the transform and the ruler positions change per frame; the ruler ticks are not rebuilt
+function applyPanFrame() {
+    panState.frameId = 0;
+    panX = panState.startPanX + panState.pointerX - panState.startX;
+    panY = panState.startPanY + panState.pointerY - panState.startY;
+    clampPan();
+    applyWallTransform();
+    layoutRulers();
+}
+
+function endPan() {
+    if (panState.frameId) {
+        cancelAnimationFrame(panState.frameId);
+        applyPanFrame();
+    }
+    panState = createIdlePan();
+    document.body.classList.remove('is-panning');
+    canvasArea.classList.remove('is-panning');
+}
+
+function cancelPan() {
+    panX = panState.startPanX;
+    panY = panState.startPanY;
+    if (panState.frameId) cancelAnimationFrame(panState.frameId);
+    panState.frameId = 0;
+    endPan();
+    fitWallToViewport();
+}
+
+// :focus-visible cannot tell the two apart here, since any key press makes a clicked button match it
+let focusFromPointer = false;
+document.addEventListener('mousedown', () => { focusFromPointer = true; }, true);
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Tab') focusFromPointer = false;
+}, true);
+
+const setSpaceHeld = (held) => {
+    spaceHeld = held;
+    canvasArea.classList.toggle('is-pan-ready', held);
+};
 
 // Edge rulers live in the canvas padding, outside #wall, so they never touch the wall's bounding box
 // or the drag math. Their origin is the wall's content corner in screen space, cached at each fit.
@@ -513,6 +673,12 @@ function rulerMarkup(lengthCm, axis) {
     return marks.join('');
 }
 
+// Screen rectangles of the two ruler bands and the canvas, refreshed with every layout
+const rulerBands = { top: null, left: null, canvas: null };
+let rulerScaleKey = '';
+
+const inBand = (band, x, y) => Boolean(band) && x >= band.left && x <= band.right && y >= band.top && y <= band.bottom;
+
 function layoutRulers() {
     const canvasRect = canvasArea.getBoundingClientRect();
     const wallRect = wallCanvas.getBoundingClientRect();
@@ -520,21 +686,36 @@ function layoutRulers() {
     const left = wallRect.left + border - canvasRect.left;
     const top = wallRect.top + border - canvasRect.top;
     const offset = border + RULER_GAP_PX + RULER_SIZE_PX;
+    const width = wallWidthPx * viewScale;
+    const height = wallHeightPx * viewScale;
+    // Zoomed or panned, a wall edge can leave the canvas. Its ruler then parks just inside the canvas
+    // edge and floats over the wall, as in CAD tools, while its ticks stay registered with the wall.
+    const pinned = !isDefaultView();
+    const xTop = pinned ? Math.max(top - offset, RULER_PIN_PX) : top - offset;
+    const yLeft = pinned ? Math.max(left - offset, RULER_PIN_PX) : left - offset;
 
     rulerOrigin.left = wallRect.left + border;
     rulerOrigin.top = wallRect.top + border;
+    rulerBands.canvas = canvasRect;
+    rulerBands.top = { left: rulerOrigin.left, right: rulerOrigin.left + width, top: canvasRect.top + xTop, bottom: canvasRect.top + xTop + RULER_SIZE_PX };
+    rulerBands.left = { left: canvasRect.left + yLeft, right: canvasRect.left + yLeft + RULER_SIZE_PX, top: rulerOrigin.top, bottom: rulerOrigin.top + height };
 
     Object.assign(rulerX.style, {
-        left: `${left}px`, top: `${top - offset}px`, width: `${wallWidthPx * viewScale}px`, height: `${RULER_SIZE_PX}px`
+        left: `${left}px`, top: `${xTop}px`, width: `${width}px`, height: `${RULER_SIZE_PX}px`
     });
     Object.assign(rulerY.style, {
-        left: `${left - offset}px`, top: `${top}px`, width: `${RULER_SIZE_PX}px`, height: `${wallHeightPx * viewScale}px`
+        left: `${yLeft}px`, top: `${top}px`, width: `${RULER_SIZE_PX}px`, height: `${height}px`
     });
     Object.assign(rulerCorner.style, {
-        left: `${left - offset}px`, top: `${top - offset}px`, width: `${RULER_SIZE_PX}px`, height: `${RULER_SIZE_PX}px`
+        left: `${yLeft}px`, top: `${xTop}px`, width: `${RULER_SIZE_PX}px`, height: `${RULER_SIZE_PX}px`
     });
-    rulerX.querySelector('.ruler-scale').innerHTML = rulerMarkup(wallWidthCm, 'x');
-    rulerY.querySelector('.ruler-scale').innerHTML = rulerMarkup(wallHeightCm, 'y');
+    // Tick positions depend only on the scale and the wall size, so a pan never rebuilds them
+    const scaleKey = `${viewScale}|${wallWidthCm}|${wallHeightCm}`;
+    if (scaleKey !== rulerScaleKey) {
+        rulerScaleKey = scaleKey;
+        rulerX.querySelector('.ruler-scale').innerHTML = rulerMarkup(wallWidthCm, 'x');
+        rulerY.querySelector('.ruler-scale').innerHTML = rulerMarkup(wallHeightCm, 'y');
+    }
     syncRulerSpans();
     applyCrosshair();
 }
@@ -554,18 +735,12 @@ function syncRulerSpans() {
     spanY.style.height = `${box.height * viewScale}px`;
 }
 
-// Screen rectangles of the two rulers, rebuilt from the origin cached at the last fit. The top ruler
-// pulls out horizontal guides (axis 'y') and the left ruler vertical ones (axis 'x').
+// The top ruler pulls out horizontal guides (axis 'y') and the left ruler vertical ones (axis 'x').
+// Only the part of a band inside the canvas counts, since the canvas clips the rest.
 function rulerAxisAt(clientX, clientY) {
-    const offset = WALL_BORDER_PX * viewScale + RULER_GAP_PX + RULER_SIZE_PX;
-    const right = rulerOrigin.left + wallWidthPx * viewScale;
-    const bottom = rulerOrigin.top + wallHeightPx * viewScale;
-    const inTop = clientX >= rulerOrigin.left && clientX <= right &&
-        clientY >= rulerOrigin.top - offset && clientY <= rulerOrigin.top - offset + RULER_SIZE_PX;
-    const inLeft = clientY >= rulerOrigin.top && clientY <= bottom &&
-        clientX >= rulerOrigin.left - offset && clientX <= rulerOrigin.left - offset + RULER_SIZE_PX;
-    if (inTop) return 'y';
-    return inLeft ? 'x' : null;
+    if (!inBand(rulerBands.canvas, clientX, clientY)) return null;
+    if (inBand(rulerBands.top, clientX, clientY)) return 'y';
+    return inBand(rulerBands.left, clientX, clientY) ? 'x' : null;
 }
 
 function applyCrosshair() {
@@ -581,7 +756,9 @@ function applyCrosshair() {
     const hairY = rulerY.querySelector('.ruler-hairline');
     const x = (crosshair.clientX - rulerOrigin.left) / viewScale;
     const y = (crosshair.clientY - rulerOrigin.top) / viewScale;
-    const inside = crosshair.over && !isModalOpen() && x >= 0 && y >= 0 && x <= wallWidthPx && y <= wallHeightPx;
+    // A zoomed wall can reach under the sidebars, where the pointer is not over the drawing at all
+    const inside = crosshair.over && !isModalOpen() && inBand(rulerBands.canvas, crosshair.clientX, crosshair.clientY) &&
+        x >= 0 && y >= 0 && x <= wallWidthPx && y <= wallHeightPx;
 
     hairX.hidden = hairY.hidden = !inside;
     if (!inside) return;
@@ -747,14 +924,26 @@ function removeGuide(id) {
     commitLayoutChange();
 }
 
-// The rulers keep pointer-events off so they never get in the way of the canvas; a press on bare
-// canvas is checked against their rectangles instead
+// Runs in the capture phase, ahead of items and the wall. A middle press, or a left press with Space
+// held, pans the view. The rulers keep pointer-events off so they never get in the way, so a press is
+// checked against their bands here instead; a ruler parked over a zoomed wall still pulls guides.
 canvasArea.addEventListener('mousedown', (e) => {
-    if (e.button !== 0 || e.target !== canvasArea || isPointerBusy() || isModalOpen()) return;
+    if (e.target.closest('.zoom-hud') || isPointerBusy() || isModalOpen()) return;
+
+    if (e.button === 1 || (e.button === 0 && spaceHeld)) {
+        e.preventDefault();
+        e.stopPropagation();
+        guardNextWallClick();
+        startPan(e);
+        return;
+    }
+
+    if (e.button !== 0) return;
     const axis = rulerAxisAt(e.clientX, e.clientY);
     if (!axis) return;
 
     e.preventDefault();
+    e.stopPropagation();
     if (wallGuides.length >= MAX_GUIDES) {
         showIoStatus(`A wall holds up to ${MAX_GUIDES} guides. Remove one to add another.`, 'error');
         return;
@@ -763,7 +952,7 @@ canvasArea.addEventListener('mousedown', (e) => {
     wallGuides.push(guide);
     renderGuides();
     startGuideDrag(guide, true, e);
-});
+}, true);
 
 [guideHitLayer, guideLineLayer].forEach(layer => {
     layer.addEventListener('mousedown', (e) => {
@@ -933,6 +1122,63 @@ function migrateLegacyState() {
         }
     }
     storageRemove(LEGACY_STORAGE_KEY);
+}
+
+// Base64URL over UTF-8 bytes, so names and notes in any script survive the trip through a URL
+function toBase64Url(text) {
+    const bytes = new TextEncoder().encode(text);
+    let binary = '';
+    // Chunked, since spreading a long byte array into fromCharCode can overrun the argument limit
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(encoded) {
+    if (!/^[A-Za-z0-9_-]+$/.test(encoded)) throw new Error('Not Base64URL.');
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    const binary = atob(base64 + '='.repeat((4 - (base64.length % 4)) % 4));
+    return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, ch => ch.charCodeAt(0)));
+}
+
+// Returns the raw layout from a #plan= link, or null. The hash is cleared either way, so a reload or a
+// bookmark of the cleaned address never applies the same link twice.
+function takeSharedPlan() {
+    if (!window.location.hash.startsWith(SHARE_HASH_PREFIX)) return null;
+    const encoded = window.location.hash.slice(SHARE_HASH_PREFIX.length);
+    try {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+    } catch {
+        // A sandboxed frame may refuse; the link is still read once
+    }
+
+    try {
+        if (encoded.length > MAX_SHARE_CHARS) throw new Error('Too long.');
+        const data = JSON.parse(fromBase64Url(encoded));
+        normalizeLayout(data);
+        return data;
+    } catch {
+        showIoStatus('Share link could not be read.', 'error');
+        return null;
+    }
+}
+
+function uniqueProjectName(base) {
+    const names = new Set(projects.map(project => project.name));
+    let name = base;
+    for (let n = 2; names.has(name); n++) name = `${base} ${n}`;
+    return name;
+}
+
+// Someone who already has projects gets the link as a new project, so following a link never
+// overwrites their open work. A first visit just fills the fresh Default Project.
+function addSharedProject() {
+    if (projects.length >= MAX_PROJECTS) {
+        showIoStatus(`The shared plan was not opened: the gallery already holds ${MAX_PROJECTS} projects.`, 'error');
+        return null;
+    }
+    const project = { id: createProjectId(), name: uniqueProjectName('Shared Plan'), timestamp: Date.now() };
+    projects.push(project);
+    return project;
 }
 
 function toFiniteNumber(value) {
@@ -1114,10 +1360,22 @@ function loadState() {
     activeProjectId = index ? index.activeId : null;
     migrateLegacyState();
 
+    const returning = projects.length > 0;
     if (!projects.length) projects.push({ id: createProjectId(), name: 'Default Project', timestamp: Date.now() });
     if (!activeProject()) activeProjectId = [...projects].sort((a, b) => b.timestamp - a.timestamp)[0].id;
 
-    applyProjectLayout(readProjectLayout(activeProjectId));
+    let layout = readProjectLayout(activeProjectId);
+    const shared = takeSharedPlan();
+    if (shared) {
+        const project = returning ? addSharedProject() : activeProject();
+        if (project) {
+            activeProjectId = project.id;
+            layout = shared;
+            showIoStatus(returning ? `Opened the shared plan as ${project.name}.` : 'Opened the shared plan.', 'success');
+        }
+    }
+
+    applyProjectLayout(layout);
     // Opening a project is not an edit, so its timestamp stays as it was
     writeProjectLayout(activeProjectId);
     writeProjectIndex();
@@ -2019,6 +2277,13 @@ function scheduleDragFrame() {
 }
 
 window.addEventListener('mousemove', (e) => {
+    if (panState.active) {
+        panState.pointerX = e.clientX;
+        panState.pointerY = e.clientY;
+        if (!panState.frameId) panState.frameId = requestAnimationFrame(applyPanFrame);
+        return;
+    }
+
     if (guideDrag.active) {
         guideDrag.pointerX = e.clientX;
         guideDrag.pointerY = e.clientY;
@@ -2084,6 +2349,7 @@ window.addEventListener('mouseup', () => {
 
 window.addEventListener('mouseup', () => {
     if (guideDrag.active) finishGuideDrag();
+    if (panState.active) endPan();
 });
 
 // The border scales with the wall, so it comes off after converting to wall space
@@ -2374,6 +2640,8 @@ window.addEventListener('blur', () => {
     else if (catalogDrag.pending) catalogDrag = createIdleCatalogDrag();
     if (resizeState.active) cancelResize();
     if (guideDrag.active) cancelGuideDrag();
+    if (panState.active) endPan();
+    setSpaceHeld(false);
     if (marquee.active) cancelMarquee();
     else if (marquee.pending) marquee = createIdleMarquee();
     closeContextMenu();
@@ -2491,35 +2759,95 @@ function removeItems(ids) {
 
 const removeSelectedItems = () => removeItems(selectedItemIds);
 
-// Copies keep their relative layout, so the offset is clamped for the group box, not per item.
-// Each copied group becomes a new group of its own copies.
-function duplicateSelectedItem() {
-    const sources = getSelectedItems();
-    if (!sources.length) return;
+// A block of copies that would newly cut into the slope slides left or down, a centimeter at a time,
+// to the nearest clear spot, the way a group drag refuses new intrusions. A single copy may land in
+// the slope and is flagged red, like a single dragged item.
+function slopeClearOffset(sources, box, dx, dy) {
+    const watched = sources.filter(source => !intrudesAtticSlope(source));
+    const intrudes = (x, y) => watched.some(source => intrudesAtticSlope({ ...source, left: source.left + x, top: source.top + y }));
+    if (sources.length < 2 || !intrudes(dx, dy)) return [dx, dy];
 
+    for (let step = CM_STEP_PX; step <= Math.max(wallWidthPx, wallHeightPx); step += CM_STEP_PX) {
+        const left = dx - step;
+        const down = dy + step;
+        if (box.left + left >= 0 && !intrudes(left, dy)) return [left, dy];
+        if (box.top + box.height + down <= wallHeightPx && !intrudes(dx, down)) return [dx, down];
+    }
+    return [dx, dy];
+}
+
+// Copies keep their relative layout, so the offset is clamped for the block's box, not per item.
+// Each group with two or more copied members becomes a new group of its own copies.
+function placeCopies(sources, offsetPx) {
     const box = getBounds(sources);
-    const dx = clamp(DUPLICATE_OFFSET_PX, -box.left, wallWidthPx - box.left - box.width);
-    const dy = clamp(DUPLICATE_OFFSET_PX, -box.top, wallHeightPx - box.top - box.height);
-    const copiedGroups = new Map();
+    let dx = clamp(offsetPx, -box.left, wallWidthPx - box.left - box.width);
+    let dy = clamp(offsetPx, -box.top, wallHeightPx - box.top - box.height);
+    [dx, dy] = slopeClearOffset(sources, box, dx, dy);
 
+    const copiedGroups = new Map();
     const copies = sources.map(source => {
         if (source.groupId && !copiedGroups.has(source.groupId)) copiedGroups.set(source.groupId, createGroupId());
-        return {
+        const copy = {
             ...JSON.parse(JSON.stringify(source)),
             id: createItemId(),
             // A copy starts unlocked so it can be placed right away
             locked: false,
-            left: source.left + dx,
-            top: source.top + dy,
             groupId: source.groupId ? copiedGroups.get(source.groupId) : null
         };
+        // Pieces copied before the wall shrank may not fit it any more, so they are trimmed to it
+        copy.width = Math.min(copy.width, wallWidthPx);
+        copy.height = Math.min(copy.height, wallHeightPx);
+        copy.left = clamp(source.left + dx, 0, wallWidthPx - copy.width);
+        copy.top = clamp(source.top + dy, 0, wallHeightPx - copy.height);
+        return copy;
     });
 
+    // normalizeGroups drops the id of any group that ends up with a single copy
     wallItems = normalizeGroups([...wallItems, ...copies]);
     selectedItemIds = copies.map(copy => copy.id);
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
+    return copies;
+}
+
+function duplicateSelectedItem() {
+    const sources = getSelectedItems();
+    if (sources.length) placeCopies(sources, DUPLICATE_OFFSET_PX);
+}
+
+const countLabel = (count) => `${count} item${count === 1 ? '' : 's'}`;
+
+// Copies are taken in stacking order, so a paste rebuilds the same layering
+function copySelection() {
+    const items = getSelectedItems();
+    if (!items.length) return false;
+    clipboardState = { items: JSON.parse(JSON.stringify(items)), pasteCount: 0 };
+    showIoStatus(`Copied ${countLabel(items.length)}.`, 'success');
+    return true;
+}
+
+// Cut follows Delete: locked items are copied but stay on the wall, still selected
+function cutSelection() {
+    if (!copySelection()) return;
+    const items = getSelectedItems();
+    const locked = items.filter(item => item.locked).length;
+    if (locked === items.length) {
+        flashLockNote();
+        showIoStatus(`Copied ${countLabel(items.length)}; locked items stay on the wall.`, 'error');
+        return;
+    }
+    removeSelectedItems();
+    showIoStatus(locked
+        ? `Cut ${countLabel(items.length - locked)}; ${locked} locked stayed on the wall.`
+        : `Cut ${countLabel(items.length)}.`, 'success');
+}
+
+// Each paste lands another 4 cm further along, so repeated pastes fan out instead of stacking
+function pasteClipboard() {
+    if (!clipboardState.items.length || isPointerBusy()) return;
+    clipboardState.pasteCount += 1;
+    placeCopies(clipboardState.items, DUPLICATE_OFFSET_PX * clipboardState.pasteCount);
 }
 
 // A mixed selection locks everything first; only a fully locked selection unlocks
@@ -2693,6 +3021,70 @@ function slopeSafeOffset(items, key, offset) {
     return Math.abs(shift) < EPSILON || Math.sign(shift) !== Math.sign(offset) ? 0 : shift;
 }
 
+const reportHeld = (held) => {
+    if (held) showIoStatus(`Kept ${held} ${held === 1 ? 'item' : 'items'} clear of the attic slope.`, 'error');
+};
+
+// A horizontal mirror turns a right-facing quarter turn into a left-facing one; 0 and 180 look the same
+const mirroredRotation = (rotation) => (rotation === 90 ? 270 : rotation === 270 ? 90 : rotation);
+
+// Mirrors units across the vertical line whose doubled position is axisSum: each piece lands at
+// axisSum minus its right edge, so a group keeps its mirrored shape. The unit is flipped inside its own
+// box first, then slides as one block; a unit that would newly cut into the slope steps back toward
+// where it was, as with Align, and stays as it was when no step is clear.
+function mirrorUnits(units, axisSum) {
+    let held = 0;
+    let moved = 0;
+
+    units.forEach(({ items, box }) => {
+        const right = box.left + box.width;
+        const clear = items.map(item => !intrudesAtticSlope(item));
+        const inner = items.map(item => box.left + right - (item.left + item.width));
+        const fits = (shift) => items.every((item, i) => !clear[i] || !intrudesAtticSlope({ ...item, left: inner[i] + shift }));
+        const offset = axisSum - box.left - right;
+
+        let shift = offset;
+        while (Math.abs(shift) > EPSILON && !fits(shift)) shift -= Math.sign(offset) * CM_STEP_PX;
+        if (!fits(shift)) {
+            held += items.length;
+            return;
+        }
+        if (Math.abs(shift - offset) > EPSILON) held += items.length;
+
+        const before = items.map(item => `${item.left}:${item.rotation}`).join();
+        items.forEach((item, i) => {
+            item.left = inner[i] + shift;
+            item.rotation = mirroredRotation(item.rotation);
+        });
+        if (items.map(item => `${item.left}:${item.rotation}`).join() !== before) moved++;
+    });
+
+    return { held, moved };
+}
+
+function finishMirror({ held, moved }) {
+    reportHeld(held);
+    if (!moved) return;
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+const canFlipSelection = () => selectedItemIds.length > 1 && arrangeUnits().some(unit => unit.movable);
+
+// Locked units stay put but still count toward the box, so the mirror line is the whole selection's
+function flipSelection() {
+    if (!canFlipSelection() || isPointerBusy()) return;
+    const bounds = getBounds(getSelectedItems());
+    finishMirror(mirrorUnits(arrangeUnits().filter(unit => unit.movable), bounds.left * 2 + bounds.width));
+}
+
+function mirrorItemAcrossWall() {
+    const item = getSelectedItem();
+    if (!item || item.locked || isPointerBusy()) return;
+    finishMirror(mirrorUnits([{ items: [item], box: getBounds([item]) }], wallWidthPx));
+}
+
 function arrangeAlong(axis, moves) {
     const [key, size] = axisKeys(axis);
     const limit = axis === 'x' ? wallWidthPx : wallHeightPx;
@@ -2708,7 +3100,7 @@ function arrangeAlong(axis, moves) {
         moved++;
     });
 
-    if (held) showIoStatus(`Kept ${held} ${held === 1 ? 'item' : 'items'} clear of the attic slope.`, 'error');
+    reportHeld(held);
     if (!moved) return;
     renderPlanner();
     updateInspectorPanel();
@@ -3139,6 +3531,19 @@ function syncItemLedField() {
     document.getElementById('item-led-reset').disabled = !custom || item.locked;
 }
 
+const symmetryFieldHtml = (items) => {
+    const button = items.length > 1
+        ? (canFlipSelection()
+            ? '<button type="button" class="btn-secondary" id="flip-horizontal-btn" title="Mirror the selection across its own vertical center line">Flip Horizontally</button>'
+            : '')
+        : `<button type="button" class="btn-secondary" id="mirror-wall-btn" title="Mirror the item across the wall's vertical center line" ${items[0].locked ? 'disabled' : ''}>Mirror Across Wall</button>`;
+    return button ? `
+    <div class="inspector-field">
+        <label>Symmetry</label>
+        ${button}
+    </div>` : '';
+};
+
 const rotationFieldHtml = (readout, items) => `
     <div class="inspector-field">
         <label>Rotation${readout ? ` <span class="rotation-readout" id="rotation-readout">${readout}</span>` : ''}</label>
@@ -3219,6 +3624,7 @@ function renderItemInspector(item) {
             ${feature ? featureNote : furnitureFields}
 
             ${rotationFieldHtml(`${item.rotation} deg`, [item])}
+            ${symmetryFieldHtml([item])}
             ${layerFieldHtml(`${layerIndex + 1} of ${wallItems.length}`)}
             ${WARNINGS_HTML}
 
@@ -3346,6 +3752,7 @@ function renderBatchInspector(items) {
             </div>
 
             ${rotationFieldHtml('', items)}
+            ${symmetryFieldHtml(items)}
             ${layerFieldHtml('')}
             ${WARNINGS_HTML}
 
@@ -3379,6 +3786,8 @@ function updateInspectorPanel() {
         btn.addEventListener('click', () => runArrange(btn.dataset.arrange));
     });
     document.getElementById('rotate-item-btn').addEventListener('click', rotateSelection);
+    document.getElementById('flip-horizontal-btn')?.addEventListener('click', flipSelection);
+    document.getElementById('mirror-wall-btn')?.addEventListener('click', mirrorItemAcrossWall);
     document.getElementById('group-toggle-btn')?.addEventListener('click', () => (canGroup() ? groupSelection() : ungroupSelection()));
     document.getElementById('send-backward-btn').addEventListener('click', () => moveSelectedLayer(-1));
     document.getElementById('bring-forward-btn').addEventListener('click', () => moveSelectedLayer(1));
@@ -3558,7 +3967,33 @@ function handleModifierShortcut(e) {
         return true;
     }
 
+    // Selected page text keeps the browser's own copy and cut
+    if ((key === 'c' || key === 'x') && !e.shiftKey && selectedItemIds.length && !hasTextSelection()) {
+        e.preventDefault();
+        if (!e.repeat && !isPointerBusy()) (key === 'c' ? copySelection : cutSelection)();
+        return true;
+    }
+
+    if (key === 'v' && !e.shiftKey && clipboardState.items.length) {
+        e.preventDefault();
+        if (!e.repeat && !isPointerBusy()) pasteClipboard();
+        return true;
+    }
+
+    // The browser's page zoom is taken over, so the shortcuts zoom the wall instead of the whole app
+    if (['=', '+', '-', '_', '0'].includes(key) || ['NumpadAdd', 'NumpadSubtract', 'Numpad0'].includes(e.code)) {
+        e.preventDefault();
+        if (key === '0' || e.code === 'Numpad0') resetView();
+        else stepZoom(key === '-' || key === '_' || e.code === 'NumpadSubtract' ? -1 : 1);
+        return true;
+    }
+
     return false;
+}
+
+function hasTextSelection() {
+    const selection = window.getSelection();
+    return Boolean(selection && !selection.isCollapsed && selection.toString().trim());
 }
 
 // A group nudge clamps the shared offset to the group box, so members never squeeze against a wall
@@ -3637,11 +4072,12 @@ function handleEscape(e) {
 
 window.addEventListener('keydown', (e) => {
     // Escape abandons a catalog drag, a grip resize, a guide drag or a selection box before anything else sees the key
-    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active || marquee.active || guideDrag.active)) {
+    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active || marquee.active || guideDrag.active || panState.active)) {
         e.preventDefault();
         if (catalogDrag.active) endCatalogDrag();
         if (resizeState.active) cancelResize();
         if (guideDrag.active) cancelGuideDrag();
+        if (panState.active) cancelPan();
         if (marquee.active) cancelMarquee();
         return;
     }
@@ -3655,6 +4091,15 @@ window.addEventListener('keydown', (e) => {
 
     // An open dialog is modal, so nothing behind it may react to shortcuts
     if (isModalOpen()) return;
+
+    // Space keeps its usual job in fields and on a button reached with Tab. A button that only holds
+    // focus because it was clicked gives Space up, so clicking a control and then panning just works.
+    const keyboardButton = e.target.tagName === 'BUTTON' && !focusFromPointer;
+    if (e.code === 'Space' && !isFormField(e.target) && !keyboardButton) {
+        e.preventDefault();
+        if (!spaceHeld && !isPointerBusy()) setSpaceHeld(true);
+        return;
+    }
 
     if (e.key === 'Escape') {
         handleEscape(e);
@@ -3699,6 +4144,11 @@ window.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && spaceHeld) {
+        e.preventDefault();
+        setSpaceHeld(false);
+        return;
+    }
     if (e.key !== 'Alt') return;
 
     measure.alt = false;
@@ -3783,21 +4233,22 @@ function showIoStatus(message, tone) {
     ioStatusTimer = setTimeout(() => { ioStatus.hidden = true; }, 5000);
 }
 
-function exportLayout() {
-    const payload = {
-        version: EXPORT_VERSION,
-        wallWidthCm,
-        wallHeightCm,
-        wallItems,
-        atticSlope: atticSlopeToggle.checked,
-        wallPaint,
-        wallGuides,
-        accentColor: accentColorPicker.value,
-        cornerColor: cornerColorPicker.value,
-        brightness: Number(brightnessSlider.value)
-    };
+// One payload for the JSON export and share links, so a link opens exactly what a file would
+const layoutPayload = () => ({
+    version: EXPORT_VERSION,
+    wallWidthCm,
+    wallHeightCm,
+    wallItems,
+    atticSlope: atticSlopeToggle.checked,
+    wallPaint,
+    wallGuides,
+    accentColor: accentColorPicker.value,
+    cornerColor: cornerColorPicker.value,
+    brightness: Number(brightnessSlider.value)
+});
 
-    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }), EXPORT_FILENAME);
+function exportLayout() {
+    downloadBlob(new Blob([JSON.stringify(layoutPayload(), null, 2)], { type: 'application/json' }), EXPORT_FILENAME);
     showIoStatus('Layout exported.', 'success');
 }
 
@@ -3990,12 +4441,13 @@ function flashCopyLabel(text) {
 
 // Fallback for contexts without the async clipboard API. The buffer lives inside the dialog
 // because everything outside an open modal dialog is inert and cannot be selected.
-function copyWithSelection(text) {
+// The buffer goes inside the open dialog, since a modal dialog makes everything outside it inert
+function copyWithSelection(text, dialog = specModal, returnFocus = copyMarkdownBtn) {
     const buffer = document.createElement('textarea');
     buffer.value = text;
     buffer.setAttribute('readonly', '');
     buffer.className = 'clipboard-buffer';
-    specModal.appendChild(buffer);
+    dialog.appendChild(buffer);
     buffer.select();
 
     let copied = false;
@@ -4005,8 +4457,17 @@ function copyWithSelection(text) {
         copied = false;
     }
     buffer.remove();
-    copyMarkdownBtn.focus();
+    returnFocus.focus();
     return copied;
+}
+
+async function copyText(text, dialog, returnFocus) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return copyWithSelection(text, dialog, returnFocus);
+    }
 }
 
 async function copySpecMarkdown() {
@@ -4282,10 +4743,37 @@ newProjectForm.addEventListener('submit', (e) => {
 
 function openProjects() {
     if (isModalOpen() || isPointerBusy()) return;
+    clearTimeout(shareLabelTimer);
+    copyShareLinkBtn.textContent = SHARE_LABEL;
     renderProjects();
     projectsModal.showModal();
     newProjectName.focus();
 }
+
+function flashShareLabel(text) {
+    clearTimeout(shareLabelTimer);
+    copyShareLinkBtn.textContent = text;
+    shareLabelTimer = setTimeout(() => { copyShareLinkBtn.textContent = SHARE_LABEL; }, 2000);
+}
+
+async function copyShareLink() {
+    const url = `${window.location.href.split('#')[0]}${SHARE_HASH_PREFIX}${toBase64Url(JSON.stringify(layoutPayload()))}`;
+    const copied = await copyText(url, projectsModal, copyShareLinkBtn);
+    flashShareLabel(copied ? 'Link Copied' : 'Copy failed');
+    showIoStatus(copied ? 'Share link copied. It opens this exact wall in any browser.' : 'The share link could not be copied.', copied ? 'success' : 'error');
+}
+
+copyShareLinkBtn.addEventListener('click', copyShareLink);
+
+// A link pasted into a tab that already runs the planner only changes the hash, so it is picked up here
+window.addEventListener('hashchange', () => {
+    const shared = takeSharedPlan();
+    if (!shared || isPointerBusy()) return;
+    const project = addSharedProject();
+    if (!project) return;
+    storageSet(PROJECT_LAYOUT_PREFIX + project.id, JSON.stringify(shared));
+    openProject(project.id);
+});
 
 projectsBtn.addEventListener('click', openProjects);
 closeProjectsBtn.addEventListener('click', () => projectsModal.close());

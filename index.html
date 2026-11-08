@@ -26,7 +26,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v1.7</span></h1>
+            <h1>Spatial Studio <span class="badge">v1.8</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -219,6 +219,12 @@
                     <div class="ruler-span" hidden></div>
                     <div class="ruler-hairline" hidden><span class="ruler-readout"></span></div>
                 </div>
+            </div>
+
+            <div class="zoom-hud" role="group" aria-label="Zoom">
+                <button type="button" id="zoom-out-btn" class="zoom-btn" aria-label="Zoom out" title="Zoom out (Ctrl+-)">-</button>
+                <button type="button" id="zoom-reset-btn" class="zoom-btn zoom-level" aria-label="Reset zoom and pan, now 100%" title="Reset zoom and pan (Ctrl+0)">100%</button>
+                <button type="button" id="zoom-in-btn" class="zoom-btn" aria-label="Zoom in" title="Zoom in (Ctrl+=)">+</button>
             </div>
         </section>
 
@@ -434,6 +440,14 @@
                         Drag from the top or left ruler to pull out a reference guide, and drag it off the wall or
                         double-click it to remove it.
                     </p>
+                    <p>
+                        <kbd>Ctrl</kbd> + <kbd>C</kbd>, <kbd>Ctrl</kbd> + <kbd>X</kbd> and <kbd>Ctrl</kbd> + <kbd>V</kbd>
+                        copy, cut and paste the selection, each paste landing 4 cm further along.
+                    </p>
+                    <p>
+                        <kbd>Ctrl</kbd> + Wheel zooms around the pointer and <kbd>Ctrl</kbd> + <kbd>0</kbd> resets zoom and pan.
+                        Hold <kbd>Space</kbd> and drag, or drag with the middle button, to pan the view.
+                    </p>
                 </div>
             </div>
         </div>
@@ -447,6 +461,7 @@
                     <p id="projects-subtitle" class="modal-subtitle"></p>
                 </div>
                 <div class="modal-actions">
+                    <button type="button" id="copy-share-link-btn" class="btn-secondary" title="Copy a link that opens this exact wall in any browser">Copy Share Link</button>
                     <button type="button" id="close-projects-btn" class="btn-secondary">Close</button>
                 </div>
             </header>

@@ -4,7 +4,7 @@ Live Demo: https://s7codes.github.io/spatial-light-planner/
 
 [![E2E Tests](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml/badge.svg)](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml)
 
-A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place, turn, align, and distribute them with centimeter precision against reference guides, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, preview the backlighting in a dark room on a choice of wall paints, and hand off a bill of materials, drilling coordinates, a spreadsheet-ready CSV, or a high-resolution image of the finished plan. Every wall is kept as a named project in the browser.
+A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place, turn, mirror, align, and distribute them with centimeter precision against reference guides, zoomed in as close as the detail needs, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, preview the backlighting in a dark room on a choice of wall paints, and hand off a bill of materials, drilling coordinates, a spreadsheet-ready CSV, or a high-resolution image of the finished plan. Every wall is kept as a named project in the browser, and any wall can be sent to someone else as a single link.
 
 Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies. Playwright is the only dev dependency, and it powers the end-to-end suite.
 
@@ -13,6 +13,10 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Precision placement:** Every position and size lives on a whole-centimeter grid. Dragging, arrow-key nudges, `5 cm` grid snapping, and magnetic alignment all land on exact centimeters, so on-screen readouts never drift from the stored layout.
 - **CAD rulers:** Frosted edge rulers frame the top and left of the wall with a tick every `10 cm` and a label every `50 cm`. Live hairlines read the pointer position in whole centimeters, and a shaded band marks the selection's extent.
 - **Reference guides:** Drag out of either ruler to drop up to 12 dashed guide lines on the wall. Items and whole selections snap to them, and they move in `1 cm` (or `5 cm`) steps, leave when dragged off the wall or double-clicked, and are saved with the layout.
+- **Viewport zoom and pan:** Zoom from 50% to 250% with the floating HUD, `Ctrl + Wheel` (or a trackpad pinch) about the pointer, or `Ctrl + =` / `Ctrl + -`, and pan with `Space + Drag` or the middle button. The rulers stay in register, and every drag, selection box, catalog drop, and guide pull lands on exact centimeters at any zoom.
+- **Studio clipboard:** `Ctrl + C`, `Ctrl + X`, and `Ctrl + V` copy, cut, and paste whole selections with their groups and stacking order. Repeated pastes cascade 4 cm apart, and every copy is fresh, unlocked, and kept on the wall.
+- **Symmetry:** Flip a selection horizontally across its own center line, or mirror a single piece across the wall's center, with quarter turns swapping to their mirror image.
+- **Share links:** Copy Share Link packs the whole wall into a URL. Opening it rebuilds the layout in any browser, as a new project for anyone who already has some.
 - **Align & Distribute:** With two or more pieces selected, the Inspector lines them up by any edge or center, or spaces three or more with equal gaps, treating groups as rigid blocks and holding pieces clear of the attic slope.
 - **Live measurement:** Dashed rulers show the distance from the left wall and the ceiling, plus the clearance to the nearest neighbor on every side. Green guides appear whenever an edge or center lines up with another item or the wall center.
 - **Smart measurements:** Hold `Alt` / `Option` with something selected and point at any other item, or at bare wall, for Figma-style red distance lines and badges between the two boxes.
@@ -33,7 +37,7 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Project gallery:** Keep up to 24 walls as named projects. The My Projects dialog shows each one with a schematic thumbnail, its last edited date, and Load, Rename, and Delete, and the open project saves itself after every change.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown or downloadable as one CSV file), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 308 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 322 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -44,7 +48,7 @@ The wall is modeled at `1 cm = 2.5 px`. Item geometry is stored in wall pixels, 
 - Arrow keys step from the nearest whole centimeter.
 - Imports and saved state are rounded back onto the grid.
 
-Wall pixel sizes are derived from the wall's centimeter dimensions. The wall uses `content-box` sizing, so its 2 px border sits outside that area and items flush with the right or bottom edge stay fully visible. When the wall is larger than the canvas, it is scaled with a CSS `transform` and pointer deltas are divided by the same factor, so dragging stays 1:1 under the cursor at any fit level.
+Wall pixel sizes are derived from the wall's centimeter dimensions. The wall uses `content-box` sizing, so its 2 px border sits outside that area and items flush with the right or bottom edge stay fully visible. When the wall is larger than the canvas, it is scaled with a CSS `transform` and pointer deltas are divided by the same factor, so dragging stays 1:1 under the cursor at any fit level. The user's zoom multiplies that fit (see Viewport Zoom & Pan), and the same division keeps every interaction exact.
 
 ### Rendering Loop
 `mousemove` only records the pointer; a single `requestAnimationFrame` callback per frame applies the newest position. Each frame writes inline `left` / `top` styles for every item being moved, then updates collisions, rulers, guides, and warnings once for the whole set, so the item DOM is never rebuilt during a drag. The selection box follows the same pattern.
@@ -60,6 +64,17 @@ Edge rulers run along the top and left of the wall, the way CAD tools frame a dr
 - **Hairlines:** `mousemove` only stores the pointer. One `requestAnimationFrame` callback per frame converts it to wall space from the ruler origin cached at the last fit, then writes a `transform` on each hairline and its whole-centimeter readout, with no layout reads. The hairlines hide off the wall, when the pointer leaves the window, and while a dialog is open, and their readouts swap sides near the far end.
 - **Selection extent:** the selected item, or a multi-selection's bounding box, is shaded on both rulers. The band follows drags and resizes through the same inline-style path as the selection outline.
 - **Styling:** a translucent obsidian fill under `backdrop-filter: blur(8px)`, with an inset ring instead of a border so tick offsets start at the true edge.
+- **Zoomed views:** the rulers are positioned from the wall's live bounding box, so they scale and pan with it. When a wall edge leaves the canvas, its ruler parks just inside the canvas edge and floats over the wall, as in CAD tools, with its ticks still registered. Ticks are rebuilt only when the scale or the wall size changes, so a pan only moves the two ruler elements.
+
+### Viewport Zoom & Pan
+The view sits on top of the fit: `viewScale = fitScale * userZoom`, with `userZoom` clamped to `0.5-2.5`, and `panX` / `panY` shift the wall's center.
+
+- **Resting geometry:** at 100% with no pan, `#wall` gets exactly the transform earlier versions wrote (none at full size, a plain `scale()` when fitted), so its bounding box, the scale note, and the rulers are unchanged. Zoomed or panned, the transform is `translate(pan) scale(viewScale)` about the wall's center, which flexbox keeps on the canvas center.
+- **Zoom about a point:** a wall point sits at `center + pan + s * p`. Holding that screen position steady while the scale goes from `s` to `s'` gives `pan' = q - (s' / s) * (q - pan)`, with `q` measured from the canvas center. `Ctrl + Wheel` uses the pointer as `q`, scaled so a mouse notch is one 10% step and a trackpad pinch stays smooth. The HUD buttons and `Ctrl + =` / `Ctrl + -` step to the next quarter about the canvas center, and `Ctrl + 0` or the percentage button resets the view.
+- **Panning:** holding `Space` readies a pan, and a left press then, or any middle press, pans in a capture-phase handler on the canvas. It never reaches items or the wall, so nothing is dragged, boxed, or deselected. One `requestAnimationFrame` per frame writes the transform and moves the rulers. The pan is clamped so at least 80 px of the wall stays in view, and `Escape` puts it back.
+- **Space and focus:** `Space` keeps its job in text fields and on a button reached with `Tab`. A button that only holds focus because it was clicked gives `Space` up, and the HUD buttons never take focus from a click, so clicking `+` and then panning just works.
+- **Zero drift:** item drags, grip resizes, selection boxes, catalog drops, and guide pulls all read the wall's bounding box when they start and divide screen deltas by `viewScale`, so they land on exact centimeters at any zoom and pan. Zooming waits while any of them is in progress.
+- **Scope:** zoom and pan are a view, not part of the layout: they are not saved, exported, or undone, and the scale note keeps describing the fit only.
 
 ### Reference Guides
 `wallGuides` holds up to 12 entries of `{ id, axis, cm }`: axis `x` is a vertical line at `x = cm`, axis `y` a horizontal one.
@@ -133,6 +148,13 @@ Holding `Alt` / `Option` with a selection turns the pointer into a measuring pro
 - **Cost:** pointer moves are batched into one frame, and the overlay is only rebuilt when one of the two boxes changes. Alt-arrow nudges update the readout live.
 - **Scope:** measuring pauses during drags, resizes, and selection boxes, so `Alt` keeps its job of bypassing the magnet mid-drag. Releasing `Alt` brings the regular rulers back.
 
+### Studio Clipboard
+`clipboardState` lives in memory and holds deep clones of the copied items, in stacking order, plus a `pasteCount`.
+
+- **Copy and cut:** `Ctrl + C` copies the selection and resets the count. `Ctrl + X` copies and then removes like `Delete`: locked items stay on the wall and selected, and the removal is one undo step. Both leave the browser's own copy alone when page text is selected or a field has focus.
+- **Paste:** each paste raises the count and offsets the copies by `4 cm * pasteCount`, so repeated pastes cascade instead of stacking. Copies get fresh ids and start unlocked, and every group with two or more copied members becomes a new group of its own, so pasted groups are independent. The pasted items are selected, and the paste is one undo step.
+- **Placement:** pasting shares `placeCopies()` with `Ctrl + D`. The offset is clamped for the whole block so relative spacing survives the wall edges. A multi-item block that would newly cut into the attic slope slides left or down to the nearest clear whole centimeter, while a single copy may land in the slope and is flagged red, like a single dragged item. Pieces copied before the wall shrank are trimmed to fit it.
+
 ### Align & Distribute
 The batch Inspector shows an `Align & Distribute` grid whenever the selection holds at least two units and one of them can move: the top row works along the width (left, center, right, distribute) and the bottom row along the height.
 
@@ -141,6 +163,14 @@ The batch Inspector shows an `Align & Distribute` grid whenever the selection ho
 - **Distribute:** needs three or more movable units. They are sorted along the axis, the first and last stay put, and the rest get equal gaps between their outer edges. Each position is rounded to whole centimeters, so two gaps differ by a centimeter at most.
 - **Attic slope:** moving toward the slope only ever deepens an intrusion, so the clear offsets form one run from zero. A unit whose target would cut into the slope steps back a centimeter at a time to the farthest clear spot, and a status message says how many items were held back.
 - **History:** each press is a single undo step. A press that moves nothing records nothing, and the rebuilt Inspector hands keyboard focus back to the same button.
+
+### Symmetry
+`Flip Horizontally` appears in the batch Inspector whenever two or more items are selected and one unit can move, a single complete group included. `Mirror Across Wall` appears for a single item and is disabled while it is locked.
+
+- **Flip:** each movable piece lands at `selectionLeft + selectionRight - (left + width)`. Units are the same as for Align: a group keeps its mirrored shape, and locked units stay put while still counting toward the selection box.
+- **Mirror:** a single piece moves to `wallWidth - left - width`, the same spot measured from the other wall. A centered piece is already its own mirror image and records no history step.
+- **Orientation:** a horizontal mirror turns a right-facing quarter turn into a left-facing one, so `90` and `270` swap while `0` and `180` stay, and a mirrored spotlight washes the other way.
+- **Attic slope:** a unit is flipped inside its own box first and then slides as one block. If its mirrored spot would newly cut into the slope, it steps back toward where it was to the farthest clear whole centimeter, and the status message counts the items held back, exactly as Align does.
 
 ### Group Drag & Batch Editing
 A drag always moves the selection as a group, and a single item is simply a group of one, so both share one code path.
@@ -213,7 +243,7 @@ History is a bounded stack of 30 serialized snapshots covering items (including 
 - A new action after an undo truncates the redo branch.
 - Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size edits, become a single step.
 - A drag commits exactly one snapshot on `mouseup`, and only if something moved. A group drag, a grip resize, and a catalog drop follow the same rule.
-- Batch edits (grouping, rotation, align, distribute, finish, lock, visibility, duplicate, delete, layer moves) are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
+- Batch edits (grouping, rotation, align, distribute, flip, mirror, finish, lock, visibility, duplicate, cut, paste, delete, layer moves) are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
 - Opening another project starts a fresh history, the same as a reload.
 
 ### Project Gallery & Persistence
@@ -223,6 +253,7 @@ Layouts are stored per project instead of as one save.
 - **Migration:** on the first boot after the upgrade, the single save from earlier versions passes through the sanitizer and becomes the `Default Project`, and the old key is removed. Once the gallery exists, a leftover or unreadable old save is simply dropped.
 - **Recovery:** the index is validated on load. Malformed or duplicate ids are dropped, names are trimmed and limited to 60 characters, and at most 24 projects are kept. A missing open project falls back to the most recently edited one, and an unreadable layout opens as the starter wall. Every storage call is guarded, so full or blocked storage shows a status message while the planner keeps working in memory.
 - **Gallery:** projects are listed most recently edited first, each with a schematic SVG thumbnail drawn from its items on its wall paint, its last edited date, item count, and wall size. `Save as New Project` forks the current wall under a new name, and a blank name becomes `Project N`. Loading a project clears the selection and the history.
+- **Share links:** `Copy Share Link` serializes the same payload as the JSON export, UTF-8 encodes it, and writes it as Base64URL into `#plan=`, copying the link with the Clipboard API or a selection fallback inside the dialog. At startup, a `#plan=` hash is decoded, validated through `normalizeLayout()`, and applied, and the hash is cleared with `history.replaceState()` so a reload never applies it twice. A first visit fills the fresh Default Project. Someone with projects already gets the plan as a new `Shared Plan` project, so following a link never overwrites open work, and a full gallery explains why the link was not opened. A broken or truncated link reports `Share link could not be read.` and leaves the saved project in charge. A link pasted into a tab that is already open only changes the hash, so a `hashchange` listener opens it the same way.
 - **Rename and delete:** Rename edits the name in place. `Enter` saves, `Escape` cancels without closing the dialog, and clicking away saves. The card is patched rather than re-rendered, so a click that ends a rename still lands on the button it was aimed at. Delete needs a second press within three seconds, and the open project cannot be deleted, so autosave always has a target.
 
 ### XSS-Safe JSON Schema Sanitizer
@@ -276,6 +307,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 - Inspector panel rebuilds hand keyboard focus back to the control that triggered them.
 - The context menu uses `role="menu"` with `menuitem` buttons, exposes its shortcuts through `aria-keyshortcuts`, and is fully keyboard operable.
 - The compact room feature tiles show short names and carry the full name and size in their `aria-label`.
+- The zoom HUD is a labelled `role="group"`: the step buttons carry `aria-label`s, and the percentage button announces itself as a reset with the current level.
 - The Align & Distribute grid is a labelled `role="group"` of buttons named by `aria-label` ("Align Left", "Distribute Horizontally"), with a `title` that explains a disabled control. The wall paint swatches are `aria-pressed` toggle buttons named after their tone.
 - The canvas rulers are decorative and `aria-hidden`, since the Inspector already reports the selected item's offset. In the project gallery, the rename field is labelled, every card button names its project, and an armed delete button announces itself as a confirmation.
 - The Layers panel is a `role="tree"` of `treeitem` rows with `aria-level`, `aria-selected`, and `aria-expanded`. Its eye and padlock are real buttons with `aria-pressed` and labels that name the item, and the note editor and Inspector field are labelled text areas.
@@ -301,12 +333,16 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 | `Ctrl + Z` / `Cmd + Z` | Undo the last layout action (up to 30 steps) |
 | `Ctrl + Y` / `Ctrl + Shift + Z` / `Cmd + Shift + Z` | Redo a layout action |
 | `Ctrl + D` / `Cmd + D` | Duplicate the selection (+4 cm offset) |
+| `Ctrl + C` / `Ctrl + X` / `Ctrl + V` | Copy, cut, or paste the selection (each paste lands 4 cm further) |
+| `Ctrl + Wheel` | Zoom about the pointer |
+| `Ctrl + =` / `Ctrl + -` / `Ctrl + 0` | Zoom in, zoom out, or reset zoom and pan |
+| `Space` + drag, or middle-button drag | Pan the view |
 | `L` | Lock or unlock the selection's position and properties |
 | `Delete` / `Backspace` | Remove the selected unlocked items |
 | `?` | Toggle the keyboard shortcuts guide |
 | `Escape` | Close the open menu or modal, or clear the selection |
 
-Shortcuts are ignored while typing in a field, and the browser's own text undo keeps working inside number inputs. `Escape` also cancels a catalog drag, a grip resize, a guide drag, or a selection box in progress.
+Shortcuts are ignored while typing in a field, and the browser's own text undo keeps working inside number inputs. `Escape` also cancels a catalog drag, a grip resize, a guide drag, a pan, or a selection box in progress. The in-app guide keeps its table to the original ten rows and describes the newer gestures underneath it.
 
 ## Layout Templates
 
@@ -332,7 +368,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 308 tests in 26 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 322 tests in 27 spec files, one per feature area.
 
 ```bash
 npm install
@@ -369,6 +405,7 @@ npm test
 | `projects` | Default Project on first visit, autosave into the open project, one-time legacy migration, Save as New Project, Load with a fresh history, name cleaning and escaping, in-place rename with `Enter`, `Escape` and click-away, two-step delete, damaged index and layout recovery, the 24-project limit |
 | `csv-export` | Filename, byte order mark, exact CRLF payload, rows checked against the on-screen tables, grouped and turned pieces, RFC 4180 quoting read back by a strict parser, formula guard, empty wall, `Downloaded!` label |
 | `align-guides-paint` | The Align & Distribute grid and when it shows, all six alignments and both distributions as single undo steps, whole-cm centering and gap rounding, rigid groups, locked anchors, the attic slope stop, ruler bands; pulling guides from both rulers, hidden until on the wall, Escape and off-wall cancels, 5 cm steps, moving, merging, drag-off and double-click removal, items still winning presses over a guide, item and group snapping, export and import sanitizing, reload, wall resize pruning, the 12-guide limit; wall paint swatches, undo, Daylight Grid tones, PNG parity in both modes, per-project persistence, templates and reset |
+| `zoom-clipboard-share` | HUD steps, limits and exact reset of the resting geometry, fitted walls, `Ctrl + Wheel` about the pointer, `Space` and middle-button panning with no item drags, selections or deselecting clicks, `Escape` mid-pan; drags with hairline readouts, selection boxes, catalog drops and parked-ruler guide pulls at 150% and panned; copy and cascading pastes, fresh ids, unlocked copies, new independent groups, cut with locked items, edge clamping, the slope slide, field and text-selection guards; Flip Horizontally with rotation swap, rigid groups, locked anchors and the slope stop, Mirror Across Wall and its centered no-op; share links copied, opened in a first-time browser, opened as a new project, opened in place by a hash change, broken and truncated links, and a full gallery |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:
@@ -393,10 +430,11 @@ index.html                    App shell, catalog, inspector, canvas rulers, dial
                               brand mark, and favicon
 styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, dialogs,
                               and the project gallery
-scripts/planner-engine.js     State, selection model, history, project storage, sanitizer, drag and
-                              selection-box engine, alignment, align and distribute, reference guides,
-                              wall paint, collision checks, context menu, spec sheet with CSV export, and
-                              the Canvas 2D PNG renderer
+scripts/planner-engine.js     State, selection model, history, project storage and share links, sanitizer,
+                              viewport zoom and pan, drag and selection-box engine, alignment, align,
+                              distribute and mirror, clipboard, reference guides, wall paint, collision
+                              checks, context menu, spec sheet with CSV export, and the Canvas 2D PNG
+                              renderer
 tests/*.spec.js               Playwright end-to-end specs, one per feature area
 tests/support/                Fixtures, shared helpers, and the zero-dependency static server
 playwright.config.js          Chromium project, local web server, and CI reporters

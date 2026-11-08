@@ -779,6 +779,8 @@ button:focus-visible {
 }
 
 .ruler-corner {
+    /* Above both rulers, where pinned rulers cross over a zoomed wall */
+    z-index: 1;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1931,6 +1933,66 @@ body.is-selecting * {
 .axis-y.is-flipped .wall-guide-tag {
     top: auto;
     bottom: 3px;
+}
+
+/* Floating zoom control, frosted like the rulers. It sits outside #wall and pans with nothing. */
+.zoom-hud {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    background-color: rgba(17, 20, 27, 0.72);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--highlight), 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.zoom-btn {
+    min-width: 28px;
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background-color: transparent;
+    color: var(--text-muted);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--motion), color var(--motion);
+}
+
+.zoom-btn.zoom-level {
+    min-width: 54px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.zoom-btn:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-main);
+}
+
+.zoom-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* Space held: the whole canvas becomes a grab handle, and a pan in progress shows the closed hand */
+.canvas-area.is-pan-ready,
+.canvas-area.is-pan-ready * {
+    cursor: grab !important;
+}
+
+body.is-panning,
+body.is-panning * {
+    cursor: grabbing !important;
 }
 
 /* The rulers never take the pointer, so the canvas shows which way a guide would come out */
