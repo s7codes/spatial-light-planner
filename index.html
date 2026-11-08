@@ -26,7 +26,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v1.6</span></h1>
+            <h1>Spatial Studio <span class="badge">v1.7</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -177,7 +177,9 @@
                         <span>90 x 90 cm</span>
                     </div>
                 </div>
+                <div id="guide-hits" class="guide-hits"></div>
 
+                <div id="guide-lines" class="guide-lines"></div>
                 <div id="align-guides" class="align-guides"></div>
                 <div id="selection-bounds" class="selection-bounds" hidden></div>
                 <div id="selection-marquee" class="selection-marquee" hidden></div>
@@ -262,6 +264,20 @@
                         <button class="btn-preset" data-accent="#ff9d42" data-corner="#8b5cf6" style="--preset-accent: #ff9d42; --preset-corner: #8b5cf6;" title="Apply the Warm Walnut lighting preset">Warm Walnut</button>
                         <button class="btn-preset" data-accent="#00f2fe" data-corner="#ff0844" style="--preset-accent: #00f2fe; --preset-corner: #ff0844;" title="Apply the Neon Contrast lighting preset">Neon Contrast</button>
                         <button class="btn-preset" data-accent="#38ef7d" data-corner="#11998e" style="--preset-accent: #38ef7d; --preset-corner: #11998e;" title="Apply the Soft Green lighting preset">Soft Green</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="slider-header">
+                        <label id="wall-paint-label">Wall Surface</label>
+                        <span id="wall-paint-name" class="paint-name">Charcoal</span>
+                    </div>
+                    <div class="paint-swatches" role="group" aria-labelledby="wall-paint-label">
+                        <button type="button" class="paint-swatch" data-paint="charcoal" aria-pressed="true" aria-label="Charcoal wall paint" title="Charcoal wall paint"></button>
+                        <button type="button" class="paint-swatch" data-paint="greige" aria-pressed="false" aria-label="Greige wall paint" title="Greige wall paint"></button>
+                        <button type="button" class="paint-swatch" data-paint="sage" aria-pressed="false" aria-label="Sage wall paint" title="Sage wall paint"></button>
+                        <button type="button" class="paint-swatch" data-paint="navy" aria-pressed="false" aria-label="Navy wall paint" title="Navy wall paint"></button>
+                        <button type="button" class="paint-swatch" data-paint="concrete" aria-pressed="false" aria-label="Concrete wall paint" title="Concrete wall paint"></button>
                     </div>
                 </div>
             </div>
@@ -413,6 +429,10 @@
                     <p>
                         <kbd>Ctrl</kbd> + <kbd>G</kbd> groups the selection and <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>
                         ungroups it. Double-click a grouped item to pick it on its own, or a text note to edit it.
+                    </p>
+                    <p>
+                        Drag from the top or left ruler to pull out a reference guide, and drag it off the wall or
+                        double-click it to remove it.
                     </p>
                 </div>
             </div>

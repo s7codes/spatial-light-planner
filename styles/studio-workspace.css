@@ -926,7 +926,8 @@ button:focus-visible {
     height: 625px;
     flex-shrink: 0;
     position: relative;
-    background-color: #1c1f26;
+    /* The paint is set inline from the swatch table in JS, which the PNG export reads as well */
+    background-color: var(--wall-paint, #1c1f26);
     border: 2px solid #2b303b;
     border-radius: 2px;
     /* Outer shadows only: anything inset would tint the wall surface the PNG export reproduces */
@@ -950,6 +951,8 @@ button:focus-visible {
     --attic-label: rgba(252, 165, 165, 0.9);
 
     --measure-color: #f43f5e;
+    --ref-guide: #22d3ee;
+    --ref-guide-text: #062a33;
     --door-fill: rgba(148, 163, 184, 0.07);
     --door-edge: rgba(148, 163, 184, 0.5);
     --door-line: rgba(148, 163, 184, 0.3);
@@ -958,7 +961,7 @@ button:focus-visible {
 }
 
 .wall.daylight-mode {
-    background-color: #e5e7eb;
+    background-color: var(--wall-paint-day, #e5e7eb);
     background-image:
         linear-gradient(to right, rgba(0, 0, 0, 0.06) 1px, transparent 1px),
         linear-gradient(to bottom, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
@@ -970,6 +973,8 @@ button:focus-visible {
     --guide-label-text: #111827;
     --gap-color: #db2777;
     --align-color: #059669;
+    --ref-guide: #0891b2;
+    --ref-guide-text: #ffffff;
 
     --attic-fill: rgba(220, 38, 38, 0.05);
     --attic-hatch: rgba(220, 38, 38, 0.2);
@@ -1830,6 +1835,117 @@ body.is-selecting * {
     border-left: 1px solid var(--align-color);
 }
 
+/* Reference guides pulled from the rulers. The grab strips sit under the items (which stack at 2), so a
+   press on furniture still reaches the furniture; the dashed lines and tags sit above them. */
+.guide-hits,
+.guide-lines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.guide-hits {
+    z-index: 1;
+}
+
+.guide-lines {
+    z-index: 3;
+}
+
+.guide-hit {
+    position: absolute;
+    pointer-events: auto;
+}
+
+.guide-hit.axis-x {
+    top: 0;
+    bottom: 0;
+    width: 9px;
+    margin-left: -4px;
+    cursor: col-resize;
+}
+
+.guide-hit.axis-y {
+    left: 0;
+    right: 0;
+    height: 9px;
+    margin-top: -4px;
+    cursor: row-resize;
+}
+
+.wall-guide {
+    position: absolute;
+}
+
+.wall-guide.axis-x {
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background-image: repeating-linear-gradient(to bottom, var(--ref-guide) 0 6px, transparent 6px 10px);
+}
+
+.wall-guide.axis-y {
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-image: repeating-linear-gradient(to right, var(--ref-guide) 0 6px, transparent 6px 10px);
+}
+
+.wall-guide.is-active {
+    background-image: none;
+    background-color: var(--ref-guide);
+}
+
+.wall-guide-tag {
+    position: absolute;
+    padding: 1px 5px;
+    border-radius: 999px;
+    background-color: var(--ref-guide);
+    color: var(--ref-guide-text);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 14px;
+    white-space: nowrap;
+    pointer-events: auto;
+    user-select: none;
+}
+
+.axis-x .wall-guide-tag {
+    top: 4px;
+    left: 4px;
+    cursor: col-resize;
+}
+
+.axis-x.is-flipped .wall-guide-tag {
+    left: auto;
+    right: 3px;
+}
+
+.axis-y .wall-guide-tag {
+    top: 4px;
+    left: 4px;
+    cursor: row-resize;
+}
+
+.axis-y.is-flipped .wall-guide-tag {
+    top: auto;
+    bottom: 3px;
+}
+
+/* The rulers never take the pointer, so the canvas shows which way a guide would come out */
+.canvas-area[data-ruler-hover="guide-y"],
+body.is-dragging-guide-y,
+body.is-dragging-guide-y * {
+    cursor: row-resize !important;
+}
+
+.canvas-area[data-ruler-hover="guide-x"],
+body.is-dragging-guide-x,
+body.is-dragging-guide-x * {
+    cursor: col-resize !important;
+}
+
 
 /* Inspector controls & property editors */
 .inspector-box,
@@ -1945,6 +2061,86 @@ body.is-selecting * {
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
     background-color: var(--bg-inset);
+}
+
+/* Row one works along the width, row two along the height */
+.arrange-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    padding: 2px;
+    margin-top: 2px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-inset);
+}
+
+.arrange-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color var(--motion), color var(--motion), border-color var(--motion);
+}
+
+.arrange-btn:hover:not(:disabled) {
+    border-color: var(--hairline);
+    background-color: var(--bg-raised-hover);
+    color: var(--text-main);
+}
+
+.arrange-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* 14 px glyphs from flat gradient bars: a key line plus two pieces. The vertical set is the
+   horizontal set turned a quarter, so the two rows always match. */
+.arrange-icon {
+    width: 14px;
+    height: 14px;
+    background-repeat: no-repeat;
+    --bar: linear-gradient(currentColor, currentColor);
+}
+
+.icon-align-left,
+.icon-align-top {
+    background-image: var(--bar), var(--bar), var(--bar);
+    background-size: 1.5px 14px, 11px 4px, 7px 4px;
+    background-position: 0 0, 3px 2px, 3px 8px;
+}
+
+.icon-align-center,
+.icon-align-middle {
+    background-image: var(--bar), var(--bar), var(--bar);
+    background-size: 1.5px 14px, 12px 4px, 8px 4px;
+    background-position: 6.25px 0, 1px 2px, 3px 8px;
+}
+
+.icon-align-right,
+.icon-align-bottom {
+    background-image: var(--bar), var(--bar), var(--bar);
+    background-size: 1.5px 14px, 11px 4px, 7px 4px;
+    background-position: 12.5px 0, 0 2px, 4px 8px;
+}
+
+.icon-distribute-h,
+.icon-distribute-v {
+    background-image: var(--bar), var(--bar), var(--bar);
+    background-size: 3px 8px, 3px 12px, 3px 8px;
+    background-position: 0 3px, 5.5px 1px, 11px 3px;
+}
+
+.icon-align-top,
+.icon-align-middle,
+.icon-align-bottom,
+.icon-distribute-v {
+    transform: rotate(90deg);
 }
 
 .btn-finish {
@@ -2749,6 +2945,37 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     display: grid;
     grid-template-columns: 1fr;
     gap: 6px;
+}
+
+.paint-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.paint-swatches {
+    display: flex;
+    gap: 8px;
+}
+
+.paint-swatch {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--hairline-strong);
+    border-radius: 50%;
+    background-color: var(--swatch, #1c1f26);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 2px rgba(0, 0, 0, 0.4);
+    cursor: pointer;
+    transition: box-shadow var(--motion), transform var(--motion);
+}
+
+.paint-swatch:hover {
+    transform: translateY(-1px);
+}
+
+.paint-swatch.active {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 2px var(--bg-raised), 0 0 0 3.5px var(--text-main);
 }
 
 .btn-preset {

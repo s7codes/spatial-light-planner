@@ -152,7 +152,7 @@ test.describe('per-item LED color', () => {
 
     const { buffer } = await downloadFrom(page, '#export-json-btn');
     const file = JSON.parse(buffer.toString('utf8'));
-    expect(file.version).toBe('1.5');
+    expect(file.version).toBe('1.7');
     expect(Object.fromEntries(file.wallItems.map((item) => [item.id, item.itemLedColor]))).toEqual({
       'item-1': null,
       'item-spot': CYAN,

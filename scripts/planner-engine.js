@@ -23,7 +23,7 @@ const PROJECT_LAYOUT_PREFIX = 'spatial_studio_project_v1_';
 const PROJECT_ID_PATTERN = /^project-[a-z0-9-]{1,40}$/i;
 const MAX_PROJECTS = 24;
 const PROJECT_NAME_LENGTH = 60;
-const EXPORT_VERSION = '1.5';
+const EXPORT_VERSION = '1.7';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
 const CSV_FILENAME = 'spatial-studio-specs.csv';
 const PNG_FILENAME = 'spatial-studio-plan.png';
@@ -31,7 +31,16 @@ const PNG_PIXEL_RATIO = 2;
 const SHADOW_SHIFT_PX = 10000;
 const CORNER_GLOW_ALPHA = 0.45; // mirrors the .corner-led-glow opacity factor
 const SPOTLIGHT_CONE_FADE = 0.85; // mirrors the last stop of the .spotlight::after gradient
-const WALL_FILL = { ambient: '#1c1f26', daylight: '#e5e7eb' };
+// Tones meant for a dark room, each with a pale counterpart so the Daylight Grid stays readable.
+// Charcoal is the original wall, so older layouts and the default look are unchanged.
+const WALL_PAINTS = [
+    { id: 'charcoal', label: 'Charcoal', ambient: '#1c1f26', daylight: '#e5e7eb' },
+    { id: 'greige', label: 'Greige', ambient: '#35312c', daylight: '#e9e4dc' },
+    { id: 'sage', label: 'Sage', ambient: '#28312b', daylight: '#dfe7e0' },
+    { id: 'navy', label: 'Navy', ambient: '#182133', daylight: '#dce3ee' },
+    { id: 'concrete', label: 'Concrete', ambient: '#2e3033', daylight: '#e3e4e6' }
+];
+const DEFAULT_WALL_PAINT = 'charcoal';
 const DAYLIGHT_GRID_PX = 10 * SCALE;
 
 const COPY_LABEL = 'Copy as Markdown';
@@ -41,6 +50,9 @@ const RULER_GAP_PX = 4;
 const RULER_TICK_CM = 10;
 const RULER_LABEL_CM = 50;
 const RULER_LABEL_ROOM_PX = 24;
+const MAX_GUIDES = 12;
+const GUIDE_ID_PATTERN = /^guide-[a-z0-9-]{1,40}$/i;
+const GUIDE_TAG_ROOM_PX = 48;
 const MOUNTING_NOTE = "Distances in cm from the left wall edge, the ceiling, and the floor to the item's left, top, and bottom edges.";
 const LOCK_ICON_HTML = '<span class="lock-icon" aria-hidden="true"></span>';
 
@@ -100,6 +112,8 @@ const alignLayer = document.getElementById('align-guides');
 const marqueeBox = document.getElementById('selection-marquee');
 const measureLayer = document.getElementById('measure-layer');
 const selectionBounds = document.getElementById('selection-bounds');
+const guideHitLayer = document.getElementById('guide-hits');
+const guideLineLayer = document.getElementById('guide-lines');
 
 const wallWidthInput = document.getElementById('wall-width-input');
 const wallHeightInput = document.getElementById('wall-height-input');
@@ -160,6 +174,8 @@ const cornerHexCode = document.getElementById('corner-hex-code');
 const brightnessSlider = document.getElementById('brightness-slider');
 const brightnessValue = document.getElementById('brightness-value');
 const presetButtons = document.querySelectorAll('.btn-preset');
+const paintSwatches = document.querySelectorAll('.paint-swatch');
+const wallPaintName = document.getElementById('wall-paint-name');
 
 const layersPanel = document.getElementById('layers-panel');
 const layerList = document.getElementById('layer-list');
@@ -246,6 +262,9 @@ let isAmbientMode = true;
 // Kept in selection order; layer order comes from wallItems whenever it matters
 let selectedItemIds = [];
 let wallItems = [];
+// Reference guides: axis 'x' is a vertical line at x = cm, axis 'y' a horizontal one at y = cm
+let wallGuides = [];
+let wallPaint = DEFAULT_WALL_PAINT;
 let ignoreWallClick = false;
 let wallClickGuard = 0;
 let suppressAltMenu = false;
@@ -353,7 +372,25 @@ const createIdleMarquee = () => ({
 
 let marquee = createIdleMarquee();
 
-const isPointerBusy = () => dragState.isDragging || resizeState.active || catalogDrag.active || marquee.active;
+const createIdleGuideDrag = () => ({
+    active: false,
+    guide: null,
+    isNew: false,
+    startCm: 0,
+    inside: false,
+    elements: [],
+    tag: null,
+    wallRect: null,
+    scale: 1,
+    pointerX: 0,
+    pointerY: 0,
+    frameId: 0
+});
+
+let guideDrag = createIdleGuideDrag();
+
+const isPointerBusy = () =>
+    dragState.isDragging || resizeState.active || catalogDrag.active || marquee.active || guideDrag.active;
 
 const cloneDefaults = () => JSON.parse(JSON.stringify(defaultItems));
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
@@ -369,6 +406,8 @@ const getSelectedItem = () => (selectedItemIds.length === 1 ? wallItems.find(i =
 const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-item[data-id="${itemId}"]`);
 const createItemId = () => `item-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
 const createGroupId = () => `group-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
+const createGuideId = () => `guide-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
+const wallPaintById = (id) => WALL_PAINTS.find(paint => paint.id === id) || WALL_PAINTS[0];
 const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const isObstacle = (item) => OBSTACLE_TYPES.includes(item.type);
 const isFeature = (item) => FEATURE_TYPES.includes(item.type);
@@ -515,8 +554,29 @@ function syncRulerSpans() {
     spanY.style.height = `${box.height * viewScale}px`;
 }
 
+// Screen rectangles of the two rulers, rebuilt from the origin cached at the last fit. The top ruler
+// pulls out horizontal guides (axis 'y') and the left ruler vertical ones (axis 'x').
+function rulerAxisAt(clientX, clientY) {
+    const offset = WALL_BORDER_PX * viewScale + RULER_GAP_PX + RULER_SIZE_PX;
+    const right = rulerOrigin.left + wallWidthPx * viewScale;
+    const bottom = rulerOrigin.top + wallHeightPx * viewScale;
+    const inTop = clientX >= rulerOrigin.left && clientX <= right &&
+        clientY >= rulerOrigin.top - offset && clientY <= rulerOrigin.top - offset + RULER_SIZE_PX;
+    const inLeft = clientY >= rulerOrigin.top && clientY <= bottom &&
+        clientX >= rulerOrigin.left - offset && clientX <= rulerOrigin.left - offset + RULER_SIZE_PX;
+    if (inTop) return 'y';
+    return inLeft ? 'x' : null;
+}
+
 function applyCrosshair() {
     crosshair.frameId = 0;
+    // The rulers never take the pointer themselves, so the canvas shows their cursor instead
+    const rulerAxis = crosshair.over && !isModalOpen() && !isPointerBusy()
+        ? rulerAxisAt(crosshair.clientX, crosshair.clientY)
+        : null;
+    const hover = rulerAxis ? `guide-${rulerAxis}` : '';
+    if (canvasArea.dataset.rulerHover !== hover) canvasArea.dataset.rulerHover = hover;
+
     const hairX = rulerX.querySelector('.ruler-hairline');
     const hairY = rulerY.querySelector('.ruler-hairline');
     const x = (crosshair.clientX - rulerOrigin.left) / viewScale;
@@ -552,6 +612,207 @@ document.documentElement.addEventListener('mouseleave', () => {
 new ResizeObserver(() => {
     if (`${canvasArea.clientWidth}x${canvasArea.clientHeight}` !== fittedCanvasSize) fitWallToViewport();
 }).observe(canvasArea);
+
+// Each guide is drawn twice: a grab strip under the items, so pressing furniture still moves the
+// furniture, and the visible line with its cm tag above them. The tag stays grabbable everywhere.
+const guideStart = (guide) => (guide.axis === 'x' ? 'left' : 'top');
+const guideLimitPx = (guide) => (guide.axis === 'x' ? wallWidthPx : wallHeightPx);
+// Near the far edge the tag moves to the other side of its line, where the wall cannot clip it
+const isGuideTagFlipped = (guide) => guide.cm * SCALE > guideLimitPx(guide) - GUIDE_TAG_ROOM_PX;
+
+function renderGuides() {
+    guideHitLayer.innerHTML = wallGuides.map(guide => `
+        <div class="guide-hit axis-${guide.axis}" data-guide-id="${guide.id}" style="${guideStart(guide)}: ${guide.cm * SCALE}px"></div>`).join('');
+    guideLineLayer.innerHTML = wallGuides.map(guide => `
+        <div class="wall-guide axis-${guide.axis}${isGuideTagFlipped(guide) ? ' is-flipped' : ''}" data-guide-id="${guide.id}" style="${guideStart(guide)}: ${guide.cm * SCALE}px">
+            <span class="wall-guide-tag" data-guide-id="${guide.id}" title="Drag to move this guide, drag it off the wall or double-click to remove it">${guide.cm} cm</span>
+        </div>`).join('');
+}
+
+// Files and saves are trusted for nothing: guides must lie on the wall, one per line, at most twelve
+function sanitizeGuides(raw, widthCm, heightCm) {
+    if (!Array.isArray(raw)) return [];
+    const lines = new Set();
+    const ids = new Set();
+    const guides = [];
+    raw.forEach(entry => {
+        if (guides.length >= MAX_GUIDES || !entry || (entry.axis !== 'x' && entry.axis !== 'y')) return;
+        const value = toFiniteNumber(entry.cm);
+        if (value === null || value < 0 || value > (entry.axis === 'x' ? widthCm : heightCm)) return;
+        const cm = Math.round(value);
+        if (lines.has(`${entry.axis}:${cm}`)) return;
+        lines.add(`${entry.axis}:${cm}`);
+        const id = typeof entry.id === 'string' && GUIDE_ID_PATTERN.test(entry.id) && !ids.has(entry.id)
+            ? entry.id
+            : createGuideId();
+        ids.add(id);
+        guides.push({ id, axis: entry.axis, cm });
+    });
+    return guides;
+}
+
+// A smaller wall drops the guides that no longer lie on it; undo brings them back with the size
+function pruneGuides() {
+    const kept = wallGuides.filter(guide => guide.cm * SCALE <= guideLimitPx(guide));
+    const changed = kept.length !== wallGuides.length;
+    wallGuides = kept;
+    return changed;
+}
+
+function startGuideDrag(guide, isNew, e) {
+    const elements = [...wallCanvas.querySelectorAll(`.guide-hit[data-guide-id="${guide.id}"], .wall-guide[data-guide-id="${guide.id}"]`)];
+    guideDrag = {
+        ...createIdleGuideDrag(),
+        active: true,
+        guide,
+        isNew,
+        startCm: guide.cm,
+        inside: !isNew,
+        elements,
+        tag: elements[1]?.querySelector('.wall-guide-tag') || null,
+        wallRect: wallCanvas.getBoundingClientRect(),
+        scale: viewScale,
+        pointerX: e.clientX,
+        pointerY: e.clientY
+    };
+    elements.forEach(el => el.classList.add('is-active'));
+    document.body.classList.add(`is-dragging-guide-${guide.axis}`);
+    applyGuideFrame();
+}
+
+// Only the guide's own axis decides whether it is still on the wall, so a hand drifting along the
+// line never deletes it by accident
+function applyGuideFrame() {
+    guideDrag.frameId = 0;
+    const { guide, wallRect, scale, pointerX, pointerY, elements, tag } = guideDrag;
+    const vertical = guide.axis === 'x';
+    const local = (vertical ? (pointerX - wallRect.left) : (pointerY - wallRect.top)) / scale - WALL_BORDER_PX;
+    const limitPx = guideLimitPx(guide);
+    const stepCm = snapGridToggle.checked ? SNAP_STEP_PX / SCALE : 1;
+
+    guideDrag.inside = local >= 0 && local <= limitPx;
+    if (guideDrag.inside) guide.cm = clamp(Math.round(local / SCALE / stepCm) * stepCm, 0, limitPx / SCALE);
+
+    elements.forEach(el => {
+        el.hidden = !guideDrag.inside;
+        el.style[guideStart(guide)] = `${guide.cm * SCALE}px`;
+    });
+    elements[1]?.classList.toggle('is-flipped', isGuideTagFlipped(guide));
+    if (tag) tag.textContent = `${guide.cm} cm`;
+}
+
+function scheduleGuideFrame() {
+    if (guideDrag.active && !guideDrag.frameId) guideDrag.frameId = requestAnimationFrame(applyGuideFrame);
+}
+
+function endGuideDrag() {
+    if (guideDrag.frameId) cancelAnimationFrame(guideDrag.frameId);
+    guideDrag.elements.forEach(el => el.classList.remove('is-active'));
+    document.body.classList.remove(`is-dragging-guide-${guideDrag.guide.axis}`);
+    guideDrag = createIdleGuideDrag();
+}
+
+function finishGuideDrag() {
+    if (guideDrag.frameId) {
+        cancelAnimationFrame(guideDrag.frameId);
+        applyGuideFrame();
+    }
+
+    const { guide, isNew, startCm, inside } = guideDrag;
+    endGuideDrag();
+    // Two guides on one line could never be told apart, so a guide dropped onto another merges into it
+    const twin = inside && wallGuides.find(other => other !== guide && other.axis === guide.axis && other.cm === guide.cm);
+    if (!inside || twin) {
+        wallGuides = wallGuides.filter(other => other !== guide);
+        renderGuides();
+    }
+
+    const changed = isNew ? inside && !twin : !inside || twin || guide.cm !== startCm;
+    if (changed) commitLayoutChange();
+}
+
+// Escape puts a moved guide back and drops one that was still being pulled out of a ruler
+function cancelGuideDrag() {
+    const { guide, isNew, startCm } = guideDrag;
+    endGuideDrag();
+    if (isNew) wallGuides = wallGuides.filter(other => other !== guide);
+    else guide.cm = startCm;
+    renderGuides();
+}
+
+function removeGuide(id) {
+    if (isPointerBusy() || !wallGuides.some(guide => guide.id === id)) return;
+    wallGuides = wallGuides.filter(guide => guide.id !== id);
+    renderGuides();
+    commitLayoutChange();
+}
+
+// The rulers keep pointer-events off so they never get in the way of the canvas; a press on bare
+// canvas is checked against their rectangles instead
+canvasArea.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || e.target !== canvasArea || isPointerBusy() || isModalOpen()) return;
+    const axis = rulerAxisAt(e.clientX, e.clientY);
+    if (!axis) return;
+
+    e.preventDefault();
+    if (wallGuides.length >= MAX_GUIDES) {
+        showIoStatus(`A wall holds up to ${MAX_GUIDES} guides. Remove one to add another.`, 'error');
+        return;
+    }
+    const guide = { id: createGuideId(), axis, cm: 0 };
+    wallGuides.push(guide);
+    renderGuides();
+    startGuideDrag(guide, true, e);
+});
+
+[guideHitLayer, guideLineLayer].forEach(layer => {
+    layer.addEventListener('mousedown', (e) => {
+        const el = e.target.closest('[data-guide-id]');
+        if (!el || e.button !== 0) return;
+        // Like an item press: no marquee, no text selection, and no deselecting click afterwards
+        e.stopPropagation();
+        e.preventDefault();
+        if (isPointerBusy() || isModalOpen()) return;
+        if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+        guardNextWallClick();
+        const guide = wallGuides.find(entry => entry.id === el.dataset.guideId);
+        if (guide) startGuideDrag(guide, false, e);
+    });
+    layer.addEventListener('click', (e) => {
+        if (e.target.closest('[data-guide-id]')) e.stopPropagation();
+    });
+    layer.addEventListener('dblclick', (e) => {
+        const el = e.target.closest('[data-guide-id]');
+        if (!el) return;
+        e.stopPropagation();
+        removeGuide(el.dataset.guideId);
+    });
+});
+
+function applyWallPaint(id) {
+    const paint = wallPaintById(id);
+    wallPaint = paint.id;
+    wallCanvas.style.setProperty('--wall-paint', paint.ambient);
+    wallCanvas.style.setProperty('--wall-paint-day', paint.daylight);
+    paintSwatches.forEach(button => {
+        const active = button.dataset.paint === paint.id;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+    });
+    wallPaintName.textContent = paint.label;
+}
+
+// The wall paint belongs to the layout, so a change is an undo step like any other edit
+function setWallPaint(id) {
+    if (id === wallPaint || isPointerBusy()) return;
+    applyWallPaint(id);
+    commitLayoutChange();
+}
+
+paintSwatches.forEach(button => {
+    button.style.setProperty('--swatch', wallPaintById(button.dataset.paint).ambient);
+    button.addEventListener('click', () => setWallPaint(button.dataset.paint));
+});
 
 // Items larger than a shrunken wall are cut down to fit, then everything is pushed back inside
 function clampItemsToWall() {
@@ -596,7 +857,9 @@ const currentLayoutData = () => ({
     accentColor: accentColorPicker.value,
     cornerColor: cornerColorPicker.value,
     brightness: brightnessSlider.value,
-    atticSlope: atticSlopeToggle.checked
+    atticSlope: atticSlopeToggle.checked,
+    wallPaint,
+    wallGuides
 });
 
 const activeProject = () => projects.find(project => project.id === activeProjectId);
@@ -802,7 +1065,10 @@ function normalizeLayout(data) {
         atticSlope: typeof data.atticSlope === 'boolean' ? data.atticSlope : null,
         accentColor: isHexColor(data.accentColor) ? data.accentColor.toLowerCase() : null,
         cornerColor: isHexColor(data.cornerColor) ? data.cornerColor.toLowerCase() : null,
-        brightness: brightness === null ? null : clamp(Math.round(brightness), 0, 100)
+        brightness: brightness === null ? null : clamp(Math.round(brightness), 0, 100),
+        // Files from before v1.7 have neither, so they load on the original wall with no guides
+        wallPaint: WALL_PAINTS.some(paint => paint.id === data.wallPaint) ? data.wallPaint : DEFAULT_WALL_PAINT,
+        wallGuides: sanitizeGuides(data.wallGuides, widthCm, heightCm)
     };
 }
 
@@ -813,6 +1079,9 @@ function applyLayoutSettings(layout) {
     if (layout.accentColor) updateAccentColor(layout.accentColor, false);
     if (layout.cornerColor) updateCornerColor(layout.cornerColor, false);
     if (layout.brightness !== null) setBrightness(layout.brightness);
+    applyWallPaint(layout.wallPaint);
+    wallGuides = layout.wallGuides;
+    renderGuides();
 }
 
 function applyDefaultLayout() {
@@ -822,6 +1091,9 @@ function applyDefaultLayout() {
     updateAccentColor('#ff9d42', false);
     updateCornerColor('#8b5cf6', false);
     setBrightness(100);
+    applyWallPaint(DEFAULT_WALL_PAINT);
+    wallGuides = [];
+    renderGuides();
 }
 
 // A layout that is missing or fails validation leaves the starter layout in place
@@ -856,7 +1128,9 @@ const serializeHistoryState = () => JSON.stringify({
     items: wallItems,
     atticSlope: atticSlopeToggle.checked,
     wallWidthCm,
-    wallHeightCm
+    wallHeightCm,
+    wallGuides,
+    wallPaint
 });
 
 function updateHistoryButtons() {
@@ -905,6 +1179,9 @@ function restoreHistoryStep(step) {
     setWallDimensions(snapshot.wallWidthCm, snapshot.wallHeightCm);
     wallItems = snapshot.items;
     atticSlopeToggle.checked = snapshot.atticSlope;
+    wallGuides = snapshot.wallGuides;
+    applyWallPaint(snapshot.wallPaint);
+    renderGuides();
     selectedItemIds = selectedItemIds.filter(id => wallItems.some(item => item.id === id));
 
     renderPlanner();
@@ -1195,6 +1472,10 @@ function updateDistanceGuides() {
 
 function getAlignTargets(excludedIds, axis) {
     const targets = axis === 'x' ? [{ value: wallWidthPx / 2, other: null }] : [];
+    // A reference guide is a full-height (or full-width) line, so it snaps like the wall center does
+    wallGuides.forEach(guide => {
+        if (guide.axis === axis) targets.push({ value: guide.cm * SCALE, other: null });
+    });
     wallItems.forEach(other => {
         if (excludedIds.has(other.id) || other.hidden) return;
         const start = axis === 'x' ? other.left : other.top;
@@ -1738,6 +2019,13 @@ function scheduleDragFrame() {
 }
 
 window.addEventListener('mousemove', (e) => {
+    if (guideDrag.active) {
+        guideDrag.pointerX = e.clientX;
+        guideDrag.pointerY = e.clientY;
+        scheduleGuideFrame();
+        return;
+    }
+
     if (resizeState.active) {
         resizeState.pointerX = e.clientX;
         resizeState.pointerY = e.clientY;
@@ -1792,6 +2080,10 @@ window.addEventListener('mouseup', () => {
     if (!resizeState.active) return;
     finishResize();
     refreshMeasure();
+});
+
+window.addEventListener('mouseup', () => {
+    if (guideDrag.active) finishGuideDrag();
 });
 
 // The border scales with the wall, so it comes off after converting to wall space
@@ -2081,6 +2373,7 @@ window.addEventListener('blur', () => {
     if (catalogDrag.active) endCatalogDrag();
     else if (catalogDrag.pending) catalogDrag = createIdleCatalogDrag();
     if (resizeState.active) cancelResize();
+    if (guideDrag.active) cancelGuideDrag();
     if (marquee.active) cancelMarquee();
     else if (marquee.pending) marquee = createIdleMarquee();
     closeContextMenu();
@@ -2364,6 +2657,134 @@ function rotateSelection() {
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
+}
+
+// Align and Distribute use the rotation units: a fully selected group moves as one rigid block and any
+// other selected item on its own. Locked units hold still but still count toward the selection box,
+// so they work as anchors.
+function arrangeUnits() {
+    return rotationUnits().map(items => ({ items, box: getBounds(items), movable: items.every(item => !item.locked) }));
+}
+
+const canAlignSelection = (units = arrangeUnits()) => units.length > 1 && units.some(unit => unit.movable);
+const canDistributeSelection = (units = arrangeUnits()) => units.filter(unit => unit.movable).length > 2;
+
+const ALIGN_EDGES = {
+    left: { axis: 'x', at: 0 },
+    center: { axis: 'x', at: 0.5 },
+    right: { axis: 'x', at: 1 },
+    top: { axis: 'y', at: 0 },
+    middle: { axis: 'y', at: 0.5 },
+    bottom: { axis: 'y', at: 1 }
+};
+
+const axisKeys = (axis) => (axis === 'x' ? ['left', 'width'] : ['top', 'height']);
+
+// Moving toward the slope only ever deepens an intrusion, so the clear offsets form one run that
+// starts at zero. Stepping back from the target a centimeter at a time finds the farthest clear spot.
+// As in a group drag, only pieces that start clear of the slope are held to it.
+function slopeSafeOffset(items, key, offset) {
+    const watched = items.filter(item => !intrudesAtticSlope(item));
+    const intrudesAt = (shift) => watched.some(item => intrudesAtticSlope({ ...item, [key]: item[key] + shift }));
+    let shift = offset;
+    while (Math.sign(shift) === Math.sign(offset) && Math.abs(shift) > EPSILON && intrudesAt(shift)) {
+        shift -= Math.sign(offset) * CM_STEP_PX;
+    }
+    return Math.abs(shift) < EPSILON || Math.sign(shift) !== Math.sign(offset) ? 0 : shift;
+}
+
+function arrangeAlong(axis, moves) {
+    const [key, size] = axisKeys(axis);
+    const limit = axis === 'x' ? wallWidthPx : wallHeightPx;
+    let held = 0;
+    let moved = 0;
+
+    moves.forEach(({ unit, offset }) => {
+        const wanted = clamp(unit.box[key] + offset, 0, limit - unit.box[size]) - unit.box[key];
+        const allowed = slopeSafeOffset(unit.items, key, wanted);
+        if (Math.abs(allowed - wanted) > EPSILON) held += unit.items.length;
+        if (Math.abs(allowed) < EPSILON) return;
+        unit.items.forEach(item => { item[key] += allowed; });
+        moved++;
+    });
+
+    if (held) showIoStatus(`Kept ${held} ${held === 1 ? 'item' : 'items'} clear of the attic slope.`, 'error');
+    if (!moved) return;
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+function alignSelection(edge) {
+    const units = arrangeUnits();
+    if (!canAlignSelection(units) || isPointerBusy()) return;
+
+    const { axis, at } = ALIGN_EDGES[edge];
+    const [key, size] = axisKeys(axis);
+    const bounds = getBounds(getSelectedItems());
+    // Centering can land on a half centimeter, so the target is rounded back onto the grid
+    arrangeAlong(axis, units.filter(unit => unit.movable).map(unit => ({
+        unit,
+        offset: quantize(bounds[key] + (bounds[size] - unit.box[size]) * at, CM_STEP_PX) - unit.box[key]
+    })));
+}
+
+// The first and last units stay put and the rest get equal gaps between their outer edges. Each
+// position is rounded to whole centimeters, so two gaps differ by a centimeter at most.
+function distributeSelection(axis) {
+    const units = arrangeUnits().filter(unit => unit.movable);
+    if (units.length < 3 || isPointerBusy()) return;
+
+    const [key, size] = axisKeys(axis);
+    units.sort((a, b) => a.box[key] - b.box[key] || a.box[size] - b.box[size]);
+    const first = units[0].box;
+    const last = units.at(-1).box;
+    const occupied = units.reduce((sum, unit) => sum + unit.box[size], 0);
+    const gap = (last[key] + last[size] - first[key] - occupied) / (units.length - 1);
+
+    let cursor = first[key];
+    arrangeAlong(axis, units.map(unit => {
+        const offset = quantize(cursor, CM_STEP_PX) - unit.box[key];
+        cursor += unit.box[size] + gap;
+        return { unit, offset };
+    }));
+}
+
+const ARRANGE_ACTIONS = [
+    { id: 'align-left', label: 'Align Left', hint: 'line up the left edges' },
+    { id: 'align-center', label: 'Align Center', hint: 'center horizontally on the selection' },
+    { id: 'align-right', label: 'Align Right', hint: 'line up the right edges' },
+    { id: 'distribute-h', label: 'Distribute Horizontally', hint: 'equal gaps from left to right', distribute: true },
+    { id: 'align-top', label: 'Align Top', hint: 'line up the top edges' },
+    { id: 'align-middle', label: 'Align Middle', hint: 'center vertically on the selection' },
+    { id: 'align-bottom', label: 'Align Bottom', hint: 'line up the bottom edges' },
+    { id: 'distribute-v', label: 'Distribute Vertically', hint: 'equal gaps from top to bottom', distribute: true }
+];
+
+function runArrange(action) {
+    if (action === 'distribute-h') distributeSelection('x');
+    else if (action === 'distribute-v') distributeSelection('y');
+    else alignSelection(action.replace('align-', ''));
+}
+
+function arrangeFieldHtml() {
+    const units = arrangeUnits();
+    if (!canAlignSelection(units)) return '';
+
+    const distributable = canDistributeSelection(units);
+    const buttons = ARRANGE_ACTIONS.map(({ id, label, hint, distribute }) => {
+        const off = distribute && !distributable;
+        return `
+            <button type="button" class="arrange-btn" id="${id}-btn" data-arrange="${id}" aria-label="${label}"
+                    title="${label}: ${off ? 'select 3 or more movable items' : hint}" ${off ? 'disabled' : ''}>
+                <span class="arrange-icon icon-${id}" aria-hidden="true"></span>
+            </button>`;
+    }).join('');
+    return `
+        <div class="inspector-field">
+            <label id="arrange-label">Align &amp; Distribute</label>
+            <div class="arrange-grid" role="group" aria-labelledby="arrange-label">${buttons}</div>
+        </div>`;
 }
 
 // Double-clicking a note swaps its label for a textarea. The item element is never rebuilt while the
@@ -2912,6 +3333,7 @@ function renderBatchInspector(items) {
             <span>Footprint: <strong id="batch-footprint-readout">${formatFootprint(getBounds(items))}</strong></span>
             ${groupId ? `<span class="group-count">${count} items grouped</span>` : ''}
             ${lockNote}
+            ${arrangeFieldHtml()}
 
             <div class="inspector-field">
                 <label>Grouping</label>
@@ -2952,6 +3374,9 @@ function updateInspectorPanel() {
 
     inspectorBox.querySelectorAll('.btn-finish').forEach(btn => {
         btn.addEventListener('click', () => applyFinish(btn.dataset.finish));
+    });
+    inspectorBox.querySelectorAll('[data-arrange]').forEach(btn => {
+        btn.addEventListener('click', () => runArrange(btn.dataset.arrange));
     });
     document.getElementById('rotate-item-btn').addEventListener('click', rotateSelection);
     document.getElementById('group-toggle-btn')?.addEventListener('click', () => (canGroup() ? groupSelection() : ungroupSelection()));
@@ -3211,11 +3636,12 @@ function handleEscape(e) {
 }
 
 window.addEventListener('keydown', (e) => {
-    // Escape abandons a catalog drag, a grip resize or a selection box before anything else sees the key
-    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active || marquee.active)) {
+    // Escape abandons a catalog drag, a grip resize, a guide drag or a selection box before anything else sees the key
+    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active || marquee.active || guideDrag.active)) {
         e.preventDefault();
         if (catalogDrag.active) endCatalogDrag();
         if (resizeState.active) cancelResize();
+        if (guideDrag.active) cancelGuideDrag();
         if (marquee.active) cancelMarquee();
         return;
     }
@@ -3328,6 +3754,7 @@ function handleWallResize() {
 
     setWallDimensions(widthCm, heightCm);
     clampItemsToWall();
+    if (pruneGuides()) renderGuides();
     renderPlanner();
     applyAtticSlope();
     updateInspectorPanel();
@@ -3363,6 +3790,8 @@ function exportLayout() {
         wallHeightCm,
         wallItems,
         atticSlope: atticSlopeToggle.checked,
+        wallPaint,
+        wallGuides,
         accentColor: accentColorPicker.value,
         cornerColor: cornerColorPicker.value,
         brightness: Number(brightnessSlider.value)
@@ -3680,7 +4109,7 @@ function projectThumbHtml(layout) {
               fill="${THUMB_COLORS[isFeature(item) ? item.type : item.finish] || THUMB_COLORS.walnut}" />`).join('');
     return `
         <svg class="project-thumb" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            <rect class="project-thumb-wall" width="${width}" height="${height}" />${rects}
+            <rect class="project-thumb-wall" width="${width}" height="${height}" fill="${wallPaintById(layout.wallPaint).ambient}" />${rects}
         </svg>`;
 }
 
@@ -3890,10 +4319,11 @@ function loadTemplate(key) {
     const template = LAYOUT_TEMPLATES[key];
     if (!template || isPointerBusy()) return;
 
-    // Templates run through the same sanitizer as imports, which fills in catalog sizes, names and prices
+    // Templates run through the same sanitizer as imports, which fills in catalog sizes, names and prices.
+    // A template replaces the composition, guides included, and keeps the look: lighting and wall paint.
     const layout = normalizeLayout(template);
     selectedItemIds = [];
-    applyLayoutSettings(layout);
+    applyLayoutSettings({ ...layout, wallPaint });
     renderPlanner();
     applyAtticSlope();
     updateInspectorPanel();
@@ -4121,7 +4551,8 @@ function paintSpotlightCone(ctx, item, el, border) {
 }
 
 function paintWallBackground(ctx) {
-    ctx.fillStyle = isAmbientMode ? WALL_FILL.ambient : WALL_FILL.daylight;
+    const paint = wallPaintById(wallPaint);
+    ctx.fillStyle = isAmbientMode ? paint.ambient : paint.daylight;
     ctx.fillRect(0, 0, wallWidthPx, wallHeightPx);
     if (isAmbientMode) return;
 

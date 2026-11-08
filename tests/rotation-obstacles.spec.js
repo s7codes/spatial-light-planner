@@ -381,7 +381,7 @@ test.describe('room features', () => {
     await page.keyboard.press('r');
     const { buffer } = await downloadFrom(page, '#export-json-btn');
     const file = JSON.parse(buffer.toString('utf8'));
-    expect(file.version).toBe('1.5');
+    expect(file.version).toBe('1.7');
     expect(file.wallItems.find((item) => item.id === 'item-a')).toMatchObject({ rotation: 90 });
   });
 });
