@@ -16,7 +16,7 @@ const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
 
 const STORAGE_KEY = 'spatial_studio_state_v1';
-const EXPORT_VERSION = '1.4';
+const EXPORT_VERSION = '1.5';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
 const PNG_FILENAME = 'spatial-studio-plan.png';
 const PNG_PIXEL_RATIO = 2;
@@ -48,11 +48,17 @@ const RESIZE_HANDLES_HTML = ['e', 's', 'se']
     .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
     .join('');
 
-// Room features are fixed parts of the wall: free, unfinished, unlit, and kept clear of furniture
+// Room features are free, unfinished and unlit. Doors, windows and sockets are also no-build zones,
+// while a text note is a plain annotation that never collides with anything.
 const OBSTACLE_TYPES = ['socket', 'door', 'window'];
-const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp', ...OBSTACLE_TYPES];
+const FEATURE_TYPES = [...OBSTACLE_TYPES, 'note'];
+const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp', ...FEATURE_TYPES];
 const ROTATIONS = [0, 90, 180, 270];
+const DEFAULT_NOTE_TEXT = 'Double-click to edit';
+const NOTE_MAX_LENGTH = 160;
 const SAFE_ID_PATTERN = /^item-[a-z0-9-]{1,40}$/i;
+// Group ids end up inside attribute selectors and layer keys, so only plain word characters pass
+const GROUP_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 const FINISHES = [
     { id: 'walnut', label: 'Walnut' },
@@ -126,6 +132,11 @@ const brightnessSlider = document.getElementById('brightness-slider');
 const brightnessValue = document.getElementById('brightness-value');
 const presetButtons = document.querySelectorAll('.btn-preset');
 
+const layersPanel = document.getElementById('layers-panel');
+const layerList = document.getElementById('layer-list');
+const layersCount = document.getElementById('layers-count');
+const layersToggle = document.getElementById('layers-toggle');
+
 const contextMenu = document.getElementById('context-menu');
 const contextMenuTitle = document.getElementById('context-menu-title');
 const contextMenuButtons = [...contextMenu.querySelectorAll('.context-menu-item')];
@@ -154,8 +165,8 @@ const CATALOG_DEFAULTS = Object.fromEntries([...catalogItems].map(el => [el.data
 }]));
 
 const defaultItems = [
-    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0 },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0 }
+    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false },
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false }
 ];
 
 const templateItem = (type, leftCm, topCm, finish) => ({ type, left: leftCm * SCALE, top: topCm * SCALE, finish });
@@ -323,9 +334,14 @@ const getSelectedItems = () => wallItems.filter(item => selectedItemIds.includes
 const getSelectedItem = () => (selectedItemIds.length === 1 ? wallItems.find(i => i.id === selectedItemIds[0]) : undefined);
 const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-item[data-id="${itemId}"]`);
 const createItemId = () => `item-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
+const createGroupId = () => `group-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
 const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
 const isObstacle = (item) => OBSTACLE_TYPES.includes(item.type);
-const isLedOn = (item) => !isObstacle(item) && item.ledEnabled !== false;
+const isFeature = (item) => FEATURE_TYPES.includes(item.type);
+const isNote = (item) => item.type === 'note';
+const isLedOn = (item) => !isFeature(item) && item.ledEnabled !== false;
+// Hidden items and notes take no part in collisions, the slope check or the magnet
+const isSolid = (item) => !item.hidden && !isNote(item);
 const isQuarterTurn = (item) => item.rotation === 90 || item.rotation === 270;
 
 // Width and height always describe the footprint on the wall, so a quarter turn swaps which side
@@ -449,7 +465,7 @@ function sanitizeItem(raw, usedIds, bounds) {
     usedIds.add(id);
 
     const defaults = CATALOG_DEFAULTS[raw.type];
-    const obstacle = OBSTACLE_TYPES.includes(raw.type);
+    const feature = FEATURE_TYPES.includes(raw.type);
     const rotation = ROTATIONS.includes(toFiniteNumber(raw.rotation)) ? toFiniteNumber(raw.rotation) : 0;
     const [minWidthCm, minHeightCm] = minSizeCm(rotation);
     const width = toCmGrid(toFiniteNumber(raw.width) ?? defaults.width, minWidthCm, bounds.width / SCALE);
@@ -463,18 +479,59 @@ function sanitizeItem(raw, usedIds, bounds) {
         id,
         type: raw.type,
         name,
-        price: !obstacle && price !== null && price >= 0 ? Math.round(price * 100) / 100 : defaults.price,
+        price: !feature && price !== null && price >= 0 ? Math.round(price * 100) / 100 : defaults.price,
         left: toCmGrid(toFiniteNumber(raw.left) ?? 0, 0, (bounds.width - width) / SCALE),
         top: toCmGrid(toFiniteNumber(raw.top) ?? 0, 0, (bounds.height - height) / SCALE),
         width,
         height,
-        finish: obstacle ? null : (FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish),
-        ledEnabled: !obstacle && (typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true),
+        finish: feature ? null : (FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish),
+        ledEnabled: !feature && (typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true),
         locked: raw.locked === true,
         // Files from before v1.3 have no per-item color, so those items follow the global lighting
-        itemLedColor: !obstacle && isHexColor(raw.itemLedColor) ? raw.itemLedColor.toLowerCase() : null,
-        rotation
+        itemLedColor: !feature && isHexColor(raw.itemLedColor) ? raw.itemLedColor.toLowerCase() : null,
+        rotation,
+        // Group ids only survive if at least two items share them; normalizeGroups checks that afterwards
+        groupId: typeof raw.groupId === 'string' && GROUP_ID_PATTERN.test(raw.groupId) ? raw.groupId : null,
+        hidden: raw.hidden === true,
+        ...(raw.type === 'note' && { text: sanitizeNoteText(raw.text) })
     };
+}
+
+// Notes keep line breaks but drop every other control character; an empty note gets the prompt back
+function sanitizeNoteText(raw) {
+    if (typeof raw !== 'string') return DEFAULT_NOTE_TEXT;
+    const text = raw
+        .replace(/\r\n?/g, '\n')
+        .replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '')
+        .trim()
+        .slice(0, NOTE_MAX_LENGTH);
+    return text || DEFAULT_NOTE_TEXT;
+}
+
+// A group is a run of items sharing a groupId. Members always sit next to each other in wallItems,
+// so the layer list can show each group as one block. Lone survivors lose the id, and scattered
+// members are gathered at the position of the topmost one.
+function normalizeGroups(items) {
+    const counts = new Map();
+    items.forEach(item => {
+        if (item.groupId) counts.set(item.groupId, (counts.get(item.groupId) || 0) + 1);
+    });
+    items.forEach(item => {
+        if (item.groupId && counts.get(item.groupId) < 2) item.groupId = null;
+    });
+
+    const placed = new Set();
+    const blocks = [];
+    for (let index = items.length - 1; index >= 0; index--) {
+        const item = items[index];
+        if (!item.groupId) {
+            blocks.push([item]);
+        } else if (!placed.has(item.groupId)) {
+            placed.add(item.groupId);
+            blocks.push(items.filter(member => member.groupId === item.groupId));
+        }
+    }
+    return blocks.reverse().flat();
 }
 
 // Shared by localStorage restore and file import, so both paths get the same guarantees
@@ -494,10 +551,10 @@ function normalizeLayout(data) {
     const bounds = { width: widthCm * SCALE, height: heightCm * SCALE };
 
     const usedIds = new Set();
-    const items = rawItems
+    const items = normalizeGroups(rawItems
         .slice(0, MAX_IMPORT_ITEMS)
         .map(raw => sanitizeItem(raw, usedIds, bounds))
-        .filter(Boolean);
+        .filter(Boolean));
 
     if (rawItems.length > 0 && items.length === 0) {
         throw new Error('No valid items found in this file.');
@@ -608,17 +665,26 @@ const redo = () => restoreHistoryStep(1);
 
 function renderPlanner() {
     wallItemsLayer.innerHTML = wallItems.map(item => {
-        const selectedClass = isSelected(item.id) ? 'selected' : '';
-        const finishClass = isObstacle(item) ? 'obstacle' : `finish-${item.finish || 'walnut'}`;
-        const ledClass = isObstacle(item) || isLedOn(item) ? '' : 'led-off';
-        const rotationClass = `rot-${item.rotation || 0}`;
-        const lockClass = item.locked ? 'locked' : '';
+        const finishClass = isFeature(item)
+            ? `feature${isObstacle(item) ? ' obstacle' : ''}`
+            : `finish-${item.finish || 'walnut'}`;
+        const classes = [
+            'wall-item', item.type, finishClass, `rot-${item.rotation || 0}`,
+            isSelected(item.id) && 'selected',
+            !isFeature(item) && !isLedOn(item) && 'led-off',
+            item.locked && 'locked',
+            item.hidden && 'is-hidden',
+            item.groupId && 'in-group'
+        ].filter(Boolean).join(' ');
         const ledColor = isHexColor(item.itemLedColor) ? ` --item-color: ${item.itemLedColor};` : '';
+        const label = isNote(item)
+            ? `<span class="item-label note-text">${escapeHtml(item.text)}</span>`
+            : `<span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>`;
         return `
-            <div class="wall-item ${item.type} ${finishClass} ${rotationClass} ${selectedClass} ${ledClass} ${lockClass}"
+            <div class="${classes}"
                  data-id="${escapeHtml(item.id)}"
                  style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;${ledColor}">
-                <span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>
+                ${label}
             </div>
         `;
     }).join('');
@@ -629,8 +695,9 @@ function renderPlanner() {
         el.addEventListener('click', (e) => e.stopPropagation());
     });
 
-    // Every label is measured before any is moved, so a render costs one layout and drag frames none
-    itemLabelSizes = new Map(elements.map(el => {
+    // Every label is measured before any is moved, so a render costs one layout and drag frames none.
+    // Note text fills its own box and never needs shifting.
+    itemLabelSizes = new Map(elements.filter(el => !el.classList.contains('note')).map(el => {
         const label = el.querySelector('.item-label');
         return [el.dataset.id, { width: label.offsetWidth, height: label.offsetHeight }];
     }));
@@ -646,6 +713,7 @@ function renderPlanner() {
 
     const totalPrice = wallItems.reduce((sum, item) => sum + item.price, 0);
     totalPriceDisplay.textContent = `$${totalPrice.toFixed(2)}`;
+    renderLayers();
     refreshMeasure();
 }
 
@@ -661,19 +729,21 @@ function isOverlapping(a, b) {
 const overlapsAny = (item, accept) =>
     wallItems.some(other => other.id !== item.id && accept(other) && isOverlapping(item, other));
 
-// Two room features may share space (a socket beside a door frame); every other overlap is a conflict
+// Two room features may share space (a socket beside a door frame); every other solid overlap is a conflict
 function hasOverlap(item) {
-    return overlapsAny(item, other => !(isObstacle(item) && isObstacle(other)));
+    return isSolid(item) && overlapsAny(item, other => isSolid(other) && !(isObstacle(item) && isObstacle(other)));
 }
 
-const overlapsFurniture = (item) => !isObstacle(item) && overlapsAny(item, other => !isObstacle(other));
-const blocksRoomFeature = (item) => overlapsAny(item, other => isObstacle(item) !== isObstacle(other));
+const overlapsFurniture = (item) =>
+    isSolid(item) && !isFeature(item) && overlapsAny(item, other => isSolid(other) && !isFeature(other));
+const blocksRoomFeature = (item) =>
+    isSolid(item) && overlapsAny(item, other => isSolid(other) && isObstacle(item) !== isObstacle(other));
 
 // The slope edge follows y = x - (wallWidthPx - S). For an axis-aligned box the top-right
 // corner is the point that reaches furthest past that line, so testing it alone is exact.
 // Doors and windows are cut into the wall itself, so the slope never flags them.
 function intrudesAtticSlope(item) {
-    if (!atticSlopeToggle.checked || isObstacle(item)) return false;
+    if (!atticSlopeToggle.checked || isFeature(item) || item.hidden) return false;
 
     const slopeStartX = wallWidthPx - ATTIC_SLOPE_PX;
     const itemRight = item.left + item.width;
@@ -792,7 +862,7 @@ function findNeighborGaps(item, excludedIds) {
     };
 
     wallItems.forEach(other => {
-        if (excludedIds.has(other.id)) return;
+        if (excludedIds.has(other.id) || other.hidden) return;
         const otherRight = other.left + other.width;
         const otherBottom = other.top + other.height;
         // A neighbor only counts when its projection overlaps the active item on the other axis
@@ -872,7 +942,7 @@ function updateDistanceGuides() {
 function getAlignTargets(excludedIds, axis) {
     const targets = axis === 'x' ? [{ value: wallWidthPx / 2, other: null }] : [];
     wallItems.forEach(other => {
-        if (excludedIds.has(other.id)) return;
+        if (excludedIds.has(other.id) || other.hidden) return;
         const start = axis === 'x' ? other.left : other.top;
         const size = axis === 'x' ? other.width : other.height;
         targets.push(
@@ -1301,9 +1371,10 @@ function startDrag(e) {
         return;
     }
 
-    // Pressing a member of a multi-selection keeps the group so the whole set can be dragged
+    // Pressing a member of a multi-selection keeps it so the whole set can be dragged. Anything else
+    // selects the pressed item together with its group, unless it was already picked on its own.
     const group = selectedItemIds.length > 1 && isSelected(item.id);
-    if (!group) selectItem(item.id);
+    if (!group && !isSelected(item.id)) selectWithGroups(item.id);
 
     const members = getSelectedItems();
     const blocked = members.some(member => member.locked);
@@ -1456,8 +1527,8 @@ window.addEventListener('mouseup', () => {
     renderAlignGuides([]);
 
     if (moved) commitLayoutChange();
-    // A plain click on one member of a group narrows the selection to that member
-    if (group && !travelled) selectItem(itemId);
+    // A plain click on one member of a multi-selection narrows it to that member and its group
+    if (group && !travelled) selectWithGroups(itemId);
     refreshMeasure();
 });
 
@@ -1550,10 +1621,9 @@ function applyMarqueeFrame() {
     marqueeBox.style.width = `${box.width}px`;
     marqueeBox.style.height = `${box.height}px`;
 
-    const ids = new Set(marquee.baseIds);
-    wallItems.forEach(item => {
-        if (isOverlapping(box, item)) ids.add(item.id);
-    });
+    // Touching one member of a group catches the whole group; hidden items cannot be caught
+    const hits = wallItems.filter(item => !item.hidden && isOverlapping(box, item)).map(item => item.id);
+    const ids = new Set([...marquee.baseIds, ...expandGroups(hits)]);
     marquee.hitIds = [...ids];
     marquee.elements.forEach(el => el.classList.toggle('selected', ids.has(el.dataset.id)));
 }
@@ -1600,10 +1670,13 @@ function mountCatalogItem(catalogEl, left, top) {
         width: parseFloat(catalogEl.dataset.width),
         height: parseFloat(catalogEl.dataset.height),
         finish: catalogEl.dataset.finish || null,
-        ledEnabled: !OBSTACLE_TYPES.includes(catalogEl.dataset.type),
+        ledEnabled: !FEATURE_TYPES.includes(catalogEl.dataset.type),
         locked: false,
         itemLedColor: null,
-        rotation: 0
+        rotation: 0,
+        groupId: null,
+        hidden: false,
+        ...(catalogEl.dataset.type === 'note' && { text: DEFAULT_NOTE_TEXT })
     };
 
     // Doors, windows and sockets belong to the wall itself, so they start beneath the furniture
@@ -1637,7 +1710,7 @@ function startCatalogDrag() {
     ghost.style.width = `${width}px`;
     ghost.style.height = `${height}px`;
     ghost.innerHTML = `
-        <div class="wall-item ${source.dataset.type} ${source.dataset.finish ? `finish-${source.dataset.finish}` : 'obstacle'} rot-0" style="width: ${width}px; height: ${height}px;">
+        <div class="wall-item ${source.dataset.type} ${source.dataset.finish ? `finish-${source.dataset.finish}` : 'feature'} rot-0" style="width: ${width}px; height: ${height}px;">
             <span class="item-label">${escapeHtml(source.dataset.name)}</span>
         </div>`;
     document.body.appendChild(ghost);
@@ -1768,6 +1841,7 @@ function setSelection(ids) {
     });
     syncResizeHandles();
     syncSelectionBounds();
+    syncLayerSelection();
 
     updateInspectorPanel();
     updateDistanceGuides();
@@ -1776,20 +1850,90 @@ function setSelection(ids) {
 
 const selectItem = (itemId) => setSelection(itemId ? [itemId] : []);
 
-function toggleInSelection(itemId) {
-    setSelection(isSelected(itemId)
-        ? selectedItemIds.filter(id => id !== itemId)
-        : [...selectedItemIds, itemId]);
+const groupMembers = (groupId) => wallItems.filter(item => item.groupId === groupId);
+
+// Picking one member of a group picks the whole group
+function expandGroups(ids) {
+    const groupIds = new Set(wallItems.filter(item => ids.includes(item.id) && item.groupId).map(item => item.groupId));
+    return [...new Set([...ids, ...wallItems.filter(item => groupIds.has(item.groupId)).map(item => item.id)])];
 }
 
-const selectAll = () => setSelection(wallItems.map(item => item.id));
+const selectWithGroups = (itemId) => setSelection(expandGroups([itemId]));
+
+function toggleInSelection(itemId) {
+    const ids = expandGroups([itemId]);
+    setSelection(ids.every(isSelected)
+        ? selectedItemIds.filter(id => !ids.includes(id))
+        : [...selectedItemIds, ...ids]);
+}
+
+const selectAll = () => setSelection(wallItems.filter(item => !item.hidden).map(item => item.id));
+
+// Bottom-up blocks of the stack: a lone item, or a whole group, whose members always sit together
+function getUnits() {
+    const units = [];
+    wallItems.forEach(item => {
+        const last = units.at(-1);
+        if (item.groupId && last && last.groupId === item.groupId) {
+            last.items.push(item);
+        } else {
+            units.push({ key: item.groupId ? `group:${item.groupId}` : `item:${item.id}`, groupId: item.groupId, items: [item] });
+        }
+    });
+    return units;
+}
+
+// Groups are numbered bottom to top, in the order they appear in the stack
+function groupLabels() {
+    const labels = new Map();
+    wallItems.forEach(item => {
+        if (item.groupId && !labels.has(item.groupId)) labels.set(item.groupId, `Group ${labels.size + 1}`);
+    });
+    return labels;
+}
+
+// The id of the group when the selection is exactly one complete group
+function selectedGroupId() {
+    const items = getSelectedItems();
+    const groupId = items[0]?.groupId;
+    const whole = groupId && items.every(item => item.groupId === groupId) && groupMembers(groupId).length === items.length;
+    return whole ? groupId : null;
+}
+
+const canGroup = () => selectedItemIds.length > 1 && !selectedGroupId();
+const canUngroup = () => getSelectedItems().some(item => item.groupId);
+
+// Groups are one level deep, so grouping members of other groups moves them into the new group
+function groupSelection() {
+    if (!canGroup()) return;
+
+    const groupId = createGroupId();
+    getSelectedItems().forEach(item => { item.groupId = groupId; });
+    wallItems = normalizeGroups(wallItems);
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+// Every group the selection touches dissolves, and all of its former members stay selected
+function ungroupSelection() {
+    const groupIds = new Set(getSelectedItems().map(item => item.groupId).filter(Boolean));
+    if (!groupIds.size) return;
+
+    const members = wallItems.filter(item => groupIds.has(item.groupId));
+    members.forEach(item => { item.groupId = null; });
+    selectedItemIds = [...new Set([...selectedItemIds, ...members.map(item => item.id)])];
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
 
 // Locked items survive a removal and stay selected, so the user can see what was skipped
 function removeItems(ids) {
     const removable = new Set(wallItems.filter(item => ids.includes(item.id) && !item.locked).map(item => item.id));
     if (!removable.size) return;
 
-    wallItems = wallItems.filter(item => !removable.has(item.id));
+    wallItems = normalizeGroups(wallItems.filter(item => !removable.has(item.id)));
     selectedItemIds = selectedItemIds.filter(id => !removable.has(id));
     renderPlanner();
     updateInspectorPanel();
@@ -1798,7 +1942,8 @@ function removeItems(ids) {
 
 const removeSelectedItems = () => removeItems(selectedItemIds);
 
-// Copies keep their relative layout, so the offset is clamped for the group box, not per item
+// Copies keep their relative layout, so the offset is clamped for the group box, not per item.
+// Each copied group becomes a new group of its own copies.
 function duplicateSelectedItem() {
     const sources = getSelectedItems();
     if (!sources.length) return;
@@ -1806,17 +1951,22 @@ function duplicateSelectedItem() {
     const box = getBounds(sources);
     const dx = clamp(DUPLICATE_OFFSET_PX, -box.left, wallWidthPx - box.left - box.width);
     const dy = clamp(DUPLICATE_OFFSET_PX, -box.top, wallHeightPx - box.top - box.height);
+    const copiedGroups = new Map();
 
-    const copies = sources.map(source => ({
-        ...JSON.parse(JSON.stringify(source)),
-        id: createItemId(),
-        // A copy starts unlocked so it can be placed right away
-        locked: false,
-        left: source.left + dx,
-        top: source.top + dy
-    }));
+    const copies = sources.map(source => {
+        if (source.groupId && !copiedGroups.has(source.groupId)) copiedGroups.set(source.groupId, createGroupId());
+        return {
+            ...JSON.parse(JSON.stringify(source)),
+            id: createItemId(),
+            // A copy starts unlocked so it can be placed right away
+            locked: false,
+            left: source.left + dx,
+            top: source.top + dy,
+            groupId: source.groupId ? copiedGroups.get(source.groupId) : null
+        };
+    });
 
-    wallItems.push(...copies);
+    wallItems = normalizeGroups([...wallItems, ...copies]);
     selectedItemIds = copies.map(copy => copy.id);
     renderPlanner();
     updateInspectorPanel();
@@ -1835,35 +1985,62 @@ function toggleSelectedLock() {
     commitLayoutChange();
 }
 
+// Layer moves shift whole blocks so a group never splits. When the selection sits inside one group
+// without covering all of it, the members reorder among themselves instead.
+function layerScope() {
+    const items = getSelectedItems();
+    const groupId = items[0]?.groupId;
+    const inside = groupId && items.every(item => item.groupId === groupId) && items.length < groupMembers(groupId).length;
+    if (inside) {
+        return { groupId, blocks: groupMembers(groupId).map(item => ({ key: `item:${item.id}`, items: [item] })) };
+    }
+    return { groupId: null, blocks: getUnits() };
+}
+
+const isBlockSelected = (block) => block.items.some(item => isSelected(item.id));
+
 function canMoveLayer(step) {
-    return wallItems.some((item, index) => {
-        const neighbor = wallItems[index + step];
-        return isSelected(item.id) && neighbor && !isSelected(neighbor.id);
+    const { blocks } = layerScope();
+    return blocks.some((block, index) => {
+        const neighbor = blocks[index + step];
+        return isBlockSelected(block) && neighbor && !isBlockSelected(neighbor);
     });
 }
 
+// Writes a reordered run of blocks back; inside a group only that group's slice of wallItems changes
+function applyBlockOrder(blocks, groupId) {
+    const ordered = blocks.flatMap(block => block.items);
+    if (!groupId) {
+        wallItems = ordered;
+        return;
+    }
+    wallItems.splice(wallItems.findIndex(item => item.groupId === groupId), ordered.length, ...ordered);
+}
+
 // wallItems is also the paint order in #wall-items. Walking from the leading end lets every selected
-// item hop over its unselected neighbor once, so a group shifts one layer and keeps its inner order.
+// block hop over its unselected neighbor once, so a selection shifts one layer and keeps its inner order.
 function moveSelectedLayer(step) {
     if (!canMoveLayer(step)) return;
 
-    const indexes = wallItems.map((_, index) => index);
+    const { blocks, groupId } = layerScope();
+    const indexes = blocks.map((_, index) => index);
     if (step > 0) indexes.reverse();
     indexes.forEach(index => {
         const target = index + step;
-        const neighbor = wallItems[target];
-        if (isSelected(wallItems[index].id) && neighbor && !isSelected(neighbor.id)) {
-            [wallItems[index], wallItems[target]] = [neighbor, wallItems[index]];
+        const neighbor = blocks[target];
+        if (isBlockSelected(blocks[index]) && neighbor && !isBlockSelected(neighbor)) {
+            [blocks[index], blocks[target]] = [neighbor, blocks[index]];
         }
     });
 
+    applyBlockOrder(blocks, groupId);
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
 }
 
 // A quarter turn swaps the footprint, so the swapped box must still fit inside the wall
-const canRotate = (item) => !item.locked && item.height <= wallWidthPx && item.width <= wallHeightPx;
+const fitsTurned = (box) => box.height <= wallWidthPx && box.width <= wallHeightPx;
 
 // Turns the item clockwise about its center. Width and height swap so collisions, the marquee and
 // wall clamping keep working on a plain axis-aligned box. When the center offset lands on a half
@@ -1882,20 +2059,332 @@ function rotateItem(item) {
     item.rotation = (item.rotation + 90) % 360;
 }
 
-// Every selected item turns in place; locked items and ones that would not fit are left as they are
+// A group turns as one rigid block about its own center. Members keep their places relative to the
+// box, so the half-centimeter rounding happens once for the whole group and never pulls it apart.
+function rotateGroup(members) {
+    const box = getBounds(members);
+    const [boxLeft, boxTop, boxWidth, boxHeight] = [box.left, box.top, box.width, box.height].map(toCm);
+    const roundShift = members[0].rotation % 180 === 0 ? Math.floor : Math.ceil;
+    const left = clamp(boxLeft + roundShift((boxWidth - boxHeight) / 2), 0, wallWidthCm - boxHeight);
+    const top = clamp(boxTop + roundShift((boxHeight - boxWidth) / 2), 0, wallHeightCm - boxWidth);
+
+    members.forEach(item => {
+        const [itemLeft, itemTop, width, height] = [item.left, item.top, item.width, item.height].map(toCm);
+        // Clockwise, the space below an item becomes the space to its left, and its left space its top
+        item.left = (left + boxTop + boxHeight - itemTop - height) * SCALE;
+        item.top = (top + itemLeft - boxLeft) * SCALE;
+        item.width = height * SCALE;
+        item.height = width * SCALE;
+        item.rotation = (item.rotation + 90) % 360;
+    });
+}
+
+// A fully selected group is one rotation unit; any other selected item is a unit of its own
+function rotationUnits() {
+    const units = [];
+    const done = new Set();
+    getSelectedItems().forEach(item => {
+        if (done.has(item.id)) return;
+        const members = item.groupId ? groupMembers(item.groupId) : [];
+        const unit = members.length && members.every(member => isSelected(member.id)) ? members : [item];
+        unit.forEach(member => done.add(member.id));
+        units.push(unit);
+    });
+    return units;
+}
+
+const canRotateUnit = (unit) => unit.every(item => !item.locked) && fitsTurned(unit.length === 1 ? unit[0] : getBounds(unit));
+const canRotateSelection = () => rotationUnits().some(canRotateUnit);
+
+// Loose items turn in place and groups turn as a whole; locked or oversized units are left alone
 function rotateSelection() {
-    const items = getSelectedItems();
-    const targets = items.filter(canRotate);
+    const targets = rotationUnits().filter(canRotateUnit);
     if (!targets.length) {
-        if (items.some(item => item.locked)) flashLockNote();
+        if (getSelectedItems().some(item => item.locked)) flashLockNote();
         return;
     }
 
-    targets.forEach(rotateItem);
+    targets.forEach(unit => (unit.length === 1 ? rotateItem(unit[0]) : rotateGroup(unit)));
     renderPlanner();
     updateInspectorPanel();
     commitLayoutChange();
 }
+
+// Double-clicking a note swaps its label for a textarea. The item element is never rebuilt while the
+// editor is open, and saving only rewrites the label, so a drag that starts on another item and
+// blurs the editor keeps working on live elements.
+let noteEditor = null;
+
+function startNoteEdit(item, el) {
+    selectItem(item.id);
+    if (item.locked) {
+        flashLockNote();
+        return;
+    }
+
+    const label = el.querySelector('.item-label');
+    const editor = document.createElement('textarea');
+    editor.className = 'note-editor';
+    editor.value = item.text;
+    editor.maxLength = NOTE_MAX_LENGTH;
+    editor.spellcheck = false;
+    editor.setAttribute('aria-label', 'Note text');
+    label.hidden = true;
+    el.classList.add('is-editing');
+    el.append(editor);
+    noteEditor = { item, el, label, editor };
+
+    // Presses inside place the caret instead of dragging, and keys stay with the text
+    ['mousedown', 'click', 'dblclick'].forEach(type => editor.addEventListener(type, e => e.stopPropagation()));
+    editor.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+            e.preventDefault();
+            editor.blur();
+        }
+    });
+    editor.addEventListener('blur', finishNoteEdit, { once: true });
+    editor.focus();
+    editor.select();
+}
+
+function setNoteText(item, raw) {
+    const text = sanitizeNoteText(raw);
+    if (text === item.text) return false;
+
+    item.text = text;
+    const label = getItemElement(item.id)?.querySelector('.item-label');
+    if (label) label.textContent = text;
+    renderLayers();
+    commitLayoutChange();
+    return true;
+}
+
+function finishNoteEdit() {
+    if (!noteEditor) return;
+
+    const { item, el, label, editor } = noteEditor;
+    noteEditor = null;
+    editor.remove();
+    label.hidden = false;
+    el.classList.remove('is-editing');
+    setNoteText(item, editor.value);
+
+    const field = document.getElementById('note-text');
+    if (field) field.value = item.text;
+}
+
+wallItemsLayer.addEventListener('dblclick', (e) => {
+    const el = e.target.closest('.wall-item');
+    const item = el && wallItems.find(i => i.id === el.dataset.id);
+    if (!item || isPointerBusy()) return;
+
+    if (isNote(item)) startNoteEdit(item, el);
+    // Anywhere else a double-click steps into the group and picks just that member
+    else if (item.groupId) selectItem(item.id);
+});
+
+// Layer explorer. Rows run top to bottom, the reverse of wallItems, and every row is keyed as
+// item:<id> or group:<id> so clicks, toggles and drops all resolve through the same helper.
+const collapsedGroups = new Set();
+let layerDrag = null;
+
+const layerName = (item) => (isNote(item) ? `Note: ${item.text.split('\n')[0]}` : item.name);
+
+function layerItems(key) {
+    const split = key.indexOf(':');
+    const kind = key.slice(0, split);
+    const id = key.slice(split + 1);
+    return kind === 'group' ? groupMembers(id) : wallItems.filter(item => item.id === id);
+}
+
+function layerToggles(name, hidden, locked) {
+    return `
+        <button type="button" class="layer-toggle layer-eye ${hidden ? 'is-off' : ''}" aria-pressed="${hidden}" aria-label="${hidden ? 'Show' : 'Hide'} ${name}" title="${hidden ? 'Show' : 'Hide'} ${name}"><span class="eye-icon" aria-hidden="true"></span></button>
+        <button type="button" class="layer-toggle layer-lock ${locked ? 'is-on' : ''}" aria-pressed="${locked}" aria-label="${locked ? 'Unlock' : 'Lock'} ${name}" title="${locked ? 'Unlock' : 'Lock'} ${name}">${LOCK_ICON_HTML}</button>`;
+}
+
+function itemRowHtml(item, groupId) {
+    const name = escapeHtml(layerName(item));
+    const swatch = isFeature(item) ? item.type : item.finish;
+    const classes = ['layer-row', groupId && 'is-child', item.hidden && 'is-hidden', item.locked && 'is-locked'].filter(Boolean).join(' ');
+    return `
+        <li class="${classes}" role="treeitem" aria-level="${groupId ? 2 : 1}" aria-selected="false" draggable="true"
+            data-layer="item:${escapeHtml(item.id)}" data-item-id="${escapeHtml(item.id)}"${groupId ? ` data-group="${escapeHtml(groupId)}"` : ''}>
+            <span class="layer-grip" aria-hidden="true"></span>
+            <button type="button" class="layer-name" title="Select ${name}">
+                <span class="layer-icon" data-swatch="${swatch}" aria-hidden="true"></span><span class="layer-text">${name}</span>
+            </button>${layerToggles(name, item.hidden, item.locked)}
+        </li>`;
+}
+
+function groupRowHtml(unit, label, collapsed) {
+    const hidden = unit.items.every(item => item.hidden);
+    const locked = unit.items.every(item => item.locked);
+    const classes = ['layer-row', 'is-group', hidden && 'is-hidden', locked && 'is-locked'].filter(Boolean).join(' ');
+    return `
+        <li class="${classes}" role="treeitem" aria-level="1" aria-expanded="${!collapsed}" aria-selected="false" draggable="true"
+            data-layer="group:${escapeHtml(unit.groupId)}" data-group-id="${escapeHtml(unit.groupId)}">
+            <button type="button" class="layer-caret" aria-expanded="${!collapsed}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${label}" title="${collapsed ? 'Expand' : 'Collapse'} ${label}"></button>
+            <button type="button" class="layer-name" title="Select ${label}">
+                <span class="layer-icon" data-swatch="group" aria-hidden="true"></span><span class="layer-text">${label}</span><span class="layer-count">${unit.items.length}</span>
+            </button>${layerToggles(label, hidden, locked)}
+        </li>`;
+}
+
+function renderLayers() {
+    const labels = groupLabels();
+    const rows = [...getUnits()].reverse().flatMap(unit => {
+        if (!unit.groupId) return [itemRowHtml(unit.items[0], null)];
+        const collapsed = collapsedGroups.has(unit.groupId);
+        const children = collapsed ? [] : [...unit.items].reverse().map(item => itemRowHtml(item, unit.groupId));
+        return [groupRowHtml(unit, labels.get(unit.groupId), collapsed), ...children];
+    });
+
+    layerList.innerHTML = rows.join('') || '<li class="layer-empty">Nothing on the wall yet.</li>';
+    layersCount.textContent = wallItems.length;
+    syncLayerSelection();
+}
+
+// Selection changes only flip classes; the list itself is rebuilt when the stack changes
+function syncLayerSelection() {
+    layerList.querySelectorAll('.layer-row').forEach(row => {
+        const items = layerItems(row.dataset.layer);
+        const selected = items.length > 0 && items.every(item => isSelected(item.id));
+        row.classList.toggle('is-selected', selected);
+        row.setAttribute('aria-selected', selected);
+    });
+}
+
+function toggleLayerFlag(key, flag) {
+    const items = layerItems(key);
+    if (!items.length) return;
+
+    // Mixed groups switch every member on first, matching the Lock All rule
+    const value = items.some(item => !item[flag]);
+    items.forEach(item => { item[flag] = value; });
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+layerList.addEventListener('click', (e) => {
+    const row = e.target.closest('.layer-row');
+    const button = e.target.closest('button');
+    if (!row || !button) return;
+
+    const key = row.dataset.layer;
+    if (button.classList.contains('layer-caret')) {
+        const groupId = row.dataset.groupId;
+        if (collapsedGroups.has(groupId)) collapsedGroups.delete(groupId);
+        else collapsedGroups.add(groupId);
+        renderLayers();
+    } else if (button.classList.contains('layer-eye')) {
+        toggleLayerFlag(key, 'hidden');
+    } else if (button.classList.contains('layer-lock')) {
+        toggleLayerFlag(key, 'locked');
+    } else if (button.classList.contains('layer-name')) {
+        // A member row picks just that member, so a group's parts can still be edited one by one
+        const ids = layerItems(key).map(item => item.id);
+        if (!e.shiftKey) setSelection(ids);
+        else if (ids.every(isSelected)) setSelection(selectedItemIds.filter(id => !ids.includes(id)));
+        else setSelection([...selectedItemIds, ...ids]);
+    }
+});
+
+// A dragged member may only move among its own group's members. Any other row moves as a whole block,
+// and while it hovers a member row it is measured against that member's whole group instead.
+function resolveLayerDrop(e) {
+    const row = e.target instanceof Element ? e.target.closest('.layer-row') : null;
+    if (!layerDrag || !row || row.dataset.layer === layerDrag.key) return null;
+
+    if (layerDrag.groupId) {
+        if (!row.classList.contains('is-child') || row.dataset.group !== layerDrag.groupId) return null;
+        const rect = row.getBoundingClientRect();
+        const place = e.clientY < rect.top + rect.height / 2 ? 'above' : 'below';
+        return { key: row.dataset.layer, place, marker: row };
+    }
+
+    const head = row.classList.contains('is-child')
+        ? layerList.querySelector(`[data-layer="group:${row.dataset.group}"]`)
+        : row;
+    if (!head || head.dataset.layer === layerDrag.key) return null;
+
+    const block = [head, ...layerList.querySelectorAll(`.is-child[data-group="${head.dataset.groupId}"]`)];
+    const top = block[0].getBoundingClientRect().top;
+    const bottom = block.at(-1).getBoundingClientRect().bottom;
+    const place = e.clientY < (top + bottom) / 2 ? 'above' : 'below';
+    return { key: head.dataset.layer, place, marker: place === 'above' ? head : block.at(-1) };
+}
+
+function clearLayerMarkers() {
+    layerList.querySelectorAll('.drop-above, .drop-below').forEach(row => row.classList.remove('drop-above', 'drop-below'));
+}
+
+// The list runs top to bottom while wallItems runs bottom to top, so "above" lands one index higher
+function reorderLayer(dragKey, targetKey, place, groupId) {
+    const blocks = groupId
+        ? groupMembers(groupId).map(item => ({ key: `item:${item.id}`, items: [item] }))
+        : getUnits();
+    const from = blocks.findIndex(block => block.key === dragKey);
+    if (from < 0) return;
+    const [moving] = blocks.splice(from, 1);
+    const at = blocks.findIndex(block => block.key === targetKey);
+    if (at < 0) return;
+    blocks.splice(place === 'above' ? at + 1 : at, 0, moving);
+
+    const before = wallItems.map(item => item.id).join();
+    applyBlockOrder(blocks, groupId);
+    if (wallItems.map(item => item.id).join() === before) return;
+
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+layerList.addEventListener('dragstart', (e) => {
+    const row = e.target instanceof Element ? e.target.closest('.layer-row') : null;
+    if (!row) return;
+
+    layerDrag = { key: row.dataset.layer, groupId: row.classList.contains('is-child') ? row.dataset.group : null };
+    row.classList.add('is-dragging');
+    if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', row.dataset.layer);
+    }
+});
+
+layerList.addEventListener('dragover', (e) => {
+    const drop = resolveLayerDrop(e);
+    clearLayerMarkers();
+    if (!drop) return;
+
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    drop.marker.classList.add(drop.place === 'above' ? 'drop-above' : 'drop-below');
+});
+
+layerList.addEventListener('drop', (e) => {
+    const drop = resolveLayerDrop(e);
+    const drag = layerDrag;
+    e.preventDefault();
+    clearLayerMarkers();
+    layerDrag = null;
+    if (drop && drag) reorderLayer(drag.key, drop.key, drop.place, drag.groupId);
+});
+
+layerList.addEventListener('dragend', () => {
+    layerDrag = null;
+    clearLayerMarkers();
+    layerList.querySelectorAll('.is-dragging').forEach(row => row.classList.remove('is-dragging'));
+});
+
+layersToggle.addEventListener('click', () => {
+    const collapsed = layersPanel.classList.toggle('is-collapsed');
+    layersToggle.setAttribute('aria-expanded', !collapsed);
+    layersToggle.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} the layer list`);
+    layersToggle.title = `${collapsed ? 'Expand' : 'Collapse'} the layer list`;
+});
 
 function flashLockNote() {
     const note = document.getElementById('lock-note');
@@ -1938,7 +2427,7 @@ const WARNINGS_HTML = `
 const formatPrice = (value) => `$${Math.round(value * 100) / 100}`;
 
 function applyFinish(finish) {
-    const targets = getSelectedItems().filter(item => !item.locked && !isObstacle(item) && item.finish !== finish);
+    const targets = getSelectedItems().filter(item => !item.locked && !isFeature(item) && item.finish !== finish);
     if (!targets.length) return;
 
     targets.forEach(item => { item.finish = finish; });
@@ -1976,19 +2465,20 @@ function syncItemLedField() {
 const rotationFieldHtml = (readout, items) => `
     <div class="inspector-field">
         <label>Rotation${readout ? ` <span class="rotation-readout" id="rotation-readout">${readout}</span>` : ''}</label>
-        <button type="button" class="btn-secondary rotate-btn" id="rotate-item-btn" title="Turn ${items.length > 1 ? 'each unlocked item' : 'the item'} 90 degrees clockwise about its center (R)" ${items.some(canRotate) ? '' : 'disabled'}>
+        <button type="button" class="btn-secondary rotate-btn" id="rotate-item-btn" title="${items.length > 1 ? 'Turn groups as a whole and other items in place' : 'Turn the item about its center'}, 90 degrees clockwise (R)" ${canRotateSelection() ? '' : 'disabled'}>
             <span class="rotate-icon" aria-hidden="true"></span>Rotate 90 Degrees
         </button>
     </div>`;
 
 function renderItemInspector(item) {
     const ledOn = isLedOn(item);
-    const obstacle = isObstacle(item);
+    const feature = isFeature(item);
     const locked = item.locked === true;
     const lockedAttr = locked ? 'disabled' : '';
     const layerIndex = wallItems.indexOf(item);
     const [minWidthCm, minHeightCm] = minSizeCm(item.rotation);
-    const lockedParts = obstacle ? 'Position, size, rotation and removal' : 'Position, size, rotation, finish, backlight and removal';
+    const lockedParts = feature ? 'Position, size, rotation and removal' : 'Position, size, rotation, finish, backlight and removal';
+    const groupLabel = item.groupId ? groupLabels().get(item.groupId) : '';
 
     const furnitureFields = `
             <div class="inspector-field">
@@ -2009,8 +2499,22 @@ function renderItemInspector(item) {
                     <button type="button" id="item-led-reset" class="btn-secondary led-reset" title="Follow the global lighting color again">Use Global</button>
                 </div>
             </div>`;
-    const featureNote = `
+    const featureNote = isNote(item)
+        ? `
+            <div class="inspector-field">
+                <label for="note-text">Note Text</label>
+                <textarea id="note-text" class="note-field" rows="3" maxlength="${NOTE_MAX_LENGTH}" spellcheck="false" ${lockedAttr}>${escapeHtml(item.text)}</textarea>
+            </div>
+            <p class="feature-note" id="feature-note">An annotation: notes never collide, add nothing to the estimate and can also be edited by double-clicking them on the wall.</p>`
+        : `
             <p class="feature-note" id="feature-note">A no-build zone: furniture placed over it is flagged red. Room features add nothing to the estimate and carry no finish or lighting.</p>`;
+    const groupNote = groupLabel
+        ? `
+            <div class="group-note" id="group-note">
+                <span>Part of <strong>${groupLabel}</strong></span>
+                <button type="button" class="btn-secondary" id="select-group-btn" title="Select every item in ${groupLabel}">Select Group</button>
+            </div>`
+        : '';
 
     inspectorBox.innerHTML = `
         <div class="selected-item-info">
@@ -2018,11 +2522,12 @@ function renderItemInspector(item) {
                 <span class="selected-item-title">${escapeHtml(item.name)}</span>
                 <span class="selected-item-meta">
                     ${locked ? `<span class="lock-badge">${LOCK_ICON_HTML}Locked</span>` : ''}
-                    ${obstacle ? '<span class="feature-badge">Room Feature</span>' : `<span>$${item.price}</span>`}
+                    ${feature ? '<span class="feature-badge">Room Feature</span>' : `<span>$${item.price}</span>`}
                 </span>
             </div>
             <span>Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
             ${locked ? `<p class="lock-note" id="lock-note">${lockedParts} are locked. Press L or Unlock Item to edit.</p>` : ''}
+            ${groupNote}
 
             <div class="inspector-grid">
                 <div class="inspector-field">
@@ -2034,7 +2539,7 @@ function renderItemInspector(item) {
                     <input type="number" id="edit-height-cm" class="dim-input" min="${minHeightCm}" max="${wallHeightCm}" value="${toCm(item.height)}" ${lockedAttr}>
                 </div>
             </div>
-            ${obstacle ? featureNote : furnitureFields}
+            ${feature ? featureNote : furnitureFields}
 
             ${rotationFieldHtml(`${item.rotation} deg`, [item])}
             ${layerFieldHtml(`${layerIndex + 1} of ${wallItems.length}`)}
@@ -2078,7 +2583,21 @@ function renderItemInspector(item) {
 
     widthInput.addEventListener('change', applyDimensionChange);
     heightInput.addEventListener('change', applyDimensionChange);
-    if (obstacle) return;
+    document.getElementById('select-group-btn')?.addEventListener('click', () => selectWithGroups(item.id));
+
+    // Typing previews on the wall at once; leaving the field saves the cleaned text as one step
+    const noteField = document.getElementById('note-text');
+    if (noteField) {
+        noteField.addEventListener('input', () => {
+            const label = getItemElement(item.id)?.querySelector('.item-label');
+            if (label) label.textContent = noteField.value.trim() ? noteField.value : DEFAULT_NOTE_TEXT;
+        });
+        noteField.addEventListener('change', () => {
+            setNoteText(item, noteField.value);
+            noteField.value = item.text;
+        });
+    }
+    if (feature) return;
 
     const ledToggleBtn = document.getElementById('led-toggle-btn');
     ledToggleBtn.addEventListener('click', () => {
@@ -2109,7 +2628,12 @@ function renderBatchInspector(items) {
     const lockedCount = items.filter(item => item.locked).length;
     const removable = count - lockedCount;
     const allLocked = lockedCount === count;
-    const finishable = items.filter(item => !isObstacle(item));
+    const finishable = items.filter(item => !isFeature(item));
+    const groupId = selectedGroupId();
+    const title = groupId ? groupLabels().get(groupId) : `${count} items selected`;
+    const grouping = canGroup()
+        ? `<button type="button" class="btn-secondary" id="group-toggle-btn" title="Bundle the selection into one group (Ctrl+G)">Group Selection</button>`
+        : `<button type="button" class="btn-secondary" id="group-toggle-btn" title="Dissolve the group back into single items (Ctrl+Shift+G)">Ungroup</button>`;
     const sharedFinish = finishable.length && finishable.every(item => item.finish === finishable[0].finish)
         ? finishable[0].finish
         : null;
@@ -2122,7 +2646,7 @@ function renderBatchInspector(items) {
     inspectorBox.innerHTML = `
         <div class="selected-item-info is-batch">
             <div class="selected-item-header">
-                <span class="selected-item-title" id="batch-count">${count} items selected</span>
+                <span class="selected-item-title" id="batch-count">${title}</span>
                 <span class="selected-item-meta">
                     ${lockedCount ? `<span class="lock-badge">${LOCK_ICON_HTML}${lockedCount} Locked</span>` : ''}
                     <span>${formatPrice(total)}</span>
@@ -2130,7 +2654,13 @@ function renderBatchInspector(items) {
             </div>
             <span>Group: <strong id="inspector-pos-readout">${formatOffset(getBounds(items))}</strong></span>
             <span>Footprint: <strong id="batch-footprint-readout">${formatFootprint(getBounds(items))}</strong></span>
+            ${groupId ? `<span class="group-count">${count} items grouped</span>` : ''}
             ${lockNote}
+
+            <div class="inspector-field">
+                <label>Grouping</label>
+                ${grouping}
+            </div>
 
             <div class="inspector-field">
                 <label>Surface Finish</label>
@@ -2168,6 +2698,7 @@ function updateInspectorPanel() {
         btn.addEventListener('click', () => applyFinish(btn.dataset.finish));
     });
     document.getElementById('rotate-item-btn').addEventListener('click', rotateSelection);
+    document.getElementById('group-toggle-btn')?.addEventListener('click', () => (canGroup() ? groupSelection() : ungroupSelection()));
     document.getElementById('send-backward-btn').addEventListener('click', () => moveSelectedLayer(-1));
     document.getElementById('bring-forward-btn').addEventListener('click', () => moveSelectedLayer(1));
     document.getElementById('lock-toggle-btn').addEventListener('click', toggleSelectedLock);
@@ -2184,6 +2715,8 @@ const isContextMenuOpen = () => !contextMenu.hidden;
 
 const CONTEXT_ACTIONS = {
     duplicate: duplicateSelectedItem,
+    group: groupSelection,
+    ungroup: ungroupSelection,
     forward: () => moveSelectedLayer(1),
     backward: () => moveSelectedLayer(-1),
     rotate: rotateSelection,
@@ -2197,14 +2730,19 @@ function syncContextMenu() {
     const lockLabel = allLocked ? 'Unlock' : 'Lock';
     const state = {
         duplicate: { disabled: false },
+        group: { disabled: !canGroup() },
+        ungroup: { disabled: !canUngroup() },
         forward: { disabled: !canMoveLayer(1) },
         backward: { disabled: !canMoveLayer(-1) },
-        rotate: { disabled: !items.some(canRotate) },
+        rotate: { disabled: !canRotateSelection() },
         lock: { disabled: false, label: items.length > 1 ? `${lockLabel} All` : lockLabel },
         delete: { disabled: allLocked }
     };
 
-    contextMenuTitle.textContent = items.length === 1 ? items[0].name : `${items.length} items selected`;
+    const groupId = selectedGroupId();
+    contextMenuTitle.textContent = groupId
+        ? groupLabels().get(groupId)
+        : (items.length === 1 ? layerName(items[0]) : `${items.length} items selected`);
     contextMenuButtons.forEach(button => {
         const { disabled, label } = state[button.dataset.action];
         button.disabled = disabled;
@@ -2274,7 +2812,7 @@ wallItemsLayer.addEventListener('contextmenu', (e) => {
 
     e.preventDefault();
     if (isPointerBusy() || isModalOpen()) return;
-    if (!isSelected(el.dataset.id)) selectItem(el.dataset.id);
+    if (!isSelected(el.dataset.id)) selectWithGroups(el.dataset.id);
     openContextMenu(e.clientX, e.clientY);
 });
 
@@ -2319,6 +2857,16 @@ function handleModifierShortcut(e) {
         // Stops the browser bookmark dialog; holding the keys should not spawn a stack of copies
         e.preventDefault();
         if (!e.repeat && !isPointerBusy()) duplicateSelectedItem();
+        return true;
+    }
+
+    // Ctrl+G is the browser's find-next, so it is taken over even when there is nothing to group
+    if (key === 'g') {
+        e.preventDefault();
+        if (!e.repeat && !isPointerBusy()) {
+            if (e.shiftKey) ungroupSelection();
+            else groupSelection();
+        }
         return true;
     }
 
@@ -2648,7 +3196,7 @@ const finishLabel = (id) => (FINISHES.find(f => f.id === id) || { label: id }).l
 const markdownCell = (value) => String(value).replace(/\s+/g, ' ').replace(/\|/g, '\\|');
 const totalPrice = () => wallItems.reduce((sum, item) => sum + item.price, 0);
 // Room features are not bought or mounted, so the spec sheet leaves them out
-const furnitureItems = () => wallItems.filter(item => !isObstacle(item));
+const furnitureItems = () => wallItems.filter(item => !isFeature(item));
 
 // A turned piece is still the same product, so the bill lists it at its catalog orientation
 function buildBomRows() {
@@ -3199,12 +3747,50 @@ function paintFeatureDetail(ctx, item, style, border) {
     ctx.restore();
 }
 
+// Line breaks are read back from the rendered label one character at a time, so the export wraps
+// exactly where the browser wrapped. Screen rects are divided by the fit scale to get wall pixels.
+function paintNoteText(ctx, item, el, label, style) {
+    const node = label.firstChild;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return;
+
+    const range = document.createRange();
+    const origin = el.getBoundingClientRect().top;
+    const lines = [];
+    for (let index = 0; index < node.length; index++) {
+        if (node.data[index] === '\n') continue;
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        const rect = range.getBoundingClientRect();
+        if (!rect.height) continue;
+        const line = lines.at(-1);
+        if (line && Math.abs(rect.top - line.top) < 1) line.text += node.data[index];
+        else lines.push({ top: rect.top, middle: (rect.top + rect.bottom) / 2, text: node.data[index] });
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(item.left, item.top, item.width, item.height);
+    ctx.clip();
+    ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    ctx.fillStyle = style.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    lines.forEach(line => {
+        ctx.fillText(line.text.trimEnd(), item.left + item.width / 2, item.top + (line.middle - origin) / viewScale);
+    });
+    ctx.restore();
+}
+
 function paintItemLabel(ctx, item, el) {
     const label = el.querySelector('.item-label');
     if (!label) return;
 
     const style = getComputedStyle(label);
     if (style.display === 'none') return;
+    if (isNote(item)) {
+        paintNoteText(ctx, item, el, label, style);
+        return;
+    }
     ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     const width = ctx.measureText(item.name).width + parseFloat(style.paddingLeft) * 2;
     const height = label.offsetHeight;
@@ -3300,7 +3886,8 @@ function exportPng() {
     paintWallBackground(ctx);
     if (atticSlopeToggle.checked) paintAtticZone(ctx, fontFamily);
     if (isAmbientMode && brightness > 0) paintCornerGlow(ctx, brightness);
-    wallItems.forEach(item => paintItem(ctx, item, brightness));
+    // Hidden items stay in the plan but leave the picture, just as they leave the wall view
+    wallItems.filter(item => !item.hidden).forEach(item => paintItem(ctx, item, brightness));
     paintCaption(ctx, fontFamily);
 
     canvas.toBlob(blob => {

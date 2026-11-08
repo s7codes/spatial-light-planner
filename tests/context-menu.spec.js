@@ -68,6 +68,8 @@ test.describe('context menu', () => {
     await expect(page.locator('#context-menu-title')).toHaveText('Modular Cube');
     expect(await menuLabels(page)).toEqual([
       { label: 'Duplicate', keys: 'Ctrl+D', disabled: false },
+      { label: 'Group', keys: 'Ctrl+G', disabled: true },
+      { label: 'Ungroup', keys: 'Ctrl+Shift+G', disabled: true },
       { label: 'Bring Forward', keys: '', disabled: false },
       { label: 'Send Backward', keys: '', disabled: true },
       { label: 'Rotate 90 Degrees', keys: 'R', disabled: false },

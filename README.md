@@ -15,17 +15,20 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Smart measurements:** Hold `Alt` / `Option` with something selected and point at any other item, or at bare wall, for Figma-style red distance lines and badges between the two boxes.
 - **Room constraints:** Configurable wall size (`150-400 x 150-300 cm`), AABB overlap warnings, and an optional `90 x 90 cm` 45-degree attic slope with exact intrusion detection.
 - **Room features:** Wall sockets, door clearances, and windows act as no-build zones. They cost nothing, carry no finish or lighting, and flag any furniture placed over them.
+- **Text notes:** Sticky-note annotations from the Room Features group. Double-click one on the wall to type in place ("TV center", "Router here"); the text wraps on the wall and in the PNG alike.
 - **Rotation:** Turn any piece, or a whole selection, by 90 degrees with `R`, the context menu, or the Inspector. Storage doors, lamp diffusers, spotlight washes, and backlights all turn with it, on screen and in the PNG.
 - **Lighting preview:** Per-item backlights, a corner floor lamp glow, RGB pickers, presets, and a master dimmer, with an Ambient Mode for night and a Daylight Grid for layout work.
 - **Material realism:** Bevelled millwork finishes, gallery posters with a mat and recessed artwork, a glowing lamp diffuser, and spotlight light washes, reproduced in the PNG export.
 - **Direct manipulation:** Drag catalog cards straight onto the wall, or click to mount them. Resize the selected item with on-canvas grips on its right edge, bottom edge, and corner.
-- **Multi-selection:** Drag a selection box across empty wall, `Shift`-click to add or remove items, or press `Ctrl + A`. A group moves, nudges, locks, duplicates, re-layers, and changes finish as one rigid block, with a batch Inspector for shared edits.
-- **Context menu:** Right-click any item for a frosted-glass menu with Duplicate, Bring Forward, Send Backward, Lock / Unlock, and Delete. Inside a group it acts on the whole group.
+- **Multi-selection:** Drag a selection box across empty wall, `Shift`-click to add or remove items, or press `Ctrl + A`. A selection moves, nudges, locks, duplicates, re-layers, and changes finish as one rigid block, with a batch Inspector for shared edits.
+- **True grouping:** `Ctrl + G` bundles a selection into a lasting group and `Ctrl + Shift + G` dissolves it. One click picks the whole group, and it drags, nudges, turns, and duplicates as a single object, while a double-click still reaches a single member.
+- **Layer explorer:** A docked Layers panel lists every item and group in exact stacking order. Click rows to select, drag them to restack, and use the eye and padlock on each row to hide or lock items and whole groups.
+- **Context menu:** Right-click any item for a frosted-glass menu with Duplicate, Group, Ungroup, Bring Forward, Send Backward, Rotate, Lock / Unlock, and Delete. Inside a selection it acts on all of it.
 - **Per-item lighting:** Give any single item its own independent LED color, live on the wall and in the PNG export, or hand it back to the global picker with one click.
 - **Editing workflow:** 30-step undo/redo, duplication, item locking, layer ordering, and three curated starter templates.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 257 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 278 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -57,7 +60,7 @@ Resizing and catalog drops reuse the drag engine's rules: one `requestAnimationF
 The selection is an array of item ids, `selectedItemIds`. Every change goes through one `setSelection()` call that syncs the `.selected` classes, the resize grips, the Inspector, the rulers, and the group outline. The single-item editors (size fields, resize grips, backlight switch, per-item color) only appear when exactly one item is selected.
 
 - **Selection box:** a press on bare wall becomes a box after `3 px` of travel. Corners are converted to wall space (divided by the fit scale, minus the border) and clamped to the wall. Each frame tests every item against the box with the same strict AABB check the collision engine uses, and toggles `.selected` live without touching the Inspector. The selection is committed once on release, `Shift` makes the box additive, and `Escape` restores the previous selection.
-- **Clicks:** `Shift`-click toggles one item and never starts a move. A plain press on a member of a group keeps the group so it can be dragged, and a release without movement narrows the selection to that member. A click on bare wall clears the selection, unless `Shift` is held.
+- **Clicks:** `Shift`-click toggles one item (or one whole group) and never starts a move. A plain press on a member of a multi-selection keeps the selection so it can be dragged, and a release without movement narrows it to that member and its group. A click on bare wall clears the selection, unless `Shift` is held.
 - **Group outline and rulers:** a multi-selection is measured as one bounding box. A dashed outline marks it, and the wall and gap rulers measure that box against items outside the selection.
 
 ### Rotation Model
@@ -66,7 +69,7 @@ The selection is an array of item ids, `selectedItemIds`. Every change goes thro
 - **Pivot:** an item turns clockwise about its center. When the center offset lands on a half centimeter, even turns round one way and odd turns the other, so four turns bring a piece back exactly where it started.
 - **Fit:** a turned item is clamped back inside the wall. A piece whose swapped footprint would not fit at all (a full-width shelf on a shorter wall) stays as it is, and its Rotate controls are disabled.
 - **Minimum sizes:** the `8 cm` minimum width and `4 cm` minimum height belong to the piece, so after a quarter turn they swap sides for resize grips, Inspector fields, and the sanitizer.
-- **Groups:** every unlocked member turns in place as one undo step. Locked members are skipped.
+- **Selections and groups:** loose selected items each turn in place. A fully selected group turns as one rigid block about its own center: every member's offset inside the box is rotated with it, and the half-centimeter rounding is applied once to the whole box so the group never pulls apart. A locked member, or a box that would not fit the wall once turned, keeps that unit still.
 - **Details:** each item carries a `rot-*` class that sets `--up-x`, `--up-y`, and `--turn`. Directional backlights read their offsets from the first two, the spotlight wash rotates with `--turn` about the fixture center, and per-rotation rules move the storage seam and handles and lay the lamp diffuser flat. Labels stay upright.
 - **Bill of materials:** a turned shelf is still the same product, so the BOM lists it at its catalog orientation while the drilling table uses the real footprint.
 
@@ -77,6 +80,29 @@ Wall sockets (`8 x 8 cm`), door clearances (`90 x 210 cm`), and windows (`120 x 
 - **Collisions:** furniture overlapping a feature turns red and shows a dedicated warning. Features may overlap each other (a socket inside a door frame), and the attic slope never flags them, since doors and windows are cut into the wall itself.
 - **Placement:** a new feature joins the bottom of the layer stack, beneath existing furniture.
 - **Drawing:** a door clearance is an elevation-style opening with a corner-to-corner cross, a window has a frame and mullions over tinted glass, and a socket shows its faceplate and pins. All of it is plain CSS that the PNG renderer reproduces, and the colors follow Ambient Mode and the Daylight Grid.
+
+### True Grouping
+Groups live in the flat item array: members share a `groupId`, which keeps collisions, the selection box, and DOM paint order working on plain items.
+
+- **Contiguity:** members of a group always sit next to each other in the stack, so a group can be shown as one block in the Layers panel and moved as one. `normalizeGroups()` enforces this on every load, import, grouping, removal, and duplicate: scattered members are gathered at the position of the topmost one, and an id left with a single member is dropped.
+- **Selecting:** a click, a context-menu target, or a selection box that touches one member expands to the whole group. A double-click (or a member row in the Layers panel) picks a single member, which then moves and edits on its own; `Select Group` in the Inspector widens it again.
+- **Grouping:** groups are one level deep, so grouping members of other groups moves them into the new group. Ungrouping dissolves every group the selection touches and keeps all former members selected. Both are single undo steps.
+- **Layer moves:** Bring Forward and Send Backward work on whole blocks, so a group is never split. When the selection sits inside one group without covering it, the members reorder among themselves instead.
+- **Duplicates:** each copied group becomes a new group of its own copies.
+
+### Layer Explorer
+The Layers panel is docked between the scrolling Inspector and the budget, so it stays in view while properties scroll. Rows run top to bottom, the reverse of `wallItems`, and each row is keyed as `item:<id>` or `group:<id>` so clicks, toggles, and drops resolve through one helper.
+
+- **Selection:** clicking a row selects it on the wall (`Shift` adds), and wall selections highlight their rows. Selection changes only flip row classes; the list is rebuilt only when the stack itself changes, never during a drag.
+- **Restacking:** rows use native HTML5 drag and drop. A dragged item or group moves as one block among the top-level rows, and while it hovers a member row it is measured against that member's whole group. A member row only moves among its own group's members, and any other drop is refused. Each drop is a single undo step.
+- **Visibility and locks:** the eye hides an item or a whole group. Hidden items fade to `opacity: 0`, ignore the pointer, and drop out of collisions, the attic check, rulers, the magnet, the selection box, `Ctrl + A`, and the PNG export. They stay in the plan, the budget, and the spec sheet. The padlock locks an item or a group, with mixed groups locking first.
+
+### Text Notes
+A text note is a room feature that never collides: it is free, has no finish or lighting, stays off the spec sheet, and is ignored by collisions and the attic check. Its `text` is cleaned on load (line breaks kept, other control characters removed, `160` characters at most, and an empty note falls back to the prompt).
+
+- **Editing:** a double-click swaps the label for a `<textarea>` with the text selected. Presses inside it place the caret instead of dragging, and its keys never reach the app shortcuts. `Escape`, `Ctrl + Enter`, or clicking away saves, and an unchanged note costs no history step. The Inspector has the same text in a field for keyboard editing.
+- **Live elements:** saving only rewrites the label. Because the note's element is never rebuilt, a drag that starts on another item and blurs the editor keeps working on live elements.
+- **Export:** the renderer reads the browser's own line breaks back from the rendered label, one character range at a time, and draws each line where the browser placed it, so the PNG wraps exactly like the wall.
 
 ### Smart Measurements
 Holding `Alt` / `Option` with a selection turns the pointer into a measuring probe. Pointing at any unselected item, or at bare wall, replaces the regular rulers with red distance lines and badges between the selection's bounding box and the hovered box.
@@ -101,7 +127,7 @@ Right-clicking an item replaces the browser menu with a custom panel built from 
 
 - **Targeting:** an item outside the selection is selected first. An item inside a group opens the menu for the whole group, and the title and labels follow (`Lock All`, `2 items selected`).
 - **Placement:** the panel lives outside the scaled wall, so `position: fixed` follows the viewport. It is measured after opening and flipped to the other side of the cursor wherever it would run off screen.
-- **States:** Bring Forward and Send Backward disable at the ends of the stack, Rotate disables when nothing selected can turn, Lock flips to Unlock, and Delete disables when every target is locked.
+- **States:** Group needs a selection that is not already one complete group, Ungroup needs a grouped item, Bring Forward and Send Backward disable at the ends of the stack, Rotate disables when nothing selected can turn, Lock flips to Unlock, and Delete disables when every target is locked.
 - **Dismissal:** a press anywhere else (caught in the capture phase), `Escape`, `Tab`, an action, a window blur, or a resize closes it.
 - **Keyboard:** the arrow keys, `Home`, and `End` walk the enabled items and `Enter` runs one. Any other key closes the menu and still runs its shortcut, so the hints printed in the menu keep working while it is open.
 
@@ -144,23 +170,23 @@ During a drag, the item's start, center, and end lines on each axis are compared
 Gap rulers find the nearest item on each side whose projection overlaps the active item, and measure along the center of that shared overlap. Labels are placed shortest ruler first; any label that would collide slides along its own ruler to the nearest clear spot.
 
 ### Undo / Redo History
-History is a bounded stack of 30 serialized snapshots covering items (including rotation, backlight, per-item color, lock state, and layer order), wall size, and the attic slope. The selection is not part of history; after an undo it keeps whichever selected items still exist. Lighting colors and brightness are treated as preferences and left out.
+History is a bounded stack of 30 serialized snapshots covering items (including groups, visibility, note text, rotation, backlight, per-item color, lock state, and layer order), wall size, and the attic slope. The selection is not part of history; after an undo it keeps whichever selected items still exist. Lighting colors and brightness are treated as preferences and left out.
 
 - Identical consecutive snapshots are dropped.
 - A new action after an undo truncates the redo branch.
 - Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size edits, become a single step.
 - A drag commits exactly one snapshot on `mouseup`, and only if something moved. A group drag, a grip resize, and a catalog drop follow the same rule.
-- Batch edits (rotation, finish, lock, duplicate, delete, layer moves) are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
+- Batch edits (grouping, rotation, finish, lock, visibility, duplicate, delete, layer moves) are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
 
 ### XSS-Safe JSON Schema Sanitizer
 Saved state, imported files, and starter templates all pass through one `normalizeLayout()` function. Nothing is applied until the whole file validates, so a bad file never leaves a half-loaded wall.
 
 - **Wall:** dimensions are rounded to whole centimeters and clamped to the allowed range. Files from v0.7, which carry no wall size, load on the default `300 x 250 cm` wall.
-- **Items:** unknown types are skipped and reported. Invalid finishes, sizes, and prices fall back to catalog values read from the catalog markup itself. Geometry is snapped to whole centimeters and clamped inside the wall. `ledEnabled` and `locked` only accept real booleans, `itemLedColor` only a 6-digit hex color (stored lowercase) or `null`, and `rotation` only a quarter turn; anything else falls back to `0`.
+- **Items:** unknown types are skipped and reported. Invalid finishes, sizes, and prices fall back to catalog values read from the catalog markup itself. Geometry is snapped to whole centimeters and clamped inside the wall. `ledEnabled`, `locked`, and `hidden` only accept real booleans, `itemLedColor` only a 6-digit hex color (stored lowercase) or `null`, `rotation` only a quarter turn (anything else falls back to `0`), and `groupId` only a short run of letters, digits, `-`, and `_`.
 - **Names and ids:** names are trimmed, length-limited, and HTML-escaped wherever they are rendered. Valid unique ids are kept; duplicate or malformed ids are regenerated.
 - **Limits:** colors must be 6-digit hex, brightness is clamped to `0-100`, and files over 1 MB or 200 items are rejected.
 
-The export schema is versioned (`"1.4"`, which adds `rotation` and the room feature types; `1.3` added `itemLedColor`). Files from `0.7` through `1.3` import unchanged: their items load unturned and follow the global lighting colors.
+The export schema is versioned (`"1.5"`, which adds `groupId`, `hidden`, and the text note; `1.4` added `rotation` and the room features, `1.3` added `itemLedColor`). Files from `0.7` through `1.4` import unchanged: their items load ungrouped, visible, unturned, and on the global lighting colors.
 
 ### Bill of Materials & Drilling Coordinates
 The spec sheet groups furniture by type, name, catalog size in cm, finish, and price into a priced bill of materials. Room features are left out of both tables. Every item is also listed left to right with its distance from the left wall, the ceiling, and the floor. Installers measure shelving up from the floor, so the bottom edge is derived as:
@@ -182,6 +208,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 - **Lamp and spotlights:** the lamp's `::after` is an LED diffuser tinted by its `--led-color`. In daylight, or with the backlight off, it falls back to an unlit frosted strip. A spotlight's `::after` is a clipped light wash that fades from its `--led-color`.
 - **Exporter:** a list parser reads spread and `inset` from computed `box-shadow` values. Inset shadows are painted by clipping to the shape and offsetting the shadow of a surrounding frame back inside it. The artwork, diffuser, and wash are read from each item's `::after` computed box, opacity, and clip path.
 - **Rotation:** a turned spotlight's wash is painted through the same `matrix()` and `transform-origin` the browser resolved for its `::after`, so the canvas applies exactly the rotation the DOM shows. Storage handles are painted side by side from whichever borders the current rotation uses, and the diffuser and socket pins come from their computed boxes.
+- **Notes and hidden items:** a note's text is painted line by line from the browser's own wrapping and clipped to the paper, and hidden items are skipped entirely.
 - **See-through fills:** room features have translucent backgrounds, so their borders are painted as a ring instead of a full shape underneath, and the door cross and window mullions are drawn from the same custom properties as the CSS.
 - **No transitions:** the exported pseudo-elements change instantly, so a snapshot taken right after a mode or LED switch reads the final state.
 - **Glow geometry:** the glow layer spans the item's border box, so a framed item's glow starts outside its frame. That is also the shape the exporter uses.
@@ -195,6 +222,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 - Inspector panel rebuilds hand keyboard focus back to the control that triggered them.
 - The context menu uses `role="menu"` with `menuitem` buttons, exposes its shortcuts through `aria-keyshortcuts`, and is fully keyboard operable.
 - The compact room feature tiles show short names and carry the full name and size in their `aria-label`.
+- The Layers panel is a `role="tree"` of `treeitem` rows with `aria-level`, `aria-selected`, and `aria-expanded`. Its eye and padlock are real buttons with `aria-pressed` and labels that name the item, and the note editor and Inspector field are labelled text areas.
 
 ## Keyboard Shortcuts
 
@@ -206,6 +234,9 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 | `Ctrl + A` / `Cmd + A` | Select every item on the wall |
 | Right-click item | Open the item menu |
 | `R` | Rotate the selection 90 degrees clockwise |
+| `Ctrl + G` / `Cmd + G` | Group the selection |
+| `Ctrl + Shift + G` / `Cmd + Shift + G` | Ungroup the selection |
+| Double-click item | Pick a single member of a group, or edit a text note |
 | Hold `Alt` / `Option` and point at an item or bare wall | Measure from the selection to it |
 | Hold `Alt` / `Option` while dragging | Temporarily bypass magnetic alignment guides |
 | Arrow keys | Nudge the selection by 1 cm |
@@ -243,7 +274,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 257 tests in 20 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 278 tests in 22 spec files, one per feature area.
 
 ```bash
 npm install
@@ -274,6 +305,8 @@ npm test
 | `item-led` | Inline `--item-color`, live preview without a rebuild, one undo step, `Use Global`, global pickers for the rest, PNG parity, locks, export, duplicate, reload, legacy and malformed files |
 | `rotation-obstacles` | Center-pivot turns with swapped footprints, drift-free full turns, collisions, marquee and clamping on turned items, unfit and locked pieces, batch turns, rotation-aware minimums, PNG parity for turned details, $0 room features kept out of the budget and spec sheet, feature collision rules, legacy and malformed rotations |
 | `measure` | Alt-hover gap lines and badges, diagonal extensions, wall-edge and nested measurements, group boxes, live updates while nudging, idle states, Alt magnet bypass |
+| `grouping-layers` | `Ctrl + G` / `Ctrl + Shift + G`, whole-group selection by click, marquee and `Shift`, double-click to a member, group drag, nudge, duplicate and rigid rotation, block layer moves, menu and Inspector controls, locked members, export, reload and sanitizing; layer list order and collapse, row selection, simulated and real HTML5 drag and drop, eye and padlock on items and groups |
+| `text-notes` | $0 note from the catalog, double-click editing with `Escape` and click-away saves, history, empty and unchanged notes, locked notes, Inspector field, no collisions or spec sheet rows, PNG paper and line-wrap parity, import cleaning |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:

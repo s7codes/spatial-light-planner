@@ -574,10 +574,10 @@ button:focus-visible {
     background-size: 5px 20px;
 }
 
-/* Room features sit three to a row so the catalog still fits the 820 px studio height */
+/* Room features sit four to a row so the catalog still fits the 820 px studio height */
 .feature-tiles {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 6px;
 }
 
@@ -616,6 +616,13 @@ button:focus-visible {
         linear-gradient(to bottom right, transparent 46%, rgba(148, 163, 184, 0.6) 46% 54%, transparent 54%),
         linear-gradient(rgba(148, 163, 184, 0.16), rgba(148, 163, 184, 0.16));
     background-size: 8px 14px;
+}
+
+.catalog-item[data-type="note"]::before {
+    background-image:
+        linear-gradient(transparent 35%, rgba(66, 32, 6, 0.55) 35% 45%, transparent 45% 58%, rgba(66, 32, 6, 0.55) 58% 68%, transparent 68%),
+        linear-gradient(#fde68a, #fde68a);
+    background-size: 13px 11px;
 }
 
 .catalog-item[data-type="window"]::before {
@@ -1097,8 +1104,63 @@ button:focus-visible {
 }
 
 /* Room features: parts of the wall itself, so they carry no drop shadow, finish, sheen or glow */
-.wall-item.obstacle::before {
+.wall-item.feature::before {
     display: none;
+}
+
+/* A hidden layer stays in the plan but leaves the view; the Layers panel is how it is reached again */
+.wall-item.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Sticky note: paper with a soft lift, its text filling the box and wrapping like a real label */
+.wall-item.note {
+    --item-drop: 0 6px 14px rgba(0, 0, 0, 0.35);
+    --sheen-highlight: rgba(255, 255, 255, 0.4);
+    --sheen-shade: rgba(146, 64, 14, 0.12);
+    align-items: stretch;
+    border-radius: 2px;
+    background-color: #fde68a;
+}
+
+.wall-item.note .item-label {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 6px 8px;
+    overflow: hidden;
+    border-radius: 0;
+    background-color: transparent;
+    color: #422006;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.note-editor {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 0;
+    outline: 2px solid #f59e0b;
+    outline-offset: -2px;
+    resize: none;
+    background-color: #fef3c7;
+    color: #422006;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: center;
+    cursor: text;
 }
 
 /* A door clearance is drawn like an opening on an elevation: a frame with a corner-to-corner cross */
@@ -1867,6 +1929,348 @@ body.is-selecting * {
     color: var(--text-muted);
     font-size: 11px;
     line-height: 1.45;
+}
+
+.note-field {
+    width: 100%;
+    padding: 7px 9px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+    background-color: var(--bg-inset);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+    color: var(--text-main);
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.note-field:focus {
+    outline: none;
+    border-color: var(--accent-led);
+    box-shadow: 0 0 0 3px rgba(255, 157, 66, 0.2);
+}
+
+.group-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 6px 6px 9px;
+    border: 1px solid rgba(96, 165, 250, 0.25);
+    border-radius: var(--radius-sm);
+    background-color: rgba(59, 130, 246, 0.08);
+    font-size: 11.5px;
+}
+
+.group-note strong {
+    color: #bfdbfe;
+}
+
+.group-note .btn-secondary {
+    flex-shrink: 0;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+}
+
+.group-count {
+    color: var(--text-faint);
+    font-size: 11.5px;
+}
+
+/* Layer explorer, docked between the scrolling inspector and the budget so it never scrolls away */
+.layers-panel {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--hairline);
+}
+
+.layers-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.layers-count {
+    min-width: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background-color: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
+    text-align: center;
+}
+
+/* A chevron drawn from two borders, pointing down when open and right when collapsed */
+.layers-toggle {
+    position: relative;
+    width: 22px;
+    height: 22px;
+    margin-left: auto;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color var(--motion), color var(--motion);
+}
+
+.layers-toggle::before,
+.layer-caret::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translate(-50%, -70%) rotate(45deg);
+    transition: transform var(--motion);
+}
+
+.layers-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: var(--text-main);
+}
+
+.layers-panel.is-collapsed .layers-toggle::before,
+.layer-row[aria-expanded="false"] .layer-caret::before {
+    transform: translate(-70%, -50%) rotate(-45deg);
+}
+
+.layers-panel.is-collapsed .layer-list {
+    display: none;
+}
+
+.layer-list {
+    max-height: 178px;
+    padding: 4px;
+    overflow-y: auto;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-inset);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+    list-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.layer-empty {
+    padding: 10px 8px;
+    color: var(--text-faint);
+    font-size: 12px;
+}
+
+.layer-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+    padding: 0 2px 0 4px;
+    border-radius: 5px;
+    color: var(--text-muted);
+    transition: background-color var(--motion), color var(--motion);
+}
+
+.layer-row:hover {
+    background-color: rgba(255, 255, 255, 0.04);
+    color: var(--text-main);
+}
+
+.layer-row.is-selected {
+    background-color: rgba(59, 130, 246, 0.16);
+    color: var(--text-main);
+}
+
+.layer-row.is-child {
+    padding-left: 22px;
+}
+
+.layer-row.is-hidden .layer-name {
+    opacity: 0.45;
+}
+
+.layer-row.is-dragging {
+    opacity: 0.4;
+}
+
+/* Drop markers: a line on the edge the row will land against */
+.layer-row.drop-above::after,
+.layer-row.drop-below::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    height: 2px;
+    border-radius: 1px;
+    background-color: #3b82f6;
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.25);
+}
+
+.layer-row.drop-above::after { top: -1px; }
+.layer-row.drop-below::after { bottom: -1px; }
+
+/* Six dots made from a repeating radial gradient */
+.layer-grip {
+    flex-shrink: 0;
+    width: 8px;
+    height: 12px;
+    background-image: radial-gradient(circle, currentColor 0.9px, transparent 1.3px);
+    background-size: 4px 4px;
+    opacity: 0.35;
+    cursor: grab;
+}
+
+.layer-caret {
+    position: relative;
+    flex-shrink: 0;
+    width: 14px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background-color: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.layer-name {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    height: 100%;
+    padding: 0 4px;
+    border: 0;
+    background-color: transparent;
+    color: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.layer-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.layer-count {
+    margin-left: auto;
+    color: var(--text-faint);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.layer-icon {
+    flex-shrink: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background-color: #5c4033;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.layer-icon[data-swatch="oak"] { background-color: #c89d66; }
+.layer-icon[data-swatch="black"] { background-color: #1f2229; }
+.layer-icon[data-swatch="white"] { background-color: #f3f4f6; }
+.layer-icon[data-swatch="note"] { background-color: #fde68a; }
+.layer-icon[data-swatch="socket"] { background-color: #d3d8e0; }
+
+.layer-icon[data-swatch="door"],
+.layer-icon[data-swatch="window"] {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1.5px #7b8597;
+}
+
+.layer-icon[data-swatch="window"] {
+    background-color: rgba(96, 165, 250, 0.3);
+}
+
+.layer-icon[data-swatch="group"] {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1.5px #60a5fa;
+    border-radius: 3px;
+}
+
+.layer-toggle {
+    position: relative;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 22px;
+    padding: 0;
+    border: 0;
+    border-radius: 4px;
+    background-color: transparent;
+    color: var(--text-faint);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--motion), background-color var(--motion), color var(--motion);
+}
+
+/* Toggles appear on hover or focus, and stay visible while they are switched on */
+.layer-row:hover .layer-toggle,
+.layer-toggle:focus-visible,
+.layer-eye.is-off,
+.layer-lock.is-on {
+    opacity: 1;
+}
+
+.layer-toggle:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-main);
+}
+
+.layer-lock.is-on {
+    color: #fbbf24;
+}
+
+/* An almond outline with a pupil; switched off it gets a slash across */
+.eye-icon {
+    position: relative;
+    width: 12px;
+    height: 8px;
+    border: 1.5px solid currentColor;
+    border-radius: 75% 15%;
+    transform: rotate(45deg) scale(0.8);
+}
+
+.eye-icon::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: currentColor;
+    transform: translate(-50%, -50%);
+}
+
+.layer-eye.is-off {
+    color: var(--text-muted);
+}
+
+.layer-eye.is-off::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 15px;
+    height: 1.5px;
+    background-color: currentColor;
+    transform: translate(-50%, -50%) rotate(-40deg);
 }
 
 /* The readout says "Global" while the item follows the shared picker */

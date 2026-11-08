@@ -26,7 +26,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v1.4</span></h1>
+            <h1>Spatial Studio <span class="badge">v1.5</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -135,6 +135,9 @@
                     </button>
                     <button type="button" class="catalog-item feature-tile" data-type="window" data-name="Window" data-price="0" data-width="300" data-height="300" aria-label="Window, 120 x 120 cm" title="Mount a Window (120 x 120 cm, keep clear)">
                         <span class="item-title">Window</span>
+                    </button>
+                    <button type="button" class="catalog-item feature-tile" data-type="note" data-name="Text Note" data-price="0" data-width="150" data-height="75" aria-label="Text Note, 60 x 30 cm" title="Mount a Text Note (60 x 30 cm, double-click it to edit)">
+                        <span class="item-title">Note</span>
                     </button>
                 </div>
             </div>
@@ -247,6 +250,15 @@
                     </div>
                 </div>
             </div>
+
+            <section id="layers-panel" class="layers-panel" aria-labelledby="layers-heading">
+                <div class="layers-header">
+                    <h2 id="layers-heading">Layers</h2>
+                    <span id="layers-count" class="layers-count">0</span>
+                    <button type="button" id="layers-toggle" class="layers-toggle" aria-expanded="true" aria-controls="layer-list" aria-label="Collapse the layer list" title="Collapse the layer list"></button>
+                </div>
+                <ul id="layer-list" class="layer-list" role="tree" aria-labelledby="layers-heading"></ul>
+            </section>
 
             <div class="budget-box">
                 <h3>Estimated Cost</h3>
@@ -382,6 +394,10 @@
                         <kbd>R</kbd> turns the selection 90 degrees clockwise. Hold <kbd>Alt</kbd> / <kbd>Option</kbd> with
                         something selected and point at another item, or at bare wall, to measure the distance to it.
                     </p>
+                    <p>
+                        <kbd>Ctrl</kbd> + <kbd>G</kbd> groups the selection and <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>
+                        ungroups it. Double-click a grouped item to pick it on its own, or a text note to edit it.
+                    </p>
                 </div>
             </div>
         </div>
@@ -392,6 +408,14 @@
         <button type="button" class="context-menu-item" role="menuitem" data-action="duplicate" aria-keyshortcuts="Control+D">
             <span class="context-menu-label">Duplicate</span>
             <kbd aria-hidden="true">Ctrl+D</kbd>
+        </button>
+        <button type="button" class="context-menu-item" role="menuitem" data-action="group" aria-keyshortcuts="Control+G">
+            <span class="context-menu-label">Group</span>
+            <kbd aria-hidden="true">Ctrl+G</kbd>
+        </button>
+        <button type="button" class="context-menu-item" role="menuitem" data-action="ungroup" aria-keyshortcuts="Control+Shift+G">
+            <span class="context-menu-label">Ungroup</span>
+            <kbd aria-hidden="true">Ctrl+Shift+G</kbd>
         </button>
         <div class="context-menu-separator" role="separator"></div>
         <button type="button" class="context-menu-item" role="menuitem" data-action="forward">
