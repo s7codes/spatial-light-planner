@@ -16,7 +16,7 @@ const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
 
 const STORAGE_KEY = 'spatial_studio_state_v1';
-const EXPORT_VERSION = '1.3';
+const EXPORT_VERSION = '1.4';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
 const PNG_FILENAME = 'spatial-studio-plan.png';
 const PNG_PIXEL_RATIO = 2;
@@ -48,7 +48,10 @@ const RESIZE_HANDLES_HTML = ['e', 's', 'se']
     .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
     .join('');
 
-const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp'];
+// Room features are fixed parts of the wall: free, unfinished, unlit, and kept clear of furniture
+const OBSTACLE_TYPES = ['socket', 'door', 'window'];
+const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp', ...OBSTACLE_TYPES];
+const ROTATIONS = [0, 90, 180, 270];
 const SAFE_ID_PATTERN = /^item-[a-z0-9-]{1,40}$/i;
 
 const FINISHES = [
@@ -75,6 +78,7 @@ const wallItemsLayer = document.getElementById('wall-items');
 const atticZone = document.getElementById('attic-zone');
 const alignLayer = document.getElementById('align-guides');
 const marqueeBox = document.getElementById('selection-marquee');
+const measureLayer = document.getElementById('measure-layer');
 const selectionBounds = document.getElementById('selection-bounds');
 
 const wallWidthInput = document.getElementById('wall-width-input');
@@ -146,12 +150,12 @@ const CATALOG_DEFAULTS = Object.fromEntries([...catalogItems].map(el => [el.data
     price: parseFloat(el.dataset.price),
     width: parseFloat(el.dataset.width),
     height: parseFloat(el.dataset.height),
-    finish: el.dataset.finish || 'walnut'
+    finish: el.dataset.finish || null
 }]));
 
 const defaultItems = [
-    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null }
+    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0 },
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0 }
 ];
 
 const templateItem = (type, leftCm, topCm, finish) => ({ type, left: leftCm * SCALE, top: topCm * SCALE, finish });
@@ -320,7 +324,15 @@ const getSelectedItem = () => (selectedItemIds.length === 1 ? wallItems.find(i =
 const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-item[data-id="${itemId}"]`);
 const createItemId = () => `item-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
 const isHexColor = (value) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
-const isLedOn = (item) => item.ledEnabled !== false;
+const isObstacle = (item) => OBSTACLE_TYPES.includes(item.type);
+const isLedOn = (item) => !isObstacle(item) && item.ledEnabled !== false;
+const isQuarterTurn = (item) => item.rotation === 90 || item.rotation === 270;
+
+// Width and height always describe the footprint on the wall, so a quarter turn swaps which side
+// the minimum width and minimum height apply to
+const minSizeCm = (rotation) => (rotation === 90 || rotation === 270
+    ? [MIN_HEIGHT_CM, MIN_WIDTH_CM]
+    : [MIN_WIDTH_CM, MIN_HEIGHT_CM]);
 const ledColorOf = (item) => (isHexColor(item.itemLedColor)
     ? item.itemLedColor
     : (item.type === 'corner-lamp' ? cornerColorPicker : accentColorPicker).value);
@@ -437,8 +449,11 @@ function sanitizeItem(raw, usedIds, bounds) {
     usedIds.add(id);
 
     const defaults = CATALOG_DEFAULTS[raw.type];
-    const width = toCmGrid(toFiniteNumber(raw.width) ?? defaults.width, MIN_WIDTH_CM, bounds.width / SCALE);
-    const height = toCmGrid(toFiniteNumber(raw.height) ?? defaults.height, MIN_HEIGHT_CM, bounds.height / SCALE);
+    const obstacle = OBSTACLE_TYPES.includes(raw.type);
+    const rotation = ROTATIONS.includes(toFiniteNumber(raw.rotation)) ? toFiniteNumber(raw.rotation) : 0;
+    const [minWidthCm, minHeightCm] = minSizeCm(rotation);
+    const width = toCmGrid(toFiniteNumber(raw.width) ?? defaults.width, minWidthCm, bounds.width / SCALE);
+    const height = toCmGrid(toFiniteNumber(raw.height) ?? defaults.height, minHeightCm, bounds.height / SCALE);
     const price = toFiniteNumber(raw.price);
     const name = typeof raw.name === 'string' && raw.name.trim()
         ? raw.name.trim().slice(0, MAX_NAME_LENGTH)
@@ -448,16 +463,17 @@ function sanitizeItem(raw, usedIds, bounds) {
         id,
         type: raw.type,
         name,
-        price: price !== null && price >= 0 ? Math.round(price * 100) / 100 : defaults.price,
+        price: !obstacle && price !== null && price >= 0 ? Math.round(price * 100) / 100 : defaults.price,
         left: toCmGrid(toFiniteNumber(raw.left) ?? 0, 0, (bounds.width - width) / SCALE),
         top: toCmGrid(toFiniteNumber(raw.top) ?? 0, 0, (bounds.height - height) / SCALE),
         width,
         height,
-        finish: FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish,
-        ledEnabled: typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true,
+        finish: obstacle ? null : (FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish),
+        ledEnabled: !obstacle && (typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true),
         locked: raw.locked === true,
         // Files from before v1.3 have no per-item color, so those items follow the global lighting
-        itemLedColor: isHexColor(raw.itemLedColor) ? raw.itemLedColor.toLowerCase() : null
+        itemLedColor: !obstacle && isHexColor(raw.itemLedColor) ? raw.itemLedColor.toLowerCase() : null,
+        rotation
     };
 }
 
@@ -593,12 +609,13 @@ const redo = () => restoreHistoryStep(1);
 function renderPlanner() {
     wallItemsLayer.innerHTML = wallItems.map(item => {
         const selectedClass = isSelected(item.id) ? 'selected' : '';
-        const finishClass = item.finish ? `finish-${item.finish}` : 'finish-walnut';
-        const ledClass = isLedOn(item) ? '' : 'led-off';
+        const finishClass = isObstacle(item) ? 'obstacle' : `finish-${item.finish || 'walnut'}`;
+        const ledClass = isObstacle(item) || isLedOn(item) ? '' : 'led-off';
+        const rotationClass = `rot-${item.rotation || 0}`;
         const lockClass = item.locked ? 'locked' : '';
         const ledColor = isHexColor(item.itemLedColor) ? ` --item-color: ${item.itemLedColor};` : '';
         return `
-            <div class="wall-item ${item.type} ${finishClass} ${selectedClass} ${ledClass} ${lockClass}"
+            <div class="wall-item ${item.type} ${finishClass} ${rotationClass} ${selectedClass} ${ledClass} ${lockClass}"
                  data-id="${escapeHtml(item.id)}"
                  style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;${ledColor}">
                 <span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>
@@ -629,6 +646,7 @@ function renderPlanner() {
 
     const totalPrice = wallItems.reduce((sum, item) => sum + item.price, 0);
     totalPriceDisplay.textContent = `$${totalPrice.toFixed(2)}`;
+    refreshMeasure();
 }
 
 function isOverlapping(a, b) {
@@ -640,14 +658,22 @@ function isOverlapping(a, b) {
     );
 }
 
-function hasOverlap(targetItem) {
-    return wallItems.some(other => other.id !== targetItem.id && isOverlapping(targetItem, other));
+const overlapsAny = (item, accept) =>
+    wallItems.some(other => other.id !== item.id && accept(other) && isOverlapping(item, other));
+
+// Two room features may share space (a socket beside a door frame); every other overlap is a conflict
+function hasOverlap(item) {
+    return overlapsAny(item, other => !(isObstacle(item) && isObstacle(other)));
 }
+
+const overlapsFurniture = (item) => !isObstacle(item) && overlapsAny(item, other => !isObstacle(other));
+const blocksRoomFeature = (item) => overlapsAny(item, other => isObstacle(item) !== isObstacle(other));
 
 // The slope edge follows y = x - (wallWidthPx - S). For an axis-aligned box the top-right
 // corner is the point that reaches furthest past that line, so testing it alone is exact.
+// Doors and windows are cut into the wall itself, so the slope never flags them.
 function intrudesAtticSlope(item) {
-    if (!atticSlopeToggle.checked) return false;
+    if (!atticSlopeToggle.checked || isObstacle(item)) return false;
 
     const slopeStartX = wallWidthPx - ATTIC_SLOPE_PX;
     const itemRight = item.left + item.width;
@@ -813,7 +839,8 @@ function pickOuterEdge(near, far, from, limit) {
 // A multi-selection is measured as one box, the same box the group drag snaps with
 function updateDistanceGuides() {
     const selected = getSelectedItems();
-    if (!selected.length) {
+    // Alt measuring takes over the overlay; the regular rulers come back when it ends
+    if (!selected.length || measure.active) {
         Object.values(rulers).forEach(ruler => setRuler(ruler, null));
         return;
     }
@@ -926,6 +953,130 @@ function renderAlignGuides(lines) {
     });
 }
 
+// Alt-hover measuring. hoverId is the item under the pointer, 'wall' for bare wall, or null off the wall.
+const measure = { alt: false, hoverId: null, active: false, key: '', frameId: 0 };
+
+const boxEdges = (box) => ({ left: box.left, top: box.top, right: box.left + box.width, bottom: box.top + box.height });
+
+// Figma's rules: boxes apart on an axis get one line across the gap, drawn through their shared span
+// or, when they are also apart on the other axis, through the selection center with a dashed extension
+// carrying the hovered edge out to it. Boxes that intersect (or nest, like the wall) get a line between
+// each pair of matching edges instead.
+function measureSegments(selection, target) {
+    const a = boxEdges(selection);
+    const b = boxEdges(target);
+    const lines = [];
+    const guides = [];
+    const add = (list, axis, from, to, cross) => {
+        if (Math.abs(to - from) > EPSILON) {
+            list.push({ axis, start: Math.min(from, to), end: Math.max(from, to), cross: Math.round(cross) });
+        }
+    };
+
+    const apartX = b.left >= a.right || b.right <= a.left;
+    const apartY = b.top >= a.bottom || b.bottom <= a.top;
+    const midX = apartX ? (a.left + a.right) / 2 : (Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2;
+    const midY = apartY ? (a.top + a.bottom) / 2 : (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2;
+
+    if (!apartX && !apartY) {
+        add(lines, 'h', a.left, b.left, midY);
+        add(lines, 'h', a.right, b.right, midY);
+        add(lines, 'v', a.top, b.top, midX);
+        add(lines, 'v', a.bottom, b.bottom, midX);
+        return { lines, guides };
+    }
+
+    const right = b.left >= a.right;
+    const below = b.top >= a.bottom;
+    if (apartX) {
+        add(lines, 'h', right ? a.right : a.left, right ? b.left : b.right, midY);
+        if (apartY) add(guides, 'v', midY, below ? b.top : b.bottom, right ? b.left : b.right);
+    }
+    if (apartY) {
+        add(lines, 'v', below ? a.bottom : a.top, below ? b.top : b.bottom, midX);
+        if (apartX) add(guides, 'h', midX, right ? b.left : b.right, below ? b.top : b.bottom);
+    }
+    return { lines, guides };
+}
+
+const segmentStyle = ({ axis, start, end, cross }) => (axis === 'h'
+    ? `left: ${start}px; top: ${cross}px; width: ${end - start}px;`
+    : `left: ${cross}px; top: ${start}px; height: ${end - start}px;`);
+
+function resolveMeasureTarget() {
+    if (measure.hoverId === 'wall') return { left: 0, top: 0, width: wallWidthPx, height: wallHeightPx };
+    if (!measure.hoverId || isSelected(measure.hoverId)) return null;
+    return wallItems.find(item => item.id === measure.hoverId) || null;
+}
+
+function clearMeasure() {
+    if (!measure.active) return;
+    measure.active = false;
+    measure.key = '';
+    measureLayer.hidden = true;
+    measureLayer.innerHTML = '';
+    wallItemsLayer.querySelector('.measure-target')?.classList.remove('measure-target');
+    updateDistanceGuides();
+}
+
+// Runs on hover changes, Alt presses and any change to the selection or its position. The overlay is
+// only rebuilt when one of the two boxes actually changed, which keeps pointer moves inside one item free.
+function refreshMeasure() {
+    const selected = getSelectedItems();
+    const ready = measure.alt && selected.length && !isPointerBusy() && !isModalOpen() && !isContextMenuOpen();
+    const target = ready ? resolveMeasureTarget() : null;
+    if (!target) {
+        clearMeasure();
+        return;
+    }
+
+    const box = selected.length === 1 ? selected[0] : getBounds(selected);
+    const key = [box.left, box.top, box.width, box.height, target.left, target.top, target.width, target.height].join();
+    const wasActive = measure.active;
+    measure.active = true;
+
+    if (key !== measure.key) {
+        measure.key = key;
+        const { lines, guides } = measureSegments(box, target);
+        measureLayer.innerHTML = [
+            ...guides.map(guide => `<div class="measure-guide is-${guide.axis}" style="${segmentStyle(guide)}"></div>`),
+            ...lines.map(line => `
+                <div class="measure-line is-${line.axis}" style="${segmentStyle(line)}">
+                    <span class="measure-label">${toCm(line.end - line.start)} cm</span>
+                </div>`)
+        ].join('');
+        measureLayer.hidden = false;
+    }
+
+    // Elements are rebuilt by renders, so the hover outline is re-applied on every pass
+    wallItemsLayer.querySelectorAll('.wall-item').forEach(el => {
+        el.classList.toggle('measure-target', el.dataset.id === measure.hoverId);
+    });
+    if (!wasActive) updateDistanceGuides();
+}
+
+function scheduleMeasure() {
+    if (!measure.frameId) {
+        measure.frameId = requestAnimationFrame(() => {
+            measure.frameId = 0;
+            refreshMeasure();
+        });
+    }
+}
+
+function hoverIdFrom(target) {
+    if (!(target instanceof Element)) return null;
+    const el = target.closest('.wall-item');
+    if (el && wallItemsLayer.contains(el)) return el.dataset.id;
+    return wallCanvas.contains(target) ? 'wall' : null;
+}
+
+window.addEventListener('mousemove', (e) => {
+    measure.hoverId = hoverIdFrom(e.target);
+    measure.alt = e.altKey;
+    if (measure.alt || measure.active) scheduleMeasure();
+});
+
 function updateInspectorLive() {
     const posReadout = document.getElementById('inspector-pos-readout');
     const selected = getSelectedItems();
@@ -935,7 +1086,8 @@ function updateInspectorLive() {
     posReadout.textContent = formatOffset(box);
     const footprint = document.getElementById('batch-footprint-readout');
     if (footprint) footprint.textContent = formatFootprint(box);
-    document.getElementById('warning-overlap').hidden = !selected.some(hasOverlap);
+    document.getElementById('warning-overlap').hidden = !selected.some(overlapsFurniture);
+    document.getElementById('warning-feature').hidden = !selected.some(blocksRoomFeature);
     document.getElementById('warning-attic').hidden = !selected.some(intrudesAtticSlope);
 }
 
@@ -978,6 +1130,7 @@ function syncPositions(members) {
     updateDistanceGuides();
     updateInspectorLive();
     syncSelectionBounds();
+    refreshMeasure();
 }
 
 function syncSelectionBounds() {
@@ -1066,6 +1219,7 @@ function startResize(e) {
 
     handle.classList.add('is-active');
     document.body.classList.add(`is-resizing-${resizeState.handle}`);
+    refreshMeasure();
 }
 
 function applyResizeFrame() {
@@ -1076,16 +1230,17 @@ function applyResizeFrame() {
 
     const { wallRect, scale, pointerX, pointerY, startLocalX, startLocalY, startWidth, startHeight, handle } = resizeState;
     const step = snapGridToggle.checked ? SNAP_STEP_PX : CM_STEP_PX;
+    const [minWidthCm, minHeightCm] = minSizeCm(item.rotation);
 
     // Wall-space pointer travel, so the grip tracks the cursor at any fit level
     const localX = (pointerX - wallRect.left) / scale;
     const localY = (pointerY - wallRect.top) / scale;
 
     if (handle !== 's') {
-        item.width = clamp(quantize(startWidth + localX - startLocalX, step), MIN_WIDTH_CM * SCALE, wallWidthPx - item.left);
+        item.width = clamp(quantize(startWidth + localX - startLocalX, step), minWidthCm * SCALE, wallWidthPx - item.left);
     }
     if (handle !== 'e') {
-        item.height = clamp(quantize(startHeight + localY - startLocalY, step), MIN_HEIGHT_CM * SCALE, wallHeightPx - item.top);
+        item.height = clamp(quantize(startHeight + localY - startLocalY, step), minHeightCm * SCALE, wallHeightPx - item.top);
     }
 
     syncItemSize(item, resizeState.element);
@@ -1192,6 +1347,7 @@ function startDrag(e) {
 
     if (e.altKey) suppressAltMenu = true;
     if (!blocked) dragState.members.forEach(({ element }) => element?.classList.add('dragging'));
+    refreshMeasure();
 }
 
 function groupFitsAt(dx, dy) {
@@ -1302,10 +1458,13 @@ window.addEventListener('mouseup', () => {
     if (moved) commitLayoutChange();
     // A plain click on one member of a group narrows the selection to that member
     if (group && !travelled) selectItem(itemId);
+    refreshMeasure();
 });
 
 window.addEventListener('mouseup', () => {
-    if (resizeState.active) finishResize();
+    if (!resizeState.active) return;
+    finishResize();
+    refreshMeasure();
 });
 
 // The border scales with the wall, so it comes off after converting to wall space
@@ -1370,6 +1529,7 @@ function startMarquee() {
     selectionBounds.hidden = true;
     marqueeBox.hidden = false;
     document.body.classList.add('is-selecting');
+    refreshMeasure();
 }
 
 // Hits use the same AABB test as collisions, so touching an item edge does not count as crossing it
@@ -1439,13 +1599,16 @@ function mountCatalogItem(catalogEl, left, top) {
         top,
         width: parseFloat(catalogEl.dataset.width),
         height: parseFloat(catalogEl.dataset.height),
-        finish: catalogEl.dataset.finish || 'walnut',
-        ledEnabled: true,
+        finish: catalogEl.dataset.finish || null,
+        ledEnabled: !OBSTACLE_TYPES.includes(catalogEl.dataset.type),
         locked: false,
-        itemLedColor: null
+        itemLedColor: null,
+        rotation: 0
     };
 
-    wallItems.push(newItem);
+    // Doors, windows and sockets belong to the wall itself, so they start beneath the furniture
+    if (OBSTACLE_TYPES.includes(newItem.type)) wallItems.unshift(newItem);
+    else wallItems.push(newItem);
     selectedItemIds = [newItem.id];
     renderPlanner();
     updateInspectorPanel();
@@ -1474,7 +1637,7 @@ function startCatalogDrag() {
     ghost.style.width = `${width}px`;
     ghost.style.height = `${height}px`;
     ghost.innerHTML = `
-        <div class="wall-item ${source.dataset.type} finish-${source.dataset.finish || 'walnut'}" style="width: ${width}px; height: ${height}px;">
+        <div class="wall-item ${source.dataset.type} ${source.dataset.finish ? `finish-${source.dataset.finish}` : 'obstacle'} rot-0" style="width: ${width}px; height: ${height}px;">
             <span class="item-label">${escapeHtml(source.dataset.name)}</span>
         </div>`;
     document.body.appendChild(ghost);
@@ -1592,6 +1755,8 @@ window.addEventListener('blur', () => {
     if (marquee.active) cancelMarquee();
     else if (marquee.pending) marquee = createIdleMarquee();
     closeContextMenu();
+    measure.alt = false;
+    refreshMeasure();
 });
 
 function setSelection(ids) {
@@ -1606,6 +1771,7 @@ function setSelection(ids) {
 
     updateInspectorPanel();
     updateDistanceGuides();
+    refreshMeasure();
 }
 
 const selectItem = (itemId) => setSelection(itemId ? [itemId] : []);
@@ -1696,6 +1862,41 @@ function moveSelectedLayer(step) {
     commitLayoutChange();
 }
 
+// A quarter turn swaps the footprint, so the swapped box must still fit inside the wall
+const canRotate = (item) => !item.locked && item.height <= wallWidthPx && item.width <= wallHeightPx;
+
+// Turns the item clockwise about its center. Width and height swap so collisions, the marquee and
+// wall clamping keep working on a plain axis-aligned box. When the center offset lands on a half
+// centimeter, the even and odd turns round in opposite directions, so a full turn returns home.
+function rotateItem(item) {
+    const widthCm = toCm(item.width);
+    const heightCm = toCm(item.height);
+    const roundShift = item.rotation % 180 === 0 ? Math.floor : Math.ceil;
+    const leftCm = toCm(item.left) + roundShift((widthCm - heightCm) / 2);
+    const topCm = toCm(item.top) + roundShift((heightCm - widthCm) / 2);
+
+    item.width = heightCm * SCALE;
+    item.height = widthCm * SCALE;
+    item.left = clamp(leftCm, 0, wallWidthCm - heightCm) * SCALE;
+    item.top = clamp(topCm, 0, wallHeightCm - widthCm) * SCALE;
+    item.rotation = (item.rotation + 90) % 360;
+}
+
+// Every selected item turns in place; locked items and ones that would not fit are left as they are
+function rotateSelection() {
+    const items = getSelectedItems();
+    const targets = items.filter(canRotate);
+    if (!targets.length) {
+        if (items.some(item => item.locked)) flashLockNote();
+        return;
+    }
+
+    targets.forEach(rotateItem);
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
 function flashLockNote() {
     const note = document.getElementById('lock-note');
     if (!note) return;
@@ -1731,12 +1932,13 @@ const layerFieldHtml = (readout) => `
 
 const WARNINGS_HTML = `
     <div id="warning-overlap" class="collision-warning" hidden>Overlap detected with another item</div>
+    <div id="warning-feature" class="collision-warning" hidden>Furniture overlaps a door, window or socket zone</div>
     <div id="warning-attic" class="collision-warning" hidden>Intrudes into sloped ceiling zone</div>`;
 
 const formatPrice = (value) => `$${Math.round(value * 100) / 100}`;
 
 function applyFinish(finish) {
-    const targets = getSelectedItems().filter(item => !item.locked && item.finish !== finish);
+    const targets = getSelectedItems().filter(item => !item.locked && !isObstacle(item) && item.finish !== finish);
     if (!targets.length) return;
 
     targets.forEach(item => { item.finish = finish; });
@@ -1771,35 +1973,24 @@ function syncItemLedField() {
     document.getElementById('item-led-reset').disabled = !custom || item.locked;
 }
 
+const rotationFieldHtml = (readout, items) => `
+    <div class="inspector-field">
+        <label>Rotation${readout ? ` <span class="rotation-readout" id="rotation-readout">${readout}</span>` : ''}</label>
+        <button type="button" class="btn-secondary rotate-btn" id="rotate-item-btn" title="Turn ${items.length > 1 ? 'each unlocked item' : 'the item'} 90 degrees clockwise about its center (R)" ${items.some(canRotate) ? '' : 'disabled'}>
+            <span class="rotate-icon" aria-hidden="true"></span>Rotate 90 Degrees
+        </button>
+    </div>`;
+
 function renderItemInspector(item) {
     const ledOn = isLedOn(item);
+    const obstacle = isObstacle(item);
     const locked = item.locked === true;
     const lockedAttr = locked ? 'disabled' : '';
     const layerIndex = wallItems.indexOf(item);
+    const [minWidthCm, minHeightCm] = minSizeCm(item.rotation);
+    const lockedParts = obstacle ? 'Position, size, rotation and removal' : 'Position, size, rotation, finish, backlight and removal';
 
-    inspectorBox.innerHTML = `
-        <div class="selected-item-info">
-            <div class="selected-item-header">
-                <span class="selected-item-title">${escapeHtml(item.name)}</span>
-                <span class="selected-item-meta">
-                    ${locked ? `<span class="lock-badge">${LOCK_ICON_HTML}Locked</span>` : ''}
-                    <span>$${item.price}</span>
-                </span>
-            </div>
-            <span>Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
-            ${locked ? '<p class="lock-note" id="lock-note">Position, size, finish, backlight and removal are locked. Press L or Unlock Item to edit.</p>' : ''}
-
-            <div class="inspector-grid">
-                <div class="inspector-field">
-                    <label for="edit-width-cm">Width (cm)</label>
-                    <input type="number" id="edit-width-cm" class="dim-input" min="${MIN_WIDTH_CM}" max="${wallWidthCm}" value="${toCm(item.width)}" ${lockedAttr}>
-                </div>
-                <div class="inspector-field">
-                    <label for="edit-height-cm">Height (cm)</label>
-                    <input type="number" id="edit-height-cm" class="dim-input" min="${MIN_HEIGHT_CM}" max="${wallHeightCm}" value="${toCm(item.height)}" ${lockedAttr}>
-                </div>
-            </div>
-
+    const furnitureFields = `
             <div class="inspector-field">
                 <label>Surface Finish</label>
                 <div class="finish-swatches">${finishButtonsHtml(item.finish || 'walnut', locked)}</div>
@@ -1817,8 +2008,35 @@ function renderItemInspector(item) {
                     <span id="item-led-hex" class="hex-readout"></span>
                     <button type="button" id="item-led-reset" class="btn-secondary led-reset" title="Follow the global lighting color again">Use Global</button>
                 </div>
-            </div>
+            </div>`;
+    const featureNote = `
+            <p class="feature-note" id="feature-note">A no-build zone: furniture placed over it is flagged red. Room features add nothing to the estimate and carry no finish or lighting.</p>`;
 
+    inspectorBox.innerHTML = `
+        <div class="selected-item-info">
+            <div class="selected-item-header">
+                <span class="selected-item-title">${escapeHtml(item.name)}</span>
+                <span class="selected-item-meta">
+                    ${locked ? `<span class="lock-badge">${LOCK_ICON_HTML}Locked</span>` : ''}
+                    ${obstacle ? '<span class="feature-badge">Room Feature</span>' : `<span>$${item.price}</span>`}
+                </span>
+            </div>
+            <span>Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
+            ${locked ? `<p class="lock-note" id="lock-note">${lockedParts} are locked. Press L or Unlock Item to edit.</p>` : ''}
+
+            <div class="inspector-grid">
+                <div class="inspector-field">
+                    <label for="edit-width-cm">Width (cm)</label>
+                    <input type="number" id="edit-width-cm" class="dim-input" min="${minWidthCm}" max="${wallWidthCm}" value="${toCm(item.width)}" ${lockedAttr}>
+                </div>
+                <div class="inspector-field">
+                    <label for="edit-height-cm">Height (cm)</label>
+                    <input type="number" id="edit-height-cm" class="dim-input" min="${minHeightCm}" max="${wallHeightCm}" value="${toCm(item.height)}" ${lockedAttr}>
+                </div>
+            </div>
+            ${obstacle ? featureNote : furnitureFields}
+
+            ${rotationFieldHtml(`${item.rotation} deg`, [item])}
             ${layerFieldHtml(`${layerIndex + 1} of ${wallItems.length}`)}
             ${WARNINGS_HTML}
 
@@ -1839,8 +2057,8 @@ function renderItemInspector(item) {
         const rawW = parseInt(widthInput.value, 10) || toCm(item.width);
         const rawH = parseInt(heightInput.value, 10) || toCm(item.height);
 
-        const clampedW = clamp(rawW, MIN_WIDTH_CM, wallWidthCm);
-        const clampedH = clamp(rawH, MIN_HEIGHT_CM, wallHeightCm);
+        const clampedW = clamp(rawW, minWidthCm, wallWidthCm);
+        const clampedH = clamp(rawH, minHeightCm, wallHeightCm);
 
         // Whole cm always map to a multiple of 0.5 px, so no rounding is needed here
         item.width = clampedW * SCALE;
@@ -1860,6 +2078,7 @@ function renderItemInspector(item) {
 
     widthInput.addEventListener('change', applyDimensionChange);
     heightInput.addEventListener('change', applyDimensionChange);
+    if (obstacle) return;
 
     const ledToggleBtn = document.getElementById('led-toggle-btn');
     ledToggleBtn.addEventListener('click', () => {
@@ -1890,10 +2109,14 @@ function renderBatchInspector(items) {
     const lockedCount = items.filter(item => item.locked).length;
     const removable = count - lockedCount;
     const allLocked = lockedCount === count;
-    const sharedFinish = items.every(item => item.finish === items[0].finish) ? items[0].finish : null;
+    const finishable = items.filter(item => !isObstacle(item));
+    const sharedFinish = finishable.length && finishable.every(item => item.finish === finishable[0].finish)
+        ? finishable[0].finish
+        : null;
+    const finishLocked = !finishable.some(item => !item.locked);
     const total = items.reduce((sum, item) => sum + item.price, 0);
     const lockNote = lockedCount
-        ? `<p class="lock-note" id="lock-note">${lockedCount} of ${count} items are locked, so the group stays in place. Finish changes and removal skip locked items.</p>`
+        ? `<p class="lock-note" id="lock-note">${lockedCount} of ${count} items are locked, so the group stays in place. Rotation, finish changes and removal skip locked items.</p>`
         : '';
 
     inspectorBox.innerHTML = `
@@ -1911,9 +2134,10 @@ function renderBatchInspector(items) {
 
             <div class="inspector-field">
                 <label>Surface Finish</label>
-                <div class="finish-swatches">${finishButtonsHtml(sharedFinish, allLocked)}</div>
+                <div class="finish-swatches">${finishButtonsHtml(sharedFinish, finishLocked)}</div>
             </div>
 
+            ${rotationFieldHtml('', items)}
             ${layerFieldHtml('')}
             ${WARNINGS_HTML}
 
@@ -1943,6 +2167,7 @@ function updateInspectorPanel() {
     inspectorBox.querySelectorAll('.btn-finish').forEach(btn => {
         btn.addEventListener('click', () => applyFinish(btn.dataset.finish));
     });
+    document.getElementById('rotate-item-btn').addEventListener('click', rotateSelection);
     document.getElementById('send-backward-btn').addEventListener('click', () => moveSelectedLayer(-1));
     document.getElementById('bring-forward-btn').addEventListener('click', () => moveSelectedLayer(1));
     document.getElementById('lock-toggle-btn').addEventListener('click', toggleSelectedLock);
@@ -1961,6 +2186,7 @@ const CONTEXT_ACTIONS = {
     duplicate: duplicateSelectedItem,
     forward: () => moveSelectedLayer(1),
     backward: () => moveSelectedLayer(-1),
+    rotate: rotateSelection,
     lock: toggleSelectedLock,
     delete: removeSelectedItems
 };
@@ -1973,6 +2199,7 @@ function syncContextMenu() {
         duplicate: { disabled: false },
         forward: { disabled: !canMoveLayer(1) },
         backward: { disabled: !canMoveLayer(-1) },
+        rotate: { disabled: !items.some(canRotate) },
         lock: { disabled: false, label: items.length > 1 ? `${lockLabel} All` : lockLabel },
         delete: { disabled: allLocked }
     };
@@ -2000,6 +2227,7 @@ function openContextMenu(clientX, clientY) {
     contextMenu.style.left = `${left}px`;
     contextMenu.style.top = `${top}px`;
     contextMenu.style.transformOrigin = `${flipX ? 'right' : 'left'} ${flipY ? 'bottom' : 'top'}`;
+    refreshMeasure();
     // The panel takes focus rather than its first item, so a mouse open shows no highlighted row
     // while the arrow keys still start from the top or the bottom
     contextMenu.focus({ preventScroll: true });
@@ -2064,9 +2292,9 @@ window.addEventListener('mousedown', (e) => {
     if (isContextMenuOpen() && !contextMenu.contains(e.target)) closeContextMenu();
 }, true);
 
-// Plain L toggles the lock; Ctrl/Cmd+L stays with the browser address bar
-const isLockShortcut = (e) =>
-    (e.key || '').toLowerCase() === 'l' &&
+// Plain L and R lock and rotate; with Ctrl or Cmd they stay with the browser (address bar, reload)
+const isPlainItemShortcut = (e, key) =>
+    (e.key || '').toLowerCase() === key &&
     !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat &&
     selectedItemIds.length > 0 && !isPointerBusy() && !isTextEntry(e.target);
 
@@ -2212,9 +2440,26 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
-    if (isLockShortcut(e)) {
+    if (e.key === 'Alt') {
+        // With a selection, Alt measures to whatever the pointer rests on
+        measure.alt = true;
+        if (selectedItemIds.length) {
+            e.preventDefault();
+            suppressAltMenu = true;
+        }
+        refreshMeasure();
+        return;
+    }
+
+    if (isPlainItemShortcut(e, 'l')) {
         e.preventDefault();
         toggleSelectedLock();
+        return;
+    }
+
+    if (isPlainItemShortcut(e, 'r')) {
+        e.preventDefault();
+        rotateSelection();
         return;
     }
 
@@ -2225,6 +2470,9 @@ window.addEventListener('keydown', (e) => {
 
 window.addEventListener('keyup', (e) => {
     if (e.key !== 'Alt') return;
+
+    measure.alt = false;
+    refreshMeasure();
 
     if (dragState.isDragging) {
         dragState.altKey = false;
@@ -2399,12 +2647,16 @@ const formatMoney = (value) => `$${value.toFixed(2)}`;
 const finishLabel = (id) => (FINISHES.find(f => f.id === id) || { label: id }).label;
 const markdownCell = (value) => String(value).replace(/\s+/g, ' ').replace(/\|/g, '\\|');
 const totalPrice = () => wallItems.reduce((sum, item) => sum + item.price, 0);
+// Room features are not bought or mounted, so the spec sheet leaves them out
+const furnitureItems = () => wallItems.filter(item => !isObstacle(item));
 
+// A turned piece is still the same product, so the bill lists it at its catalog orientation
 function buildBomRows() {
     const groups = new Map();
-    wallItems.forEach(item => {
-        const widthCm = toCm(item.width);
-        const heightCm = toCm(item.height);
+    furnitureItems().forEach(item => {
+        const [widthCm, heightCm] = isQuarterTurn(item)
+            ? [toCm(item.height), toCm(item.width)]
+            : [toCm(item.width), toCm(item.height)];
         const key = JSON.stringify([item.type, item.name, widthCm, heightCm, item.finish, item.price]);
         const group = groups.get(key);
         if (group) group.qty += 1;
@@ -2417,7 +2669,7 @@ function buildBomRows() {
 
 // Installers work along the wall, so rows run left to right, then top to bottom
 function buildMountingRows() {
-    return [...wallItems]
+    return furnitureItems()
         .sort((a, b) => a.left - b.left || a.top - b.top)
         .map(item => {
             const topCm = toCm(item.top);
@@ -2435,7 +2687,7 @@ function buildMountingRows() {
 function renderSpecSheet() {
     const bomRows = buildBomRows();
     const mountingRows = buildMountingRows();
-    const count = wallItems.length;
+    const count = furnitureItems().length;
 
     specSubtitle.textContent = `Wall ${wallWidthCm} x ${wallHeightCm} cm | ${count} item${count === 1 ? '' : 's'}`;
     specNote.textContent = MOUNTING_NOTE;
@@ -2473,7 +2725,7 @@ function renderSpecSheet() {
 }
 
 function buildSpecMarkdown() {
-    const count = wallItems.length;
+    const count = furnitureItems().length;
     const total = formatMoney(totalPrice());
 
     return [
@@ -2772,27 +3024,39 @@ function paintAfterLayer(ctx, item, el, border) {
     shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, 0, shadow, alpha));
 }
 
-// The wash is a clipped trapezoid fading from the item's LED color, read from the spotlight's ::after box
+// Computed transforms always come back as matrix(a, b, c, d, e, f) or none
+function parseMatrix(value) {
+    const match = /matrix\(([^)]*)\)/.exec(value || '');
+    return match ? match[1].split(',').map(Number) : [1, 0, 0, 1, 0, 0];
+}
+
+// The wash is a clipped trapezoid fading from the item's LED color, read from the spotlight's ::after box.
+// A turned spotlight rotates that box about the fixture center, so the same matrix and origin the CSS
+// resolved are applied here and the trapezoid is drawn in the box's own coordinates.
 function paintSpotlightCone(ctx, item, el, border) {
     const cone = getComputedStyle(el, '::after');
     const alpha = parseFloat(cone.opacity);
     if (!isAmbientMode || !isLedOn(item) || !(alpha > 0)) return;
 
-    const x = item.left + border + parseFloat(cone.left);
-    const y = item.top + border + parseFloat(cone.top);
-    const points = parsePolygon(cone.clipPath, parseFloat(cone.width), parseFloat(cone.height));
+    const width = parseFloat(cone.width);
+    const height = parseFloat(cone.height);
+    const points = parsePolygon(cone.clipPath, width, height);
     if (!points.length) return;
 
+    const [originX, originY] = cone.transformOrigin.split(' ').map(parseFloat);
     const [r, g, b] = hexToRgb(ledColorOf(item));
-    const gradient = ctx.createLinearGradient(0, y, 0, y + parseFloat(cone.height));
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
     gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
     gradient.addColorStop(SPOTLIGHT_CONE_FADE, `rgba(${r}, ${g}, ${b}, 0)`);
 
     ctx.save();
+    ctx.translate(item.left + border + parseFloat(cone.left) + originX, item.top + border + parseFloat(cone.top) + originY);
+    ctx.transform(...parseMatrix(cone.transform));
+    ctx.translate(-originX, -originY);
     ctx.globalAlpha = alpha;
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    points.forEach(([px, py], index) => (index ? ctx.lineTo(x + px, y + py) : ctx.moveTo(x + px, y + py)));
+    points.forEach(([px, py], index) => (index ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
     ctx.closePath();
     ctx.fill();
     ctx.restore();
@@ -2875,26 +3139,64 @@ function paintCornerGlow(ctx, brightness) {
     ctx.restore();
 }
 
-// Mirrors the cabinet seam on the .storage background
+// Mirrors the cabinet seam on the .storage background; a cabinet on its side has a horizontal seam
 function paintStorageSeam(ctx, item, border) {
-    const centerX = item.left + item.width / 2;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-    ctx.fillRect(centerX - 1, item.top + border, 2, item.height - border * 2);
+    if (isQuarterTurn(item)) {
+        ctx.fillRect(item.left + border, item.top + item.height / 2 - 1, item.width - border * 2, 2);
+    } else {
+        ctx.fillRect(item.left + item.width / 2 - 1, item.top + border, 2, item.height - border * 2);
+    }
 }
 
-// Mirrors the handle pair drawn by the .storage ::after
+// Mirrors the handle pair drawn by the .storage ::after. The bars are borders on whichever two sides
+// the current rotation uses, so every side is read and painted on its own.
 function paintStorageHandles(ctx, item, el, border) {
-    const centerX = item.left + item.width / 2;
     const handles = getComputedStyle(el, '::after');
-    const barWidth = parseFloat(handles.borderLeftWidth) || 0;
-    const contentWidth = parseFloat(handles.width) || 0;
-    const outerWidth = handles.boxSizing === 'border-box' ? contentWidth : contentWidth + barWidth * 2;
-    const top = item.top + border + (parseFloat(handles.top) || 0);
-    const height = parseFloat(handles.height) || 0;
+    const side = (name) => parseFloat(handles[`border${name}Width`]) || 0;
+    const [leftBar, rightBar, topBar, bottomBar] = ['Left', 'Right', 'Top', 'Bottom'].map(side);
+    const contentBox = handles.boxSizing !== 'border-box';
+    const width = (parseFloat(handles.width) || 0) + (contentBox ? leftBar + rightBar : 0);
+    const height = (parseFloat(handles.height) || 0) + (contentBox ? topBar + bottomBar : 0);
+    const x = item.left + border + (parseFloat(handles.left) || 0);
+    const y = item.top + border + (parseFloat(handles.top) || 0);
 
     ctx.fillStyle = handles.borderLeftColor;
-    ctx.fillRect(centerX - outerWidth / 2, top, barWidth, height);
-    ctx.fillRect(centerX + outerWidth / 2 - barWidth, top, barWidth, height);
+    if (leftBar) ctx.fillRect(x, y, leftBar, height);
+    if (rightBar) ctx.fillRect(x + width - rightBar, y, rightBar, height);
+    ctx.fillStyle = handles.borderTopColor;
+    if (topBar) ctx.fillRect(x, y, width, topBar);
+    if (bottomBar) ctx.fillRect(x, y + height - bottomBar, width, bottomBar);
+}
+
+// Door clearances carry a corner-to-corner cross and windows a mullion cross, both on the background
+function paintFeatureDetail(ctx, item, style, border) {
+    const x = item.left + border;
+    const y = item.top + border;
+    const width = item.width - border * 2;
+    const height = item.height - border * 2;
+    const line = style.getPropertyValue('--feature-line').trim();
+    const weight = parseFloat(style.getPropertyValue('--feature-weight')) || 1;
+
+    ctx.save();
+    if (item.type === 'door') {
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+        ctx.clip();
+        ctx.strokeStyle = line;
+        ctx.lineWidth = weight;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + width, y + height);
+        ctx.moveTo(x + width, y);
+        ctx.lineTo(x, y + height);
+        ctx.stroke();
+    } else if (item.type === 'window') {
+        ctx.fillStyle = line;
+        ctx.fillRect(x + width / 2 - weight / 2, y, weight, height);
+        ctx.fillRect(x, y + height / 2 - weight / 2, width, weight);
+    }
+    ctx.restore();
 }
 
 function paintItemLabel(ctx, item, el) {
@@ -2902,6 +3204,7 @@ function paintItemLabel(ctx, item, el) {
     if (!label) return;
 
     const style = getComputedStyle(label);
+    if (style.display === 'none') return;
     ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     const width = ctx.measureText(item.name).width + parseFloat(style.paddingLeft) * 2;
     const height = label.offsetHeight;
@@ -2937,10 +3240,14 @@ function paintItem(ctx, item, brightness) {
     }
     if (item.type === 'spotlight') paintSpotlightCone(ctx, item, el, border);
 
+    // A see-through fill (room features) must not show the border color through it, so the border is
+    // painted as a ring there; opaque fills simply cover the inside of a full border-colored shape
     if (border > 0) {
+        const seeThrough = (parseRgba(style.backgroundColor)?.a ?? 1) < 1;
         ctx.fillStyle = style.borderTopColor;
         traceShape(ctx, shape, 0);
-        ctx.fill();
+        if (seeThrough) traceShape(ctx, shape, border, false);
+        ctx.fill(seeThrough ? 'evenodd' : 'nonzero');
     }
     ctx.fillStyle = style.backgroundColor;
     traceShape(ctx, shape, border);
@@ -2949,10 +3256,11 @@ function paintItem(ctx, item, brightness) {
     // Background layers, then inset shadows, then content, as CSS stacks them inside a box
     paintSheen(ctx, shape, border, style);
     if (item.type === 'storage') paintStorageSeam(ctx, item, border);
+    if (item.type === 'door' || item.type === 'window') paintFeatureDetail(ctx, item, style, border);
     shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, border, shadow, 1));
 
     if (item.type === 'storage') paintStorageHandles(ctx, item, el, border);
-    if (item.type === 'poster' || item.type === 'corner-lamp') paintAfterLayer(ctx, item, el, border);
+    if (['poster', 'corner-lamp', 'socket'].includes(item.type)) paintAfterLayer(ctx, item, el, border);
     paintItemLabel(ctx, item, el);
 }
 

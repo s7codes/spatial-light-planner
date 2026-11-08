@@ -70,6 +70,7 @@ test.describe('context menu', () => {
       { label: 'Duplicate', keys: 'Ctrl+D', disabled: false },
       { label: 'Bring Forward', keys: '', disabled: false },
       { label: 'Send Backward', keys: '', disabled: true },
+      { label: 'Rotate 90 Degrees', keys: 'R', disabled: false },
       { label: 'Lock', keys: 'L', disabled: false },
       { label: 'Delete', keys: 'Del', disabled: false },
     ]);

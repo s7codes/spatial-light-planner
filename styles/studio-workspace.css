@@ -574,6 +574,58 @@ button:focus-visible {
     background-size: 5px 20px;
 }
 
+/* Room features sit three to a row so the catalog still fits the 820 px studio height */
+.feature-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+}
+
+.catalog-item.feature-tile {
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    margin-bottom: 0;
+    padding: 4px;
+    text-align: center;
+}
+
+.catalog-item.feature-tile::before {
+    --thumb-glow: transparent;
+    width: 26px;
+    height: 15px;
+    border-radius: 4px;
+}
+
+.feature-tile .item-title {
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.catalog-item[data-type="socket"]::before {
+    background-image:
+        radial-gradient(circle at 36% 50%, #3a4150 0 1.3px, transparent 1.8px),
+        radial-gradient(circle at 64% 50%, #3a4150 0 1.3px, transparent 1.8px),
+        linear-gradient(#d3d8e0, #d3d8e0);
+    background-size: 11px 11px;
+}
+
+.catalog-item[data-type="door"]::before {
+    background-image:
+        linear-gradient(to top right, transparent 46%, rgba(148, 163, 184, 0.6) 46% 54%, transparent 54%),
+        linear-gradient(to bottom right, transparent 46%, rgba(148, 163, 184, 0.6) 46% 54%, transparent 54%),
+        linear-gradient(rgba(148, 163, 184, 0.16), rgba(148, 163, 184, 0.16));
+    background-size: 8px 14px;
+}
+
+.catalog-item[data-type="window"]::before {
+    background-image:
+        linear-gradient(90deg, transparent 44%, #7b8597 44% 56%, transparent 56%),
+        linear-gradient(transparent 44%, #7b8597 44% 56%, transparent 56%),
+        linear-gradient(rgba(96, 165, 250, 0.35), rgba(96, 165, 250, 0.35));
+    background-size: 12px 12px;
+}
+
 .item-meta {
     display: flex;
     flex: 1;
@@ -724,6 +776,13 @@ button:focus-visible {
     --attic-hatch: rgba(248, 113, 113, 0.22);
     --attic-edge: rgba(248, 113, 113, 0.8);
     --attic-label: rgba(252, 165, 165, 0.9);
+
+    --measure-color: #f43f5e;
+    --door-fill: rgba(148, 163, 184, 0.07);
+    --door-edge: rgba(148, 163, 184, 0.5);
+    --door-line: rgba(148, 163, 184, 0.3);
+    --window-glass: rgba(96, 165, 250, 0.12);
+    --window-frame: #5b6576;
 }
 
 .wall.daylight-mode {
@@ -744,6 +803,13 @@ button:focus-visible {
     --attic-hatch: rgba(220, 38, 38, 0.2);
     --attic-edge: rgba(220, 38, 38, 0.75);
     --attic-label: #b91c1c;
+
+    --measure-color: #e11d48;
+    --door-fill: rgba(71, 85, 105, 0.06);
+    --door-edge: rgba(71, 85, 105, 0.55);
+    --door-line: rgba(71, 85, 105, 0.32);
+    --window-glass: rgba(59, 130, 246, 0.12);
+    --window-frame: #94a3b8;
 }
 
 /* No z-index here on purpose, so items keep stacking against the glow and overlays */
@@ -766,6 +832,10 @@ button:focus-visible {
 
     /* --item-color is set inline only on items with their own LED color; the rest follow the global picker */
     --led-color: var(--item-color, var(--accent-led));
+    /* The direction the piece's top edge faces. Directional glows and the spotlight wash turn with it. */
+    --up-x: 0;
+    --up-y: -1;
+    --turn: 0deg;
     --sheen-highlight: rgba(255, 255, 255, 0);
     --sheen-shade: rgba(0, 0, 0, 0);
     --sheen-band: 4px;
@@ -781,6 +851,10 @@ button:focus-visible {
     background-image: var(--sheen);
     box-shadow: inset 0 1px 0 var(--edge-light), inset 0 -1px 0 var(--edge-dark), var(--item-drop);
 }
+
+.wall-item.rot-90 { --up-x: 1; --up-y: 0; --turn: 90deg; }
+.wall-item.rot-180 { --up-x: 0; --up-y: 1; --turn: 180deg; }
+.wall-item.rot-270 { --up-x: -1; --up-y: 0; --turn: 270deg; }
 
 .wall-item.dragging {
     cursor: grabbing;
@@ -844,7 +918,9 @@ button:focus-visible {
     --item-drop: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.shelf::before {
-    box-shadow: 0 -15px 35px var(--led-color), 0 10px 45px var(--led-color);
+    box-shadow:
+        calc(var(--up-x) * 15px) calc(var(--up-y) * 15px) 35px var(--led-color),
+        calc(var(--up-x) * -10px) calc(var(--up-y) * -10px) 45px var(--led-color);
 }
 
 .wall-item.cube {
@@ -852,7 +928,7 @@ button:focus-visible {
     --item-drop: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.cube::before {
-    box-shadow: 0 -10px 25px var(--led-color);
+    box-shadow: calc(var(--up-x) * 10px) calc(var(--up-y) * 10px) 25px var(--led-color);
 }
 
 /* Two-door cabinet front: a center seam on the background and a pair of handles on ::after */
@@ -873,16 +949,48 @@ button:focus-visible {
     content: "";
     position: absolute;
     top: 12px;
-    left: 50%;
+    left: calc(50% - 7px);
     width: 10px;
     height: 14px;
-    transform: translateX(-50%);
     border-left: 2px solid rgba(148, 163, 184, 0.8);
     border-right: 2px solid rgba(148, 163, 184, 0.8);
     pointer-events: none;
 }
+
+/* A turned cabinet lies on its side: the seam runs across and the handles follow the top edge round */
+.wall-item.storage.rot-90,
+.wall-item.storage.rot-270 {
+    background-image:
+        linear-gradient(to bottom,
+            transparent calc(50% - 1px),
+            rgba(0, 0, 0, 0.35) calc(50% - 1px),
+            rgba(0, 0, 0, 0.35) calc(50% + 1px),
+            transparent calc(50% + 1px)),
+        var(--sheen);
+}
+
+.wall-item.storage.rot-180::after {
+    top: calc(100% - 26px);
+}
+
+.wall-item.storage.rot-90::after,
+.wall-item.storage.rot-270::after {
+    top: calc(50% - 7px);
+    left: calc(100% - 26px);
+    width: 14px;
+    height: 10px;
+    border: 0;
+    border-top: 2px solid rgba(148, 163, 184, 0.8);
+    border-bottom: 2px solid rgba(148, 163, 184, 0.8);
+}
+
+.wall-item.storage.rot-270::after {
+    left: 12px;
+}
 .wall-item.storage::before {
-    box-shadow: 0 -12px 30px var(--led-color), 0 12px 30px var(--led-color);
+    box-shadow:
+        calc(var(--up-x) * 12px) calc(var(--up-y) * 12px) 30px var(--led-color),
+        calc(var(--up-x) * -12px) calc(var(--up-y) * -12px) 30px var(--led-color);
 }
 
 /* The frame is the border, the mat is the background, and ::after is the artwork set back behind the mat */
@@ -894,7 +1002,7 @@ button:focus-visible {
     border-style: solid;
 }
 .wall-item.poster::before {
-    box-shadow: 0 -25px 55px var(--led-color);
+    box-shadow: calc(var(--up-x) * 25px) calc(var(--up-y) * 25px) 55px var(--led-color);
 }
 .wall-item.poster::after {
     content: "";
@@ -930,6 +1038,9 @@ button:focus-visible {
     height: 420%;
     clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
     background-image: linear-gradient(to bottom, var(--led-color), transparent 85%);
+    /* Turns about the fixture center: half an item height above the wash, which is 4.2 item heights tall */
+    transform: rotate(var(--turn));
+    transform-origin: 50% calc(-100% / 8.4);
     opacity: calc(var(--led-opacity) * 0.22);
     pointer-events: none;
     z-index: -1;
@@ -962,6 +1073,16 @@ button:focus-visible {
     pointer-events: none;
 }
 
+.wall-item.corner-lamp.rot-90::after,
+.wall-item.corner-lamp.rot-270::after {
+    top: calc(50% - 3px);
+    bottom: auto;
+    left: 10px;
+    right: 10px;
+    width: auto;
+    height: 6px;
+}
+
 .wall.daylight-mode .wall-item.spotlight::after,
 .wall-item.spotlight.led-off::after {
     opacity: 0;
@@ -973,6 +1094,82 @@ button:focus-visible {
     background-color: #3b4656;
     box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12);
     opacity: 1;
+}
+
+/* Room features: parts of the wall itself, so they carry no drop shadow, finish, sheen or glow */
+.wall-item.obstacle::before {
+    display: none;
+}
+
+/* A door clearance is drawn like an opening on an elevation: a frame with a corner-to-corner cross */
+.wall-item.door {
+    --feature-line: var(--door-line);
+    --feature-weight: 1.5px;
+    border: 2px solid var(--door-edge);
+    border-radius: 2px;
+    background-color: var(--door-fill);
+    background-image:
+        linear-gradient(to top right,
+            transparent calc(50% - 0.75px),
+            var(--feature-line) calc(50% - 0.75px),
+            var(--feature-line) calc(50% + 0.75px),
+            transparent calc(50% + 0.75px)),
+        linear-gradient(to bottom right,
+            transparent calc(50% - 0.75px),
+            var(--feature-line) calc(50% - 0.75px),
+            var(--feature-line) calc(50% + 0.75px),
+            transparent calc(50% + 0.75px));
+}
+
+.wall-item.window {
+    --feature-line: var(--window-frame);
+    --feature-weight: 2px;
+    border: 4px solid var(--window-frame);
+    border-radius: 2px;
+    background-color: var(--window-glass);
+    background-image:
+        linear-gradient(to right,
+            transparent calc(50% - 1px),
+            var(--feature-line) calc(50% - 1px),
+            var(--feature-line) calc(50% + 1px),
+            transparent calc(50% + 1px)),
+        linear-gradient(to bottom,
+            transparent calc(50% - 1px),
+            var(--feature-line) calc(50% - 1px),
+            var(--feature-line) calc(50% + 1px),
+            transparent calc(50% + 1px));
+}
+
+/* Faceplate with a pair of pin holes: one hole is the box, the other its zero-blur shadow */
+.wall-item.socket {
+    border: 1px solid #8b95a5;
+    border-radius: 3px;
+    background-color: #d3d8e0;
+}
+
+.wall-item.socket::after {
+    content: "";
+    position: absolute;
+    top: calc(50% - 2px);
+    left: calc(50% - 5px);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background-color: #3a4150;
+    box-shadow: 6px 0 0 #3a4150;
+    pointer-events: none;
+}
+
+.wall-item.socket.rot-90::after,
+.wall-item.socket.rot-270::after {
+    top: calc(50% - 5px);
+    left: calc(50% - 2px);
+    box-shadow: 0 6px 0 #3a4150;
+}
+
+/* An 8 cm plate is smaller than its name, so the label would hide the whole socket */
+.wall-item.socket .item-label {
+    display: none;
 }
 
 /* Surface Finish Variants */
@@ -1296,6 +1493,96 @@ body.is-selecting * {
     user-select: none;
 }
 
+/* Alt-hover measurements, drawn over the rulers they temporarily replace */
+.measure-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    pointer-events: none;
+}
+
+.measure-line,
+.measure-guide {
+    position: absolute;
+    color: var(--measure-color);
+}
+
+.measure-line.is-h {
+    height: 0;
+    border-top: 1px solid currentColor;
+}
+
+.measure-line.is-v {
+    width: 0;
+    border-left: 1px solid currentColor;
+}
+
+.measure-line::before,
+.measure-line::after {
+    content: "";
+    position: absolute;
+    background-color: currentColor;
+}
+
+.measure-line.is-h::before,
+.measure-line.is-h::after {
+    top: -3px;
+    width: 1px;
+    height: 5px;
+}
+.measure-line.is-h::before { left: 0; }
+.measure-line.is-h::after { right: 0; }
+
+.measure-line.is-v::before,
+.measure-line.is-v::after {
+    left: -3px;
+    width: 5px;
+    height: 1px;
+}
+.measure-line.is-v::before { top: 0; }
+.measure-line.is-v::after { bottom: 0; }
+
+.measure-guide.is-h {
+    height: 0;
+    border-top: 1px dashed currentColor;
+}
+
+.measure-guide.is-v {
+    width: 0;
+    border-left: 1px dashed currentColor;
+}
+
+.measure-label {
+    position: absolute;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background-color: var(--measure-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.measure-line.is-h .measure-label {
+    top: 0;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.measure-line.is-v .measure-label {
+    top: 50%;
+    left: 0;
+    transform: translate(-50%, -50%);
+}
+
+.wall-item.measure-target {
+    outline: 1px solid var(--measure-color);
+    outline-offset: 0;
+}
+
 /* Alignment guides, shown only while dragging */
 .align-guides {
     position: absolute;
@@ -1531,6 +1818,57 @@ body.is-selecting * {
     background-color: #fff;
 }
 
+.rotate-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    height: 28px;
+}
+
+/* A clockwise arrow: an open ring with a small head on its open end */
+.rotate-icon {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+}
+
+.rotate-icon::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -3px;
+    border: 3px solid transparent;
+    border-left-color: currentColor;
+    transform: rotate(-45deg);
+}
+
+.feature-badge {
+    padding: 1px 7px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 999px;
+    background-color: rgba(148, 163, 184, 0.1);
+    color: #cbd5e1;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.feature-note {
+    padding: 6px 9px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: var(--radius-sm);
+    background-color: rgba(148, 163, 184, 0.07);
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
 /* The readout says "Global" while the item follows the shared picker */
 .hex-readout.is-global {
     color: var(--text-muted);
@@ -1616,7 +1954,8 @@ body.is-selecting * {
     }
 }
 
-.layer-readout {
+.layer-readout,
+.rotation-readout {
     margin-left: 4px;
     color: var(--text-main);
     font-variant-numeric: tabular-nums;
@@ -2224,6 +2563,10 @@ kbd {
 
 .shortcut-note kbd {
     font-size: 10.5px;
+}
+
+.shortcut-note p + p {
+    margin-top: 6px;
 }
 
 /* Accent tints follow the live preset where color-mix() exists. A fallback inside the base rules would not

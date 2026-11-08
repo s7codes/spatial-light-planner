@@ -26,7 +26,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v1.3</span></h1>
+            <h1>Spatial Studio <span class="badge">v1.4</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -72,7 +72,7 @@
         <!-- Catalog Sidebar -->
         <aside class="sidebar catalog">
             <h2>Components</h2>
-            <p class="sidebar-hint">Click or drag an item onto the wall, then move, resize or nudge it. Press ? for shortcuts.</p>
+            <p class="sidebar-hint">Click or drag pieces onto the wall.</p>
 
             <div class="catalog-group">
                 <h3>Shelving & Storage</h3>
@@ -122,6 +122,21 @@
                     </span>
                     <span class="item-price-tag">$65</span>
                 </button>
+            </div>
+
+            <div class="catalog-group">
+                <h3>Room Features</h3>
+                <div class="feature-tiles">
+                    <button type="button" class="catalog-item feature-tile" data-type="socket" data-name="Wall Socket" data-price="0" data-width="20" data-height="20" aria-label="Wall Socket, 8 x 8 cm" title="Mount a Wall Socket (8 x 8 cm, keep clear)">
+                        <span class="item-title">Socket</span>
+                    </button>
+                    <button type="button" class="catalog-item feature-tile" data-type="door" data-name="Door Clearance" data-price="0" data-width="225" data-height="525" aria-label="Door Clearance, 90 x 210 cm" title="Mount a Door Clearance zone (90 x 210 cm, keep clear)">
+                        <span class="item-title">Door</span>
+                    </button>
+                    <button type="button" class="catalog-item feature-tile" data-type="window" data-name="Window" data-price="0" data-width="300" data-height="300" aria-label="Window, 120 x 120 cm" title="Mount a Window (120 x 120 cm, keep clear)">
+                        <span class="item-title">Window</span>
+                    </button>
+                </div>
             </div>
 
             <div class="catalog-footer">
@@ -181,6 +196,7 @@
                 <div id="gap-down" class="distance-guide gap-guide ruler-v" hidden>
                     <span class="guide-label"></span>
                 </div>
+                <div id="measure-layer" class="measure-layer" hidden></div>
 
                 <div class="corner-led-glow"></div>
             </div>
@@ -356,11 +372,17 @@
                         </tr>
                     </tbody>
                 </table>
-                <p class="shortcut-note">
-                    <kbd>Shift</kbd> + click adds or removes an item, dragging across empty wall draws a selection box,
-                    and <kbd>Ctrl</kbd> + <kbd>A</kbd> selects everything. With several items selected, moves, nudges,
-                    locks, duplicates and removals apply to the whole group. Right-click an item for its menu.
-                </p>
+                <div class="shortcut-note">
+                    <p>
+                        <kbd>Shift</kbd> + click adds or removes an item, dragging across empty wall draws a selection box,
+                        and <kbd>Ctrl</kbd> + <kbd>A</kbd> selects everything. With several items selected, moves, nudges,
+                        locks, duplicates and removals apply to the whole group. Right-click an item for its menu.
+                    </p>
+                    <p>
+                        <kbd>R</kbd> turns the selection 90 degrees clockwise. Hold <kbd>Alt</kbd> / <kbd>Option</kbd> with
+                        something selected and point at another item, or at bare wall, to measure the distance to it.
+                    </p>
+                </div>
             </div>
         </div>
     </dialog>
@@ -379,6 +401,10 @@
             <span class="context-menu-label">Send Backward</span>
         </button>
         <div class="context-menu-separator" role="separator"></div>
+        <button type="button" class="context-menu-item" role="menuitem" data-action="rotate" aria-keyshortcuts="R">
+            <span class="context-menu-label">Rotate 90 Degrees</span>
+            <kbd aria-hidden="true">R</kbd>
+        </button>
         <button type="button" class="context-menu-item" role="menuitem" data-action="lock" aria-keyshortcuts="L">
             <span class="context-menu-label">Lock</span>
             <kbd aria-hidden="true">L</kbd>
