@@ -753,6 +753,8 @@ button:focus-visible {
 }
 
 /* Mounted wall elements */
+/* Finishes light the top edge and shade the bottom one through the --sheen-* properties below.
+   The PNG renderer reads the same properties, so the bevel lives in one place. */
 .wall-item {
     position: absolute;
     display: flex;
@@ -761,6 +763,21 @@ button:focus-visible {
     cursor: grab;
     user-select: none;
     z-index: 2;
+
+    --sheen-highlight: rgba(255, 255, 255, 0);
+    --sheen-shade: rgba(0, 0, 0, 0);
+    --sheen-band: 4px;
+    --edge-light: rgba(255, 255, 255, 0);
+    --edge-dark: rgba(0, 0, 0, 0);
+    --item-drop: 0 0 rgba(0, 0, 0, 0);
+    --sheen: linear-gradient(to bottom,
+        var(--sheen-highlight),
+        transparent var(--sheen-band),
+        transparent calc(100% - var(--sheen-band)),
+        var(--sheen-shade));
+
+    background-image: var(--sheen);
+    box-shadow: inset 0 1px 0 var(--edge-light), inset 0 -1px 0 var(--edge-dark), var(--item-drop);
 }
 
 .wall-item.dragging {
@@ -778,10 +795,11 @@ button:focus-visible {
     outline-offset: 2px;
 }
 
+/* Spans the border box, so a framed item's glow starts outside the frame instead of tinting it */
 .wall-item::before {
     content: "";
     position: absolute;
-    inset: 0;
+    inset: calc(-1 * var(--frame, 0px));
     border-radius: inherit;
     opacity: var(--led-opacity);
     transition: opacity 0.2s ease, box-shadow 0.2s ease;
@@ -805,7 +823,10 @@ button:focus-visible {
     margin-right: 4px;
 }
 
+/* Positioned so it stays above the poster art and lamp diffuser drawn by ::after */
 .item-label {
+    position: relative;
+    z-index: 1;
     font-size: 11px;
     color: rgba(255, 255, 255, 0.85);
     background-color: rgba(0, 0, 0, 0.65);
@@ -818,7 +839,7 @@ button:focus-visible {
 /* Base item geometry & LED glow profiles */
 .wall-item.shelf {
     border-radius: 2px;
-    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
+    --item-drop: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.shelf::before {
     box-shadow: 0 -15px 35px var(--accent-led), 0 10px 45px var(--accent-led);
@@ -826,7 +847,7 @@ button:focus-visible {
 
 .wall-item.cube {
     border-radius: 3px;
-    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.45);
+    --item-drop: 0 8px 15px rgba(0, 0, 0, 0.45);
 }
 .wall-item.cube::before {
     box-shadow: 0 -10px 25px var(--accent-led);
@@ -834,14 +855,17 @@ button:focus-visible {
 
 /* Two-door cabinet front: a center seam on the background and a pair of handles on ::after */
 .wall-item.storage {
+    --frame: 2px;
+    --item-drop: 0 10px 18px rgba(0, 0, 0, 0.5);
     border: 2px solid;
     border-radius: 3px;
-    box-shadow: 0 10px 18px rgba(0, 0, 0, 0.5);
-    background-image: linear-gradient(to right,
-        transparent calc(50% - 1px),
-        rgba(0, 0, 0, 0.35) calc(50% - 1px),
-        rgba(0, 0, 0, 0.35) calc(50% + 1px),
-        transparent calc(50% + 1px));
+    background-image:
+        linear-gradient(to right,
+            transparent calc(50% - 1px),
+            rgba(0, 0, 0, 0.35) calc(50% - 1px),
+            rgba(0, 0, 0, 0.35) calc(50% + 1px),
+            transparent calc(50% + 1px)),
+        var(--sheen);
 }
 .wall-item.storage::after {
     content: "";
@@ -859,40 +883,103 @@ button:focus-visible {
     box-shadow: 0 -12px 30px var(--accent-led), 0 12px 30px var(--accent-led);
 }
 
+/* The frame is the border, the mat is the background, and ::after is the artwork set back behind the mat */
 .wall-item.poster {
+    --frame: 6px;
+    --item-drop: 0 15px 25px rgba(0, 0, 0, 0.5);
     background-color: #262930;
     border-width: 6px;
     border-style: solid;
-    box-shadow: 0 15px 25px rgba(0, 0, 0, 0.5);
 }
 .wall-item.poster::before {
     box-shadow: 0 -25px 55px var(--accent-led);
 }
+.wall-item.poster::after {
+    content: "";
+    position: absolute;
+    inset: 9px;
+    border-radius: 1px;
+    background-color: #1a1d24;
+    box-shadow:
+        inset 0 3px 6px rgba(0, 0, 0, 0.55),
+        inset 0 0 0 1px rgba(0, 0, 0, 0.5),
+        0 0 0 1px rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+}
 
 .wall-item.spotlight {
+    --frame: 2px;
+    --item-drop: 0 5px 15px rgba(0, 0, 0, 0.5);
     background-color: #cbd5e1;
     border-radius: 50%;
     border: 2px solid #64748b;
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
 }
 .wall-item.spotlight::before {
     box-shadow: 0 0 25px var(--accent-led);
 }
+/* Light wash falling from the fixture. Its z-index keeps it under later items' bodies but inside
+   this item's stacking context, and it starts below the body so it never tints the fixture itself. */
+.wall-item.spotlight::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: -80%;
+    width: 260%;
+    height: 420%;
+    clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
+    background-image: linear-gradient(to bottom, var(--accent-led), transparent 85%);
+    opacity: calc(var(--led-opacity) * 0.22);
+    pointer-events: none;
+    z-index: -1;
+}
 
 .wall-item.corner-lamp {
+    --frame: 2px;
+    --item-drop: 0 10px 20px rgba(0, 0, 0, 0.6);
     background-color: #1e293b;
     border: 2px solid #475569;
     border-radius: 4px;
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.6);
 }
 .wall-item.corner-lamp::before {
     box-shadow: 0 0 40px var(--corner-led);
+}
+/* LED diffuser running down the bar. Like the spotlight wash it has no transition, so an export taken
+   right after a mode or LED change reads the final state from the computed style. */
+.wall-item.corner-lamp::after {
+    content: "";
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: calc(50% - 3px);
+    width: 6px;
+    border-radius: 3px;
+    background-color: var(--corner-led);
+    box-shadow: 0 0 6px var(--corner-led), 0 0 14px var(--corner-led);
+    opacity: var(--led-opacity);
+    pointer-events: none;
+}
+
+.wall.daylight-mode .wall-item.spotlight::after,
+.wall-item.spotlight.led-off::after {
+    opacity: 0;
+}
+
+/* An unlit diffuser still reads as a strip of frosted plastic */
+.wall.daylight-mode .wall-item.corner-lamp::after,
+.wall-item.corner-lamp.led-off::after {
+    background-color: #3b4656;
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12);
+    opacity: 1;
 }
 
 /* Surface Finish Variants */
 .wall-item.finish-walnut {
     background-color: #5c4033;
     border-color: #8b5a2b;
+    --sheen-highlight: rgba(255, 220, 185, 0.16);
+    --sheen-shade: rgba(20, 8, 2, 0.32);
+    --edge-light: rgba(255, 228, 200, 0.22);
+    --edge-dark: rgba(20, 8, 2, 0.45);
 }
 .wall-item.poster.finish-walnut {
     background-color: #262930;
@@ -902,6 +989,10 @@ button:focus-visible {
 .wall-item.finish-oak {
     background-color: #c89d66;
     border-color: #a67c46;
+    --sheen-highlight: rgba(255, 244, 222, 0.32);
+    --sheen-shade: rgba(84, 52, 18, 0.26);
+    --edge-light: rgba(255, 248, 232, 0.5);
+    --edge-dark: rgba(84, 52, 18, 0.42);
 }
 .wall-item.poster.finish-oak {
     background-color: #262930;
@@ -911,6 +1002,10 @@ button:focus-visible {
 .wall-item.finish-black {
     background-color: #1f2229;
     border-color: #374151;
+    --sheen-highlight: rgba(255, 255, 255, 0.09);
+    --sheen-shade: rgba(0, 0, 0, 0.35);
+    --edge-light: rgba(255, 255, 255, 0.12);
+    --edge-dark: rgba(0, 0, 0, 0.55);
 }
 .wall-item.poster.finish-black {
     background-color: #262930;
@@ -920,10 +1015,131 @@ button:focus-visible {
 .wall-item.finish-white {
     background-color: #f3f4f6;
     border-color: #cbd5e1;
+    --sheen-highlight: rgba(255, 255, 255, 0.8);
+    --sheen-shade: rgba(30, 41, 59, 0.14);
+    --edge-light: rgba(255, 255, 255, 0.95);
+    --edge-dark: rgba(30, 41, 59, 0.22);
 }
 .wall-item.poster.finish-white {
     background-color: #262930;
     border-color: #f3f4f6;
+}
+
+/* Resize grips on the selected item. --frame pushes them out past bordered items to the outer edge. */
+.resize-handle {
+    position: absolute;
+    z-index: 3;
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid #0b0d11;
+    border-radius: 3px;
+    background-color: #f8fafc;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.55);
+    transition: background-color var(--motion), border-color var(--motion);
+}
+
+/* A wider invisible hit area makes the small grips easy to catch */
+.resize-handle::before {
+    content: "";
+    position: absolute;
+    inset: -5px;
+}
+
+.resize-handle:hover,
+.resize-handle.is-active {
+    background-color: #3b82f6;
+    border-color: #0b1220;
+}
+
+.handle-e {
+    top: 50%;
+    right: calc(-5px - var(--frame, 0px));
+    height: 18px;
+    margin-top: -9px;
+    border-radius: 999px;
+    cursor: ew-resize;
+}
+
+.handle-s {
+    left: 50%;
+    bottom: calc(-5px - var(--frame, 0px));
+    width: 18px;
+    margin-left: -9px;
+    border-radius: 999px;
+    cursor: ns-resize;
+}
+
+.handle-se {
+    right: calc(-6px - var(--frame, 0px));
+    bottom: calc(-6px - var(--frame, 0px));
+    cursor: nwse-resize;
+}
+
+.wall-item.flush-right .handle-e,
+.wall-item.flush-right .handle-se {
+    right: 2px;
+}
+
+.wall-item.flush-bottom .handle-s,
+.wall-item.flush-bottom .handle-se {
+    bottom: 2px;
+}
+
+.wall-item:not(.selected) .resize-handle,
+.wall-item.locked .resize-handle {
+    display: none;
+}
+
+/* Keeps the resize cursor while the pointer runs ahead of the grip */
+body.is-resizing-e,
+body.is-resizing-e * {
+    cursor: ew-resize !important;
+}
+
+body.is-resizing-s,
+body.is-resizing-s * {
+    cursor: ns-resize !important;
+}
+
+body.is-resizing-se,
+body.is-resizing-se * {
+    cursor: nwse-resize !important;
+}
+
+/* Drag-from-catalog preview, drawn at the wall's own scale so the footprint reads true */
+.catalog-ghost {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    pointer-events: none;
+    transform-origin: 0 0;
+    opacity: 0.5;
+    transition: opacity var(--motion);
+}
+
+.catalog-ghost.is-over-wall {
+    opacity: 0.92;
+}
+
+.catalog-ghost .wall-item {
+    outline: 1.5px dashed var(--accent-led);
+    outline-offset: 3px;
+}
+
+.catalog-ghost .wall-item::before,
+.catalog-ghost .wall-item.spotlight::after {
+    display: none;
+}
+
+body.is-placing,
+body.is-placing * {
+    cursor: grabbing !important;
+}
+
+.wall.drop-target {
+    outline: 2px dashed var(--accent-led);
+    outline-offset: 6px;
 }
 
 .corner-led-glow {

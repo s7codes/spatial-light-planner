@@ -14,10 +14,12 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Live measurement:** Dashed rulers show the distance from the left wall and the ceiling, plus the clearance to the nearest neighbor on every side. Green guides appear whenever an edge or center lines up with another item or the wall center.
 - **Room constraints:** Configurable wall size (`150-400 x 150-300 cm`), AABB overlap warnings, and an optional `90 x 90 cm` 45-degree attic slope with exact intrusion detection.
 - **Lighting preview:** Per-item backlights, a corner floor lamp glow, RGB pickers, presets, and a master dimmer, with an Ambient Mode for night and a Daylight Grid for layout work.
+- **Material realism:** Bevelled millwork finishes, gallery posters with a mat and recessed artwork, a glowing lamp diffuser, and spotlight light washes, reproduced in the PNG export.
+- **Direct manipulation:** Drag catalog cards straight onto the wall, or click to mount them. Resize the selected item with on-canvas grips on its right edge, bottom edge, and corner.
 - **Editing workflow:** 30-step undo/redo, duplication, item locking, layer ordering, and three curated starter templates.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 169 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 193 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -36,6 +38,14 @@ Wall pixel sizes are derived from the wall's centimeter dimensions. The wall use
 Wall bounds are read once per drag, ruler label sizes are measured once at startup, and item label sizes once per render. No layout reads happen inside the frame loop. Alignment guide elements come from a small reusable pool.
 
 Lamps and spotlights carry labels wider than themselves. When such an item sits near a wall edge, its label is shifted just far enough to stay inside the wall, live during drags and in the PNG export, instead of being clipped.
+
+### Direct Manipulation
+Resizing and catalog drops reuse the drag engine's rules: one `requestAnimationFrame` per frame, pointer positions converted to wall space by dividing by the fit scale, and every result quantized to `1 cm` (or `5 cm` with snapping) before it is clamped.
+
+- **Resize grips:** only the selected, unlocked item carries the `e`, `s`, and `se` grips. A press on a grip stops propagation so it never starts a move. Width is clamped to `[8 cm, wallWidth - left]` and height to `[4 cm, wallHeight - top]`. Each frame updates the inline size, the label position, collisions, rulers, and the Inspector fields without rebuilding the panel. Release commits one undo step if the size changed, and `Escape` restores the starting size.
+- **Grip placement:** grips straddle the item edge. Against the wall they would be half clipped, so `.flush-right` and `.flush-bottom` flags tuck them inside the item there.
+- **Catalog drops:** a press on a catalog card becomes a drag after `6 px` of travel. A ghost of the piece, drawn at the wall's own scale, follows the cursor and the wall shows a drop outline. A release over the canvas mounts the item centered under the cursor as a single undo step, while a release elsewhere or `Escape` cancels. Clicking a card still mounts it at the cascading default spot.
+- **Late timers:** browsers run input ahead of timers, so the deferred resets that swallow stray clicks after a press carry a token. A late timer from an earlier press can no longer clear the guard of the press in progress.
 
 ### CSS Custom Property Lighting Engine
 Glows are pure CSS. Each item's `::before` pseudo-element carries `box-shadow` layers tinted by `--accent-led`, the corner lamp and wall glow use `--corner-led`, and `--led-opacity` drives the master dimmer. JavaScript changes a lighting preset by setting three custom properties on the root element, with no per-item repaint logic.
@@ -72,7 +82,7 @@ History is a bounded stack of 30 serialized snapshots covering items (including 
 - Identical consecutive snapshots are dropped.
 - A new action after an undo truncates the redo branch.
 - Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size edits, become a single step.
-- A drag commits exactly one snapshot on `mouseup`, and only if the item moved.
+- A drag commits exactly one snapshot on `mouseup`, and only if the item moved. A grip resize and a catalog drop follow the same rule.
 
 ### XSS-Safe JSON Schema Sanitizer
 Saved state, imported files, and starter templates all pass through one `normalizeLayout()` function. Nothing is applied until the whole file validates, so a bad file never leaves a half-loaded wall.
@@ -98,6 +108,14 @@ The same rows feed the modal tables and the `Copy as Markdown` export, which use
 
 Item fills, borders, corner radii, drop shadows, and glow layers are read from each element's computed style, so the PNG always matches the CSS on screen without a second copy of the palette. Shadows are painted in isolation by drawing the shape far off canvas and offsetting only its shadow back into place. Shadow offsets and blur ignore the canvas transform, so they are scaled to device pixels by hand.
 
+### Material Rendering
+- **Finishes:** each finish sets four custom properties: a highlight and a shade for a `4px` bevel band at the top and bottom of the face (`--sheen-*`), and two crisp `1px` inset edges (`--edge-*`). The CSS gradient and the canvas gradient are both built from those properties, and the band stays transparent across the middle of the face.
+- **Posters:** the border is the frame, the background is the mat, and an `::after` box is the artwork, set back with inset shadows.
+- **Lamp and spotlights:** the lamp's `::after` is an LED diffuser tinted by `--corner-led`. In daylight, or with the backlight off, it falls back to an unlit frosted strip. A spotlight's `::after` is a clipped light wash that fades from `--accent-led`.
+- **Exporter:** a list parser reads spread and `inset` from computed `box-shadow` values. Inset shadows are painted by clipping to the shape and offsetting the shadow of a surrounding frame back inside it. The artwork, diffuser, and wash are read from each item's `::after` computed box, opacity, and clip path.
+- **No transitions:** the exported pseudo-elements change instantly, so a snapshot taken right after a mode or LED switch reads the final state.
+- **Glow geometry:** the glow layer spans the item's border box, so a framed item's glow starts outside its frame. That is also the shape the exporter uses.
+
 ### Accessibility
 - Both modals are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
 - Catalog entries are real buttons, so items can be mounted with `Enter` or `Space`.
@@ -121,7 +139,7 @@ Item fills, borders, corner radii, drop shadows, and glow layers are read from e
 | `?` | Toggle the keyboard shortcuts guide |
 | `Escape` | Close the open modal or deselect the active item |
 
-Shortcuts are ignored while typing in a field, and the browser's own text undo keeps working inside number inputs.
+Shortcuts are ignored while typing in a field, and the browser's own text undo keeps working inside number inputs. `Escape` also cancels a catalog drag or a grip resize in progress.
 
 ## Layout Templates
 
@@ -147,7 +165,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 169 tests in 11 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 193 tests in 14 spec files, one per feature area.
 
 ```bash
 npm install
@@ -169,6 +187,9 @@ npm test
 | `templates` | All three templates: collision-free, on grid, labels inside the wall, one undo step |
 | `spec-sheet` | BOM grouping, drilling coordinates, Markdown export, clipboard fallback, dialog behavior |
 | `png-export` | 2x output size, finishes, glows, dimmer, daylight grid, attic slope, layer order |
+| `materials` | Screen and PNG parity on every new material, finish bevels, poster mat and artwork, lamp diffuser, spotlight wash |
+| `resize` | Grip visibility, live width and height with Inspector and ruler sync, snapping, wall and minimum clamps, undo, `Escape`, scaled walls |
+| `catalog-drag` | Drop centering, snapping, edge clamps, ghost and drop target, cancel paths, short presses as clicks, scaled walls |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:

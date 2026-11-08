@@ -141,6 +141,36 @@ export async function dragBy(page, id, dx, dy, { hold = false, alt = false, step
   return { guides, startX, startY };
 }
 
+export async function dragHandle(page, id, handle, dx, dy, { hold = false, steps = 6 } = {}) {
+  const box = await itemLocator(page, id).locator(`.handle-${handle}`).boundingBox();
+  const startX = Math.round(box.x + box.width / 2);
+  const startY = Math.round(box.y + box.height / 2);
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + dx, startY + dy, { steps });
+  await nextFrame(page);
+
+  if (!hold) await page.mouse.up();
+  return { startX, startY };
+}
+
+// Screen position of a wall coordinate, following the border and the current fit scale
+export async function wallPoint(page, x, y) {
+  const wall = await page.locator('#wall').boundingBox();
+  const scale = await page.evaluate(() => viewScale);
+  return { x: wall.x + (WALL_BORDER + x) * scale, y: wall.y + (WALL_BORDER + y) * scale };
+}
+
+export async function dragFromCatalog(page, name, target, { release = true, steps = 12 } = {}) {
+  const card = await page.locator(`.catalog-item[data-name="${name}"]`).boundingBox();
+  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps });
+  await nextFrame(page);
+  if (release) await page.mouse.up();
+}
+
 export async function clickWallAt(page, x, y) {
   const wall = await page.locator('#wall').boundingBox();
   await page.mouse.click(wall.x + WALL_BORDER + x, wall.y + WALL_BORDER + y);
@@ -222,3 +252,14 @@ export const readPixels = (page, buffer, points, scale = 1) =>
     },
     { base64: buffer.toString('base64'), coords: points, ratio: scale },
   );
+
+// Samples the live wall at wall coordinates; assumes the wall is shown at 100%
+export async function wallScreenPixels(page, points) {
+  const wall = await page.locator('#wall').boundingBox();
+  const screenshot = await page.screenshot({ clip: wall, animations: 'disabled' });
+  return readPixels(
+    page,
+    screenshot,
+    points.map(([x, y]) => [x + WALL_BORDER, y + WALL_BORDER]),
+  );
+}

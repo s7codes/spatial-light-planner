@@ -22,6 +22,7 @@ const PNG_FILENAME = 'spatial-studio-plan.png';
 const PNG_PIXEL_RATIO = 2;
 const SHADOW_SHIFT_PX = 10000;
 const CORNER_GLOW_ALPHA = 0.45; // mirrors the .corner-led-glow opacity factor
+const SPOTLIGHT_CONE_FADE = 0.85; // mirrors the last stop of the .spotlight::after gradient
 const WALL_FILL = { ambient: '#1c1f26', daylight: '#e5e7eb' };
 const DAYLIGHT_GRID_PX = 10 * SCALE;
 
@@ -38,6 +39,11 @@ const MAX_NAME_LENGTH = 40;
 const LABEL_GAP_PX = 3;
 const LABEL_SLIDE_STEP_PX = 4;
 const ITEM_LABEL_INSET_PX = 3; // clearance between an item label and the wall edge
+const CATALOG_DRAG_THRESHOLD_PX = 6;
+
+const RESIZE_HANDLES_HTML = ['e', 's', 'se']
+    .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
+    .join('');
 
 const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp'];
 const SAFE_ID_PATTERN = /^item-[a-z0-9-]{1,40}$/i;
@@ -187,6 +193,7 @@ let isAmbientMode = true;
 let selectedItemId = null;
 let wallItems = [];
 let ignoreWallClick = false;
+let wallClickGuard = 0;
 let suppressAltMenu = false;
 let idCounter = 0;
 let ioStatusTimer = 0;
@@ -224,6 +231,43 @@ const createIdleDragState = () => ({
 });
 
 let dragState = createIdleDragState();
+
+const createIdleResizeState = () => ({
+    active: false,
+    itemId: null,
+    element: null,
+    handle: null,
+    wallRect: null,
+    scale: 1,
+    startLocalX: 0,
+    startLocalY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    startWidth: 0,
+    startHeight: 0,
+    frameId: 0
+});
+
+let resizeState = createIdleResizeState();
+
+const createIdleCatalogDrag = () => ({
+    pending: false,
+    active: false,
+    source: null,
+    ghost: null,
+    canvasRect: null,
+    startX: 0,
+    startY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    frameId: 0
+});
+
+let catalogDrag = createIdleCatalogDrag();
+let suppressCatalogClick = false;
+let catalogClickGuard = 0;
+
+const isPointerBusy = () => dragState.isDragging || resizeState.active || catalogDrag.active;
 
 const cloneDefaults = () => JSON.parse(JSON.stringify(defaultItems));
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
@@ -283,6 +327,13 @@ function fitWallToViewport() {
     if (dragState.isDragging) {
         dragState.wallRect = wallCanvas.getBoundingClientRect();
         dragState.scale = viewScale;
+    }
+    if (resizeState.active) {
+        resizeState.wallRect = wallCanvas.getBoundingClientRect();
+        resizeState.scale = viewScale;
+    }
+    if (catalogDrag.active) {
+        catalogDrag.canvasRect = canvasArea.getBoundingClientRect();
     }
 }
 
@@ -464,7 +515,7 @@ function commitLayoutChange() {
 
 function restoreHistoryStep(step) {
     const target = historyIndex + step;
-    if (dragState.isDragging || target < 0 || target >= historyStack.length) return;
+    if (isPointerBusy() || target < 0 || target >= historyStack.length) return;
 
     historyIndex = target;
     lastHistoryPush = { mergeKey: null, time: 0 };
@@ -511,7 +562,11 @@ function renderPlanner() {
         const label = el.querySelector('.item-label');
         return [el.dataset.id, { width: label.offsetWidth, height: label.offsetHeight }];
     }));
-    wallItems.forEach((item, index) => placeItemLabel(item, elements[index]));
+    wallItems.forEach((item, index) => {
+        placeItemLabel(item, elements[index]);
+        flagWallEdges(item, elements[index]);
+    });
+    syncResizeHandles();
 
     updateCollisionStates();
     updateDistanceGuides();
@@ -839,11 +894,19 @@ function placeItemLabel(item, el) {
     label.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : '';
 }
 
+// Grips normally straddle the item edge; flush against the wall they would be half clipped,
+// so these flags tuck them inside the item there
+function flagWallEdges(item, el) {
+    el.classList.toggle('flush-right', item.left + item.width >= wallWidthPx - EPSILON);
+    el.classList.toggle('flush-bottom', item.top + item.height >= wallHeightPx - EPSILON);
+}
+
 // Position-only updates skip renderPlanner so dragging and nudging never rebuild the DOM
 function syncItemPosition(item, el) {
     el.style.left = `${item.left}px`;
     el.style.top = `${item.top}px`;
     placeItemLabel(item, el);
+    flagWallEdges(item, el);
     updateCollisionStates();
     updateDistanceGuides();
     updateInspectorLive(item);
@@ -851,9 +914,142 @@ function syncItemPosition(item, el) {
 
 // A press that starts on an item, dragged or not, can end with the cursor off the item.
 // The click that follows would land on the wall and deselect, so it is swallowed.
+// Browsers run input ahead of timers, so the token stops a late timer from an earlier press
+// clearing the guard of the press in progress.
 function guardNextWallClick() {
+    const token = ++wallClickGuard;
     ignoreWallClick = true;
-    window.addEventListener('mouseup', () => setTimeout(() => { ignoreWallClick = false; }, 0), { once: true });
+    window.addEventListener('mouseup', () => setTimeout(() => {
+        if (token === wallClickGuard) ignoreWallClick = false;
+    }, 0), { once: true });
+}
+
+// Selection changes without a re-render, so the grips are moved to the selected item here
+function syncResizeHandles() {
+    wallItemsLayer.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+
+    const item = getSelectedItem();
+    const el = item && !item.locked ? getItemElement(item.id) : null;
+    if (!el) return;
+
+    el.insertAdjacentHTML('beforeend', RESIZE_HANDLES_HTML);
+    el.querySelectorAll('.resize-handle').forEach(handle => handle.addEventListener('mousedown', startResize));
+}
+
+function syncInspectorSize(item) {
+    const widthInput = document.getElementById('edit-width-cm');
+    const heightInput = document.getElementById('edit-height-cm');
+    if (widthInput) widthInput.value = toCm(item.width);
+    if (heightInput) heightInput.value = toCm(item.height);
+}
+
+// Size-only counterpart of syncItemPosition: inline styles and live readouts, no rebuild
+function syncItemSize(item, el) {
+    el.style.width = `${item.width}px`;
+    el.style.height = `${item.height}px`;
+    placeItemLabel(item, el);
+    flagWallEdges(item, el);
+    updateCollisionStates();
+    updateDistanceGuides();
+    updateInspectorLive(item);
+    syncInspectorSize(item);
+}
+
+function startResize(e) {
+    if (e.button !== 0) return;
+    // The grip sits inside the item, so the press must not reach the item and start a move
+    e.stopPropagation();
+    e.preventDefault();
+    guardNextWallClick();
+
+    const handle = e.currentTarget;
+    const el = handle.closest('.wall-item');
+    const item = el && wallItems.find(i => i.id === el.dataset.id);
+    if (!item || item.locked || isPointerBusy()) return;
+
+    const wallRect = wallCanvas.getBoundingClientRect();
+    resizeState = {
+        ...createIdleResizeState(),
+        active: true,
+        itemId: item.id,
+        element: el,
+        handle: handle.dataset.handle,
+        wallRect,
+        scale: viewScale,
+        startLocalX: (e.clientX - wallRect.left) / viewScale,
+        startLocalY: (e.clientY - wallRect.top) / viewScale,
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+        startWidth: item.width,
+        startHeight: item.height
+    };
+
+    handle.classList.add('is-active');
+    document.body.classList.add(`is-resizing-${resizeState.handle}`);
+}
+
+function applyResizeFrame() {
+    resizeState.frameId = 0;
+
+    const item = wallItems.find(i => i.id === resizeState.itemId);
+    if (!item) return;
+
+    const { wallRect, scale, pointerX, pointerY, startLocalX, startLocalY, startWidth, startHeight, handle } = resizeState;
+    const step = snapGridToggle.checked ? SNAP_STEP_PX : CM_STEP_PX;
+
+    // Wall-space pointer travel, so the grip tracks the cursor at any fit level
+    const localX = (pointerX - wallRect.left) / scale;
+    const localY = (pointerY - wallRect.top) / scale;
+
+    if (handle !== 's') {
+        item.width = clamp(quantize(startWidth + localX - startLocalX, step), MIN_WIDTH_CM * SCALE, wallWidthPx - item.left);
+    }
+    if (handle !== 'e') {
+        item.height = clamp(quantize(startHeight + localY - startLocalY, step), MIN_HEIGHT_CM * SCALE, wallHeightPx - item.top);
+    }
+
+    syncItemSize(item, resizeState.element);
+}
+
+function scheduleResizeFrame() {
+    if (resizeState.active && !resizeState.frameId) {
+        resizeState.frameId = requestAnimationFrame(applyResizeFrame);
+    }
+}
+
+function endResize() {
+    if (resizeState.frameId) cancelAnimationFrame(resizeState.frameId);
+    resizeState.element.querySelector('.resize-handle.is-active')?.classList.remove('is-active');
+    document.body.classList.remove(`is-resizing-${resizeState.handle}`);
+    resizeState = createIdleResizeState();
+}
+
+function finishResize() {
+    if (resizeState.frameId) {
+        cancelAnimationFrame(resizeState.frameId);
+        applyResizeFrame();
+    }
+
+    const item = wallItems.find(i => i.id === resizeState.itemId);
+    const changed = item && (item.width !== resizeState.startWidth || item.height !== resizeState.startHeight);
+    endResize();
+
+    if (changed) {
+        commitLayoutChange();
+        updateInspectorPanel();
+    }
+}
+
+// Escape puts the item back exactly as it was when the grip was pressed
+function cancelResize() {
+    const item = wallItems.find(i => i.id === resizeState.itemId);
+    const el = resizeState.element;
+    if (item) {
+        item.width = resizeState.startWidth;
+        item.height = resizeState.startHeight;
+    }
+    endResize();
+    if (item && el) syncItemSize(item, el);
 }
 
 function startDrag(e) {
@@ -933,6 +1129,18 @@ function scheduleDragFrame() {
 }
 
 window.addEventListener('mousemove', (e) => {
+    if (resizeState.active) {
+        resizeState.pointerX = e.clientX;
+        resizeState.pointerY = e.clientY;
+        scheduleResizeFrame();
+        return;
+    }
+
+    if (catalogDrag.pending) {
+        trackCatalogDrag(e);
+        return;
+    }
+
     if (!dragState.isDragging) return;
 
     dragState.pointerX = e.clientX;
@@ -960,33 +1168,169 @@ window.addEventListener('mouseup', () => {
     if (moved) commitLayoutChange();
 });
 
+window.addEventListener('mouseup', () => {
+    if (resizeState.active) finishResize();
+});
+
+function mountCatalogItem(catalogEl, left, top) {
+    const newItem = {
+        id: createItemId(),
+        type: catalogEl.dataset.type,
+        name: catalogEl.dataset.name,
+        price: parseFloat(catalogEl.dataset.price),
+        left,
+        top,
+        width: parseFloat(catalogEl.dataset.width),
+        height: parseFloat(catalogEl.dataset.height),
+        finish: catalogEl.dataset.finish || 'walnut',
+        ledEnabled: true,
+        locked: false
+    };
+
+    wallItems.push(newItem);
+    selectedItemId = newItem.id;
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+function spawnFromCatalog(catalogEl) {
+    const offset = (wallItems.length * 20) % 160;
+    const width = parseFloat(catalogEl.dataset.width);
+    const height = parseFloat(catalogEl.dataset.height);
+
+    // The cascade offset alone can push tall pieces past the floor line
+    mountCatalogItem(catalogEl, clamp(200 + offset, 0, wallWidthPx - width), clamp(220 + offset, 0, wallHeightPx - height));
+}
+
+const pointInRect = (rect, x, y) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+function startCatalogDrag() {
+    const { source } = catalogDrag;
+    const width = parseFloat(source.dataset.width);
+    const height = parseFloat(source.dataset.height);
+
+    const ghost = document.createElement('div');
+    ghost.className = 'catalog-ghost';
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.style.width = `${width}px`;
+    ghost.style.height = `${height}px`;
+    ghost.innerHTML = `
+        <div class="wall-item ${source.dataset.type} finish-${source.dataset.finish || 'walnut'}" style="width: ${width}px; height: ${height}px;">
+            <span class="item-label">${escapeHtml(source.dataset.name)}</span>
+        </div>`;
+    document.body.appendChild(ghost);
+
+    catalogDrag.active = true;
+    catalogDrag.ghost = ghost;
+    catalogDrag.canvasRect = canvasArea.getBoundingClientRect();
+    document.body.classList.add('is-placing');
+
+    // A release over the card itself would still fire its click; that click belongs to the drag.
+    // The token keeps a late timer from an earlier drag from lifting this one early.
+    const token = ++catalogClickGuard;
+    suppressCatalogClick = true;
+    window.addEventListener('mouseup', () => setTimeout(() => {
+        if (token === catalogClickGuard) suppressCatalogClick = false;
+    }, 0), { once: true });
+}
+
+function trackCatalogDrag(e) {
+    catalogDrag.pointerX = e.clientX;
+    catalogDrag.pointerY = e.clientY;
+
+    if (!catalogDrag.active) {
+        const travel = Math.hypot(e.clientX - catalogDrag.startX, e.clientY - catalogDrag.startY);
+        if (travel <= CATALOG_DRAG_THRESHOLD_PX) return;
+        startCatalogDrag();
+    }
+
+    if (!catalogDrag.frameId) catalogDrag.frameId = requestAnimationFrame(applyCatalogDragFrame);
+}
+
+// The ghost is centered on the cursor and scaled like the wall, previewing exactly where the drop lands
+function applyCatalogDragFrame() {
+    catalogDrag.frameId = 0;
+    const { ghost, source, pointerX, pointerY, canvasRect } = catalogDrag;
+    if (!ghost) return;
+
+    const width = parseFloat(source.dataset.width) * viewScale;
+    const height = parseFloat(source.dataset.height) * viewScale;
+    const overCanvas = pointInRect(canvasRect, pointerX, pointerY);
+
+    ghost.style.transform = `translate(${pointerX - width / 2}px, ${pointerY - height / 2}px) scale(${viewScale})`;
+    ghost.classList.toggle('is-over-wall', overCanvas);
+    wallCanvas.classList.toggle('drop-target', overCanvas);
+}
+
+function endCatalogDrag() {
+    if (catalogDrag.frameId) cancelAnimationFrame(catalogDrag.frameId);
+    catalogDrag.ghost?.remove();
+    document.body.classList.remove('is-placing');
+    wallCanvas.classList.remove('drop-target');
+    catalogDrag = createIdleCatalogDrag();
+}
+
+function dropCatalogItem(catalogEl, clientX, clientY) {
+    const wallRect = wallCanvas.getBoundingClientRect();
+    const width = parseFloat(catalogEl.dataset.width);
+    const height = parseFloat(catalogEl.dataset.height);
+    const step = snapGridToggle.checked ? SNAP_STEP_PX : CM_STEP_PX;
+
+    // The border scales with the wall, so it comes off after converting to wall space
+    const localX = (clientX - wallRect.left) / viewScale - WALL_BORDER_PX;
+    const localY = (clientY - wallRect.top) / viewScale - WALL_BORDER_PX;
+
+    mountCatalogItem(
+        catalogEl,
+        clamp(quantize(localX - width / 2, step), 0, wallWidthPx - width),
+        clamp(quantize(localY - height / 2, step), 0, wallHeightPx - height)
+    );
+}
+
 catalogItems.forEach(catalogEl => {
-    catalogEl.addEventListener('click', () => {
-        const offset = (wallItems.length * 20) % 160;
-        const width = parseFloat(catalogEl.dataset.width);
-        const height = parseFloat(catalogEl.dataset.height);
-
-        // The cascade offset alone can push tall pieces past the floor line
-        const newItem = {
-            id: createItemId(),
-            type: catalogEl.dataset.type,
-            name: catalogEl.dataset.name,
-            price: parseFloat(catalogEl.dataset.price),
-            left: clamp(200 + offset, 0, wallWidthPx - width),
-            top: clamp(220 + offset, 0, wallHeightPx - height),
-            width,
-            height,
-            finish: catalogEl.dataset.finish || 'walnut',
-            ledEnabled: true,
-            locked: false
+    catalogEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0 || isPointerBusy() || isModalOpen()) return;
+        // Stops text selection while the card is pulled across the sidebar
+        e.preventDefault();
+        suppressCatalogClick = false;
+        catalogDrag = {
+            ...createIdleCatalogDrag(),
+            pending: true,
+            source: catalogEl,
+            startX: e.clientX,
+            startY: e.clientY,
+            pointerX: e.clientX,
+            pointerY: e.clientY
         };
-
-        wallItems.push(newItem);
-        selectedItemId = newItem.id;
-        renderPlanner();
-        updateInspectorPanel();
-        commitLayoutChange();
     });
+
+    catalogEl.addEventListener('click', () => {
+        if (suppressCatalogClick || isPointerBusy()) return;
+        spawnFromCatalog(catalogEl);
+    });
+});
+
+window.addEventListener('mouseup', (e) => {
+    if (!catalogDrag.pending) return;
+
+    // Short of the threshold this was a plain click, which the click handler mounts
+    if (!catalogDrag.active) {
+        catalogDrag = createIdleCatalogDrag();
+        return;
+    }
+
+    const { source, canvasRect } = catalogDrag;
+    const overCanvas = pointInRect(canvasRect, e.clientX, e.clientY);
+    endCatalogDrag();
+    if (overCanvas) dropCatalogItem(source, e.clientX, e.clientY);
+});
+
+// Losing the window mid-drag means the release will never arrive
+window.addEventListener('blur', () => {
+    if (catalogDrag.active) endCatalogDrag();
+    else if (catalogDrag.pending) catalogDrag = createIdleCatalogDrag();
+    if (resizeState.active) cancelResize();
 });
 
 function selectItem(itemId) {
@@ -995,6 +1339,7 @@ function selectItem(itemId) {
     wallItemsLayer.querySelectorAll('.wall-item').forEach(el => {
         el.classList.toggle('selected', el.dataset.id === itemId);
     });
+    syncResizeHandles();
 
     updateInspectorPanel();
     updateDistanceGuides();
@@ -1209,7 +1554,7 @@ function updateInspectorPanel() {
 const isLockShortcut = (e) =>
     (e.key || '').toLowerCase() === 'l' &&
     !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat &&
-    selectedItemId !== null && !dragState.isDragging && !isTextEntry(e.target);
+    selectedItemId !== null && !isPointerBusy() && !isTextEntry(e.target);
 
 function handleModifierShortcut(e) {
     if (isTextEntry(e.target)) return false;
@@ -1231,7 +1576,7 @@ function handleModifierShortcut(e) {
     if (key === 'd' && selectedItemId) {
         // Stops the browser bookmark dialog; holding the keys should not spawn a stack of copies
         e.preventDefault();
-        if (!e.repeat && !dragState.isDragging) duplicateSelectedItem();
+        if (!e.repeat && !isPointerBusy()) duplicateSelectedItem();
         return true;
     }
 
@@ -1240,7 +1585,7 @@ function handleModifierShortcut(e) {
 
 // Arrow keys for 1cm nudging, Delete/Backspace to remove
 function handleItemKeys(e) {
-    if (!selectedItemId || dragState.isDragging) return;
+    if (!selectedItemId || isPointerBusy()) return;
     if (e.target.tagName === 'INPUT') return; // Do not trigger while typing numbers in inputs
 
     const item = getSelectedItem();
@@ -1279,7 +1624,7 @@ function handleShortcutsKey(e) {
     if (shortcutsModal.open) {
         e.preventDefault();
         shortcutsModal.close();
-    } else if (!specModal.open && !dragState.isDragging) {
+    } else if (!specModal.open && !isPointerBusy()) {
         e.preventDefault();
         openShortcuts();
     }
@@ -1287,11 +1632,19 @@ function handleShortcutsKey(e) {
 
 // Dialogs close themselves on Escape; with none open it clears the selection, unless a field is being edited
 function handleEscape(e) {
-    if (selectedItemId === null || dragState.isDragging || isTextEntry(e.target)) return;
+    if (selectedItemId === null || isPointerBusy() || isTextEntry(e.target)) return;
     selectItem(null);
 }
 
 window.addEventListener('keydown', (e) => {
+    // Escape abandons a catalog drag or a grip resize before anything else sees the key
+    if (e.key === 'Escape' && (catalogDrag.active || resizeState.active)) {
+        e.preventDefault();
+        if (catalogDrag.active) endCatalogDrag();
+        if (resizeState.active) cancelResize();
+        return;
+    }
+
     if (e.key === '?' && !isFormField(e.target)) {
         handleShortcutsKey(e);
         return;
@@ -1643,7 +1996,7 @@ async function copySpecMarkdown() {
 }
 
 function openSpecSheet() {
-    if (isModalOpen() || dragState.isDragging) return;
+    if (isModalOpen() || isPointerBusy()) return;
 
     clearTimeout(copyLabelTimer);
     copyMarkdownBtn.textContent = COPY_LABEL;
@@ -1672,7 +2025,7 @@ closeOnBackdropClick(specModal);
 closeOnBackdropClick(shortcutsModal);
 
 function openShortcuts() {
-    if (isModalOpen() || dragState.isDragging) return;
+    if (isModalOpen() || isPointerBusy()) return;
     shortcutsModal.showModal();
 }
 
@@ -1681,7 +2034,7 @@ closeShortcutsBtn.addEventListener('click', () => shortcutsModal.close());
 
 function loadTemplate(key) {
     const template = LAYOUT_TEMPLATES[key];
-    if (!template || dragState.isDragging) return;
+    if (!template || isPointerBusy()) return;
 
     // Templates run through the same sanitizer as imports, which fills in catalog sizes, names and prices
     const layout = normalizeLayout(template);
@@ -1703,17 +2056,55 @@ function hexToRgb(hex) {
     return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 }
 
-// Computed box-shadow lists read like "rgb(0, 0, 0) 0px 8px 15px 0px, ...", though some engines put the
-// color last. Color, offsets and blur are all the snapshot needs.
+// Splits on the commas between list entries, not the ones inside rgba(...)
+function splitTopLevel(value) {
+    const parts = [];
+    let depth = 0;
+    let from = 0;
+    for (let i = 0; i < value.length; i++) {
+        if (value[i] === '(') depth++;
+        else if (value[i] === ')') depth--;
+        else if (value[i] === ',' && depth === 0) {
+            parts.push(value.slice(from, i));
+            from = i + 1;
+        }
+    }
+    parts.push(value.slice(from));
+    return parts.map(part => part.trim()).filter(Boolean);
+}
+
+// Computed box-shadow entries read like "rgb(0, 0, 0) 0px 8px 15px 0px inset", though some engines put the
+// color last. Fully transparent entries are the placeholders the item rules use and are dropped.
 function parseShadows(value) {
     if (!value || value === 'none') return [];
 
-    const colorFirst = /(rgba?\([^)]*\))\s+(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px/g;
-    const colorLast = /(-?[\d.]+)px\s+(-?[\d.]+)px\s+([\d.]+)px(?:\s+-?[\d.]+px)?\s+(rgba?\([^)]*\))/g;
-    const first = [...value.matchAll(colorFirst)].map(([, color, x, y, blur]) => ({ color, x, y, blur }));
-    const shadows = first.length ? first : [...value.matchAll(colorLast)].map(([, x, y, blur, color]) => ({ color, x, y, blur }));
+    return splitTopLevel(value)
+        .map(entry => {
+            const color = (entry.match(/rgba?\([^)]*\)/) || [''])[0];
+            const [x = 0, y = 0, blur = 0, spread = 0] = (entry.replace(color, '').match(/-?[\d.]+px/g) || []).map(parseFloat);
+            return { color, x, y, blur, spread, inset: /\binset\b/.test(entry) };
+        })
+        .filter(shadow => shadow.color && (parseRgba(shadow.color)?.a ?? 1) > 0);
+}
 
-    return shadows.map(({ color, x, y, blur }) => ({ color, x: parseFloat(x), y: parseFloat(y), blur: parseFloat(blur) }));
+function parseRgba(value) {
+    const match = /rgba?\(([^)]*)\)/.exec(value || '');
+    if (!match) return null;
+    const [r, g, b, a = 1] = match[1].split(/[,\s/]+/).filter(Boolean).map(Number);
+    return { r, g, b, a };
+}
+
+const rgbaString = ({ r, g, b, a }, alpha = a) => `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+// Reads a CSS polygon() clip path into points inside a w x h box
+function parsePolygon(value, w, h) {
+    const body = /polygon\(([^)]*)\)/.exec(value || '');
+    if (!body) return [];
+    const toPx = (token, size) => (token.endsWith('%') ? (parseFloat(token) / 100) * size : parseFloat(token));
+    return body[1].split(',').map(pair => {
+        const [px, py] = pair.trim().split(/\s+/);
+        return [toPx(px, w), toPx(py, h)];
+    });
 }
 
 function itemShape(item, radius) {
@@ -1729,14 +2120,16 @@ function itemShape(item, radius) {
     };
 }
 
-function traceShape(ctx, shape, inset) {
+// A negative inset grows the shape, which is how shadow spread is drawn
+function traceShape(ctx, shape, inset, startPath = true) {
     const x = shape.x + inset;
     const y = shape.y + inset;
     const w = Math.max(0, shape.w - inset * 2);
     const h = Math.max(0, shape.h - inset * 2);
 
-    ctx.beginPath();
+    if (startPath) ctx.beginPath();
     if (shape.ellipse) {
+        ctx.moveTo(x + w, y + h / 2);
         ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
         return;
     }
@@ -1760,8 +2153,103 @@ function paintShadowOnly(ctx, shape, shadow, alpha) {
     ctx.shadowOffsetX = (shadow.x + SHADOW_SHIFT_PX) * PNG_PIXEL_RATIO;
     ctx.shadowOffsetY = shadow.y * PNG_PIXEL_RATIO;
     ctx.translate(-SHADOW_SHIFT_PX, 0);
-    traceShape(ctx, shape, 0);
+    traceShape(ctx, shape, -(shadow.spread || 0));
     ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.restore();
+}
+
+// Inset shadows are cast by a frame around the shape: clip to the shape, draw the frame far off canvas,
+// and offset only its shadow back inside, the same trick paintShadowOnly uses for outer shadows
+function paintInsetShadow(ctx, shape, inset, shadow, alpha) {
+    const reach = Math.abs(shadow.x) + Math.abs(shadow.y) + shadow.blur * 2 + Math.abs(shadow.spread) + 20;
+
+    ctx.save();
+    traceShape(ctx, shape, inset);
+    ctx.clip();
+    ctx.globalAlpha = alpha;
+    ctx.shadowColor = shadow.color;
+    ctx.shadowBlur = shadow.blur * PNG_PIXEL_RATIO;
+    ctx.shadowOffsetX = (shadow.x + SHADOW_SHIFT_PX) * PNG_PIXEL_RATIO;
+    ctx.shadowOffsetY = shadow.y * PNG_PIXEL_RATIO;
+    ctx.translate(-SHADOW_SHIFT_PX, 0);
+    ctx.beginPath();
+    ctx.rect(shape.x - reach, shape.y - reach, shape.w + reach * 2, shape.h + reach * 2);
+    traceShape(ctx, shape, inset + shadow.spread, false);
+    ctx.fillStyle = '#000';
+    ctx.fill('evenodd');
+    ctx.restore();
+}
+
+// Mirrors the --sheen background: a highlight fading down from the top edge and a shade rising from the bottom
+function paintSheen(ctx, shape, border, style) {
+    const highlight = parseRgba(style.getPropertyValue('--sheen-highlight'));
+    const shade = parseRgba(style.getPropertyValue('--sheen-shade'));
+    const band = parseFloat(style.getPropertyValue('--sheen-band'));
+    const top = shape.y + border;
+    const height = shape.h - border * 2;
+    if (!highlight || !shade || !(band > 0) || height <= 0) return;
+
+    const edge = Math.min(band / height, 0.5);
+    const gradient = ctx.createLinearGradient(0, top, 0, top + height);
+    gradient.addColorStop(0, rgbaString(highlight));
+    gradient.addColorStop(edge, rgbaString(highlight, 0));
+    gradient.addColorStop(1 - edge, rgbaString(shade, 0));
+    gradient.addColorStop(1, rgbaString(shade));
+
+    ctx.fillStyle = gradient;
+    traceShape(ctx, shape, border);
+    ctx.fill();
+}
+
+// The poster artwork and the lamp diffuser are ::after boxes, positioned against the padding box
+function paintAfterLayer(ctx, item, el, border) {
+    const layer = getComputedStyle(el, '::after');
+    const alpha = parseFloat(layer.opacity);
+    if (layer.content === 'none' || !(alpha > 0)) return;
+
+    const shape = {
+        x: item.left + border + parseFloat(layer.left),
+        y: item.top + border + parseFloat(layer.top),
+        w: parseFloat(layer.width),
+        h: parseFloat(layer.height),
+        radius: parseFloat(layer.borderTopLeftRadius) || 0,
+        ellipse: false
+    };
+    const shadows = parseShadows(layer.boxShadow);
+
+    shadows.filter(shadow => !shadow.inset).forEach(shadow => paintShadowOnly(ctx, shape, shadow, alpha));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = layer.backgroundColor;
+    traceShape(ctx, shape, 0);
+    ctx.fill();
+    ctx.restore();
+    shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, 0, shadow, alpha));
+}
+
+// The wash is a clipped trapezoid fading from the accent color, read from the spotlight's ::after box
+function paintSpotlightCone(ctx, item, el, border) {
+    const cone = getComputedStyle(el, '::after');
+    const alpha = parseFloat(cone.opacity);
+    if (!isAmbientMode || !isLedOn(item) || !(alpha > 0)) return;
+
+    const x = item.left + border + parseFloat(cone.left);
+    const y = item.top + border + parseFloat(cone.top);
+    const points = parsePolygon(cone.clipPath, parseFloat(cone.width), parseFloat(cone.height));
+    if (!points.length) return;
+
+    const [r, g, b] = hexToRgb(accentColorPicker.value);
+    const gradient = ctx.createLinearGradient(0, y, 0, y + parseFloat(cone.height));
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 1)`);
+    gradient.addColorStop(SPOTLIGHT_CONE_FADE, `rgba(${r}, ${g}, ${b}, 0)`);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    points.forEach(([px, py], index) => (index ? ctx.lineTo(x + px, y + py) : ctx.moveTo(x + px, y + py)));
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
 }
@@ -1843,12 +2331,16 @@ function paintCornerGlow(ctx, brightness) {
     ctx.restore();
 }
 
-// Mirrors the cabinet seam on the .storage background and the handle pair drawn by its ::after
-function paintStorageFront(ctx, item, el, border) {
+// Mirrors the cabinet seam on the .storage background
+function paintStorageSeam(ctx, item, border) {
     const centerX = item.left + item.width / 2;
     ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
     ctx.fillRect(centerX - 1, item.top + border, 2, item.height - border * 2);
+}
 
+// Mirrors the handle pair drawn by the .storage ::after
+function paintStorageHandles(ctx, item, el, border) {
+    const centerX = item.left + item.width / 2;
     const handles = getComputedStyle(el, '::after');
     const barWidth = parseFloat(handles.borderLeftWidth) || 0;
     const contentWidth = parseFloat(handles.width) || 0;
@@ -1890,13 +2382,16 @@ function paintItem(ctx, item, brightness) {
     const style = getComputedStyle(el);
     const shape = itemShape(item, style.borderTopLeftRadius);
     const border = parseFloat(style.borderTopWidth) || 0;
+    const shadows = parseShadows(style.boxShadow);
 
-    // Same order the DOM paints in: drop shadow, LED glow, then the body over both
-    parseShadows(style.boxShadow).forEach(shadow => paintShadowOnly(ctx, shape, shadow, 1));
+    // Same order the DOM paints in: drop shadow, LED glow and light wash, then the body over them
+    shadows.filter(shadow => !shadow.inset).forEach(shadow => paintShadowOnly(ctx, shape, shadow, 1));
     if (isAmbientMode && isLedOn(item) && brightness > 0) {
         parseShadows(getComputedStyle(el, '::before').boxShadow)
+            .filter(shadow => !shadow.inset)
             .forEach(shadow => paintShadowOnly(ctx, shape, shadow, brightness));
     }
+    if (item.type === 'spotlight') paintSpotlightCone(ctx, item, el, border);
 
     if (border > 0) {
         ctx.fillStyle = style.borderTopColor;
@@ -1907,7 +2402,13 @@ function paintItem(ctx, item, brightness) {
     traceShape(ctx, shape, border);
     ctx.fill();
 
-    if (item.type === 'storage') paintStorageFront(ctx, item, el, border);
+    // Background layers, then inset shadows, then content, as CSS stacks them inside a box
+    paintSheen(ctx, shape, border, style);
+    if (item.type === 'storage') paintStorageSeam(ctx, item, border);
+    shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, border, shadow, 1));
+
+    if (item.type === 'storage') paintStorageHandles(ctx, item, el, border);
+    if (item.type === 'poster' || item.type === 'corner-lamp') paintAfterLayer(ctx, item, el, border);
     paintItemLabel(ctx, item, el);
 }
 
