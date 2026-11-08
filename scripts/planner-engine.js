@@ -77,6 +77,8 @@ const CATALOG_DRAG_THRESHOLD_PX = 6;
 const MARQUEE_THRESHOLD_PX = 3;
 const PRESS_TRAVEL_PX = 3; // below this a press on a group member is a click, not a move
 const MENU_EDGE_PX = 8;
+const LONG_RUN_CM = 250; // longer runs usually need an extension lead
+const POWER_IDLE_TEXT = 'Traces each lit item to its nearest socket';
 
 const RESIZE_HANDLES_HTML = ['e', 's', 'se']
     .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
@@ -177,7 +179,16 @@ const copyShareLinkBtn = document.getElementById('copy-share-link-btn');
 const closeShortcutsBtn = document.getElementById('close-shortcuts-btn');
 const templateButtons = document.querySelectorAll('.template-btn');
 
-const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open;
+const commandPalette = document.getElementById('command-palette');
+const commandPaletteBtn = document.getElementById('command-palette-btn');
+const commandSearchInput = document.getElementById('command-search-input');
+const commandList = document.getElementById('command-list');
+const commandEmpty = document.getElementById('command-empty');
+const powerRoutingToggle = document.getElementById('power-routing-toggle');
+const powerRoutingSummary = document.getElementById('power-routing-summary');
+const powerRoutesLayer = document.getElementById('power-routes');
+
+const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open || commandPalette.open;
 
 const accentColorPicker = document.getElementById('accent-color-picker');
 const accentHexCode = document.getElementById('accent-hex-code');
@@ -581,7 +592,7 @@ function resetView() {
 }
 
 // A click on the HUD leaves focus where it was, so Space still pans straight afterwards
-[zoomOutBtn, zoomResetBtn, zoomInBtn].forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
+[zoomOutBtn, zoomResetBtn, zoomInBtn, commandPaletteBtn].forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
 zoomOutBtn.addEventListener('click', () => stepZoom(-1));
 zoomInBtn.addEventListener('click', () => stepZoom(1));
 zoomResetBtn.addEventListener('click', resetView);
@@ -1504,6 +1515,7 @@ function renderPlanner() {
     totalPriceDisplay.textContent = `$${totalPrice.toFixed(2)}`;
     renderLayers();
     refreshMeasure();
+    refreshPowerRoutes();
 }
 
 function isOverlapping(a, b) {
@@ -1940,6 +1952,99 @@ window.addEventListener('mousemove', (e) => {
     if (measure.alt || measure.active) scheduleMeasure();
 });
 
+// Power routing is a drafting aid like the rulers: kept out of the layout, the history and the PNG
+let powerRoutingOn = false;
+let powerRoutesKey = '';
+
+const boxCenter = (item) => ({ x: item.left + item.width / 2, y: item.top + item.height / 2 });
+
+// Every visible lit item takes the socket with the shortest center-to-center Manhattan run. On a tie
+// the socket lower in the layer stack wins, so the choice never flickers during a drag.
+function planPowerRoutes() {
+    const visible = wallItems.filter(item => !item.hidden);
+    const sockets = visible.filter(item => item.type === 'socket');
+    const powered = visible.filter(isLedOn);
+    const routes = sockets.length ? powered.map(item => {
+        const from = boxCenter(item);
+        let best = null;
+        sockets.forEach(socket => {
+            const to = boxCenter(socket);
+            const run = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+            if (!best || run < best.run - EPSILON) best = { socket, to, run };
+        });
+        return { item, socket: best.socket, from, to: best.to, lengthCm: Math.round(best.run / SCALE) };
+    }) : [];
+    return { powered, sockets, routes };
+}
+
+function powerSummary({ powered, sockets, routes }) {
+    if (!powered.length) return { text: 'No powered items on the wall', warning: false };
+    if (!sockets.length) {
+        return { text: `No wall sockets placed (${powered.length} powered item${powered.length === 1 ? '' : 's'})`, warning: true };
+    }
+    const total = routes.reduce((sum, route) => sum + route.lengthCm, 0);
+    const longest = Math.max(...routes.map(route => route.lengthCm));
+    return {
+        text: `${powered.length} powered | Total ${(total / 100).toFixed(1)} m | Max ${longest} cm`,
+        warning: longest > LONG_RUN_CM
+    };
+}
+
+// The run leaves the item's center, goes straight up or down to the socket's height, then along the
+// wall into the socket. The layer sits under the items, so the stretch inside the item stays hidden and
+// the cable appears where it leaves the item's bottom or top edge. The pill sits on the longer leg.
+function powerRouteMarkup(route) {
+    const { item, socket, from, to, lengthCm } = route;
+    const flag = lengthCm > LONG_RUN_CM ? ' is-long-run' : '';
+    const vertical = Math.abs(to.y - from.y) >= Math.abs(to.x - from.x);
+    const pillX = clamp(vertical ? from.x : (from.x + to.x) / 2, 24, wallWidthPx - 24);
+    const pillY = clamp(vertical ? (from.y + to.y) / 2 : to.y, 9, wallHeightPx - 9);
+    const ids = `data-item-id="${escapeHtml(item.id)}" data-socket-id="${escapeHtml(socket.id)}"`;
+    return {
+        path: `<path class="power-route${flag}" ${ids} data-length="${lengthCm}" d="M ${from.x} ${from.y} V ${to.y} H ${to.x}" />`,
+        pill: `<span class="power-badge${flag}" ${ids} style="left: ${pillX}px; top: ${pillY}px;">${lengthCm} cm</span>`
+    };
+}
+
+// Runs on every render and every drag, nudge or resize frame, but rebuilds only when a run changed
+function refreshPowerRoutes() {
+    if (!powerRoutingOn) return;
+
+    const plan = planPowerRoutes();
+    const summary = powerSummary(plan);
+    const key = [
+        wallWidthPx, wallHeightPx, summary.text,
+        ...plan.routes.map(({ item, socket, from, to }) => `${item.id}>${socket.id}:${from.x},${from.y},${to.x},${to.y}`)
+    ].join('|');
+    if (key === powerRoutesKey) return;
+    powerRoutesKey = key;
+
+    const parts = plan.routes.map(powerRouteMarkup);
+    powerRoutesLayer.innerHTML = `
+        <svg class="power-routes-svg" width="${wallWidthPx}" height="${wallHeightPx}" viewBox="0 0 ${wallWidthPx} ${wallHeightPx}">
+            ${parts.map(part => part.path).join('')}
+        </svg>
+        ${parts.map(part => part.pill).join('')}`;
+    powerRoutingSummary.textContent = summary.text;
+    powerRoutingSummary.classList.toggle('is-warning', summary.warning);
+}
+
+function setPowerRouting(on) {
+    powerRoutingOn = on;
+    powerRoutesKey = '';
+    syncLedToggle(powerRoutingToggle, on);
+    powerRoutesLayer.hidden = !on;
+    if (on) {
+        refreshPowerRoutes();
+        return;
+    }
+    powerRoutesLayer.innerHTML = '';
+    powerRoutingSummary.textContent = POWER_IDLE_TEXT;
+    powerRoutingSummary.classList.remove('is-warning');
+}
+
+powerRoutingToggle.addEventListener('click', () => setPowerRouting(!powerRoutingOn));
+
 function updateInspectorLive() {
     const posReadout = document.getElementById('inspector-pos-readout');
     const selected = getSelectedItems();
@@ -1947,6 +2052,7 @@ function updateInspectorLive() {
 
     const box = selected.length === 1 ? selected[0] : getBounds(selected);
     posReadout.textContent = formatOffset(box);
+    if (selected.length === 1) syncInspectorPosition(box);
     const footprint = document.getElementById('batch-footprint-readout');
     if (footprint) footprint.textContent = formatFootprint(box);
     document.getElementById('warning-overlap').hidden = !selected.some(overlapsFurniture);
@@ -1994,6 +2100,7 @@ function syncPositions(members) {
     updateInspectorLive();
     syncSelectionBounds();
     refreshMeasure();
+    refreshPowerRoutes();
 }
 
 function syncSelectionBounds() {
@@ -2033,6 +2140,19 @@ function syncResizeHandles() {
     el.querySelectorAll('.resize-handle').forEach(handle => handle.addEventListener('mousedown', startResize));
 }
 
+// Only changed values are written, so a field that has focus keeps it and its caret
+function syncInspectorPosition(item) {
+    const fields = [
+        [document.getElementById('edit-left-cm'), toCm(item.left), wallWidthCm - toCm(item.width)],
+        [document.getElementById('edit-top-cm'), toCm(item.top), wallHeightCm - toCm(item.height)]
+    ];
+    fields.forEach(([input, valueCm, maxCm]) => {
+        if (!input) return;
+        if (input.value !== String(valueCm)) input.value = valueCm;
+        if (input.max !== String(maxCm)) input.max = maxCm;
+    });
+}
+
 function syncInspectorSize(item) {
     const widthInput = document.getElementById('edit-width-cm');
     const heightInput = document.getElementById('edit-height-cm');
@@ -2051,6 +2171,7 @@ function syncItemSize(item, el) {
     updateInspectorLive();
     syncInspectorSize(item);
     syncRulerSpans();
+    refreshPowerRoutes();
 }
 
 function startResize(e) {
@@ -3142,6 +3263,47 @@ function distributeSelection(axis) {
     }));
 }
 
+const canCenterSelection = () => arrangeUnits().some(unit => unit.movable);
+
+// One piece lands exactly on the center line. Several move as one rigid block made of their movable
+// units, rounded to whole cm, and stop short of the attic slope the way Align does.
+function centerSelectionOnWall(axis) {
+    if (isPointerBusy()) return;
+    const items = arrangeUnits().filter(unit => unit.movable).flatMap(unit => unit.items);
+    if (!items.length) {
+        if (selectedItemIds.length) flashLockNote();
+        return;
+    }
+
+    const [key, size] = axisKeys(axis);
+    const limit = axis === 'x' ? wallWidthPx : wallHeightPx;
+    const box = getBounds(items);
+    const target = clamp(quantize((limit - box[size]) / 2, CM_STEP_PX), 0, limit - box[size]);
+
+    if (items.length > 1) {
+        arrangeAlong(axis, [{ unit: { items, box }, offset: target - box[key] }]);
+        return;
+    }
+    if (Math.abs(target - items[0][key]) < EPSILON) return;
+    items[0][key] = target;
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
+const centerWallFieldHtml = () => (canCenterSelection() ? `
+    <div class="inspector-field">
+        <label id="center-wall-label">Center on Wall</label>
+        <div class="center-wall-row" role="group" aria-labelledby="center-wall-label">
+            <button type="button" class="btn-secondary center-wall-btn" id="center-wall-h-btn" title="Center horizontally on the wall">
+                <span class="center-icon" aria-hidden="true"></span>Center H
+            </button>
+            <button type="button" class="btn-secondary center-wall-btn" id="center-wall-v-btn" title="Center vertically on the wall">
+                <span class="center-icon is-vertical" aria-hidden="true"></span>Center V
+            </button>
+        </div>
+    </div>` : '');
+
 const ARRANGE_ACTIONS = [
     { id: 'align-left', label: 'Align Left', hint: 'line up the left edges' },
     { id: 'align-center', label: 'Align Center', hint: 'center horizontally on the selection' },
@@ -3613,6 +3775,14 @@ function renderItemInspector(item) {
 
             <div class="inspector-grid">
                 <div class="inspector-field">
+                    <label for="edit-left-cm">Left X (cm)</label>
+                    <input type="number" id="edit-left-cm" class="dim-input" min="0" max="${wallWidthCm - toCm(item.width)}" value="${toCm(item.left)}" ${lockedAttr}>
+                </div>
+                <div class="inspector-field">
+                    <label for="edit-top-cm">Top Y (cm)</label>
+                    <input type="number" id="edit-top-cm" class="dim-input" min="0" max="${wallHeightCm - toCm(item.height)}" value="${toCm(item.top)}" ${lockedAttr}>
+                </div>
+                <div class="inspector-field">
                     <label for="edit-width-cm">Width (cm)</label>
                     <input type="number" id="edit-width-cm" class="dim-input" min="${minWidthCm}" max="${wallWidthCm}" value="${toCm(item.width)}" ${lockedAttr}>
                 </div>
@@ -3621,6 +3791,7 @@ function renderItemInspector(item) {
                     <input type="number" id="edit-height-cm" class="dim-input" min="${minHeightCm}" max="${wallHeightCm}" value="${toCm(item.height)}" ${lockedAttr}>
                 </div>
             </div>
+            ${centerWallFieldHtml()}
             ${feature ? featureNote : furnitureFields}
 
             ${rotationFieldHtml(`${item.rotation} deg`, [item])}
@@ -3666,6 +3837,32 @@ function renderItemInspector(item) {
 
     widthInput.addEventListener('change', applyDimensionChange);
     heightInput.addEventListener('change', applyDimensionChange);
+
+    const leftInput = document.getElementById('edit-left-cm');
+    const topInput = document.getElementById('edit-top-cm');
+
+    // Typed offsets are rounded to whole cm and clamped so the whole item stays on the wall
+    function applyPositionChange() {
+        if (item.locked) return;
+
+        const readCm = (input, currentPx, maxCm) => {
+            const value = Math.round(parseFloat(input.value));
+            return clamp(Number.isFinite(value) ? value : toCm(currentPx), 0, maxCm);
+        };
+        const leftCm = readCm(leftInput, item.left, wallWidthCm - toCm(item.width));
+        const topCm = readCm(topInput, item.top, wallHeightCm - toCm(item.height));
+        leftInput.value = leftCm;
+        topInput.value = topCm;
+        if (item.left === leftCm * SCALE && item.top === topCm * SCALE) return;
+
+        item.left = leftCm * SCALE;
+        item.top = topCm * SCALE;
+        syncPositions([{ item, element: getItemElement(item.id) }]);
+        commitLayoutChange();
+    }
+
+    leftInput.addEventListener('change', applyPositionChange);
+    topInput.addEventListener('change', applyPositionChange);
     document.getElementById('select-group-btn')?.addEventListener('click', () => selectWithGroups(item.id));
 
     // Typing previews on the wall at once; leaving the field saves the cleaned text as one step
@@ -3689,6 +3886,7 @@ function renderItemInspector(item) {
         const el = getItemElement(item.id);
         if (el) el.classList.toggle('led-off', !item.ledEnabled);
         syncLedToggle(ledToggleBtn, item.ledEnabled);
+        refreshPowerRoutes();
         commitLayoutChange();
     });
 
@@ -3740,6 +3938,7 @@ function renderBatchInspector(items) {
             ${groupId ? `<span class="group-count">${count} items grouped</span>` : ''}
             ${lockNote}
             ${arrangeFieldHtml()}
+            ${centerWallFieldHtml()}
 
             <div class="inspector-field">
                 <label>Grouping</label>
@@ -3786,6 +3985,8 @@ function updateInspectorPanel() {
         btn.addEventListener('click', () => runArrange(btn.dataset.arrange));
     });
     document.getElementById('rotate-item-btn').addEventListener('click', rotateSelection);
+    document.getElementById('center-wall-h-btn')?.addEventListener('click', () => centerSelectionOnWall('x'));
+    document.getElementById('center-wall-v-btn')?.addEventListener('click', () => centerSelectionOnWall('y'));
     document.getElementById('flip-horizontal-btn')?.addEventListener('click', flipSelection);
     document.getElementById('mirror-wall-btn')?.addEventListener('click', mirrorItemAcrossWall);
     document.getElementById('group-toggle-btn')?.addEventListener('click', () => (canGroup() ? groupSelection() : ungroupSelection()));
@@ -4083,6 +4284,13 @@ window.addEventListener('keydown', (e) => {
     }
 
     if (isContextMenuOpen() && handleContextMenuKey(e)) return;
+
+    // Taken over everywhere, so the browser never moves focus to its own search bar instead
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && (e.key || '').toLowerCase() === 'k') {
+        e.preventDefault();
+        if (!e.repeat) toggleCommandPalette();
+        return;
+    }
 
     if (e.key === '?' && !isFormField(e.target)) {
         handleShortcutsKey(e);
@@ -4794,6 +5002,7 @@ function closeOnBackdropClick(dialog) {
 closeOnBackdropClick(specModal);
 closeOnBackdropClick(shortcutsModal);
 closeOnBackdropClick(projectsModal);
+closeOnBackdropClick(commandPalette);
 
 function openShortcuts() {
     if (isModalOpen() || isPointerBusy()) return;
@@ -4802,6 +5011,168 @@ function openShortcuts() {
 
 shortcutsBtn.addEventListener('click', openShortcuts);
 closeShortcutsBtn.addEventListener('click', () => shortcutsModal.close());
+
+function clearGuides() {
+    if (!wallGuides.length || isPointerBusy()) return;
+    wallGuides = [];
+    renderGuides();
+    commitLayoutChange();
+}
+
+// Commands are rebuilt each time the palette opens, so selection entries and on/off hints match the
+// moment. Each one calls the same function as its button, card or shortcut.
+function buildCommands() {
+    const commands = [];
+    const add = (group, label, run, hint = '') => commands.push({ group, label, run, hint });
+    const onOff = (on) => (on ? 'On' : 'Off');
+    const selected = getSelectedItems();
+
+    if (selected.length) {
+        if (canCenterSelection()) {
+            add('Selection', 'Center Horizontally on Wall', () => centerSelectionOnWall('x'), countLabel(selected.length));
+            add('Selection', 'Center Vertically on Wall', () => centerSelectionOnWall('y'), countLabel(selected.length));
+        }
+        add('Selection', 'Duplicate Selection', duplicateSelectedItem, 'Ctrl+D');
+        add('Selection', 'Lock / Unlock Selection', toggleSelectedLock, 'L');
+        if (selected.some(item => !item.locked)) add('Selection', 'Remove Selection', removeSelectedItems, 'Del');
+    }
+
+    catalogItems.forEach(card => {
+        const size = `${toCm(parseFloat(card.dataset.width))} x ${toCm(parseFloat(card.dataset.height))} cm`;
+        add('Mount', `Mount: ${card.dataset.name}`, () => spawnFromCatalog(card), size);
+    });
+
+    add('Wall & View', 'Toggle Ambient / Daylight Mode', toggleAmbientMode, isAmbientMode ? 'Ambient' : 'Daylight');
+    add('Wall & View', 'Toggle Snap 5cm Grid', () => snapGridToggle.click(), onOff(snapGridToggle.checked));
+    add('Wall & View', 'Toggle Attic Slope', () => atticSlopeToggle.click(), onOff(atticSlopeToggle.checked));
+    add('Wall & View', 'Toggle Power Routing Overlay', () => setPowerRouting(!powerRoutingOn), onOff(powerRoutingOn));
+    add('Wall & View', 'Reset Zoom & Pan', resetView, 'Ctrl+0');
+    add('Wall & View', 'Clear Reference Guides', clearGuides, wallGuides.length ? `${wallGuides.length} placed` : 'None placed');
+
+    presetButtons.forEach(button => add('Lighting & Paint', `Preset: ${button.textContent.trim()}`, () => button.click()));
+    WALL_PAINTS.forEach(paint => {
+        add('Lighting & Paint', `Wall Paint: ${paint.label}`, () => setWallPaint(paint.id), paint.id === wallPaint ? 'Current' : '');
+    });
+
+    add('Project & Export', 'Open My Projects', openProjects);
+    add('Project & Export', 'Open Installation Spec Sheet', openSpecSheet);
+    add('Project & Export', 'Export Layout JSON', exportLayout);
+    add('Project & Export', 'Export Plan PNG', exportPng);
+    add('Project & Export', 'Export Spec Sheet CSV', exportSpecCsv);
+
+    return commands;
+}
+
+const palette = { commands: [], matches: [], active: -1 };
+
+// Every typed word has to appear somewhere in the group name or the label, in any order
+function matchCommands(query) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return palette.commands.filter(command => {
+        const text = `${command.group} ${command.label}`.toLowerCase();
+        return tokens.every(token => text.includes(token));
+    });
+}
+
+function setActiveCommand(index, reveal = true) {
+    palette.active = index;
+    commandList.querySelectorAll('[role="option"]').forEach(option => {
+        const active = Number(option.dataset.index) === index;
+        option.classList.toggle('is-active', active);
+        option.setAttribute('aria-selected', String(active));
+        if (active && reveal) option.scrollIntoView({ block: 'nearest' });
+    });
+    if (index >= 0) commandSearchInput.setAttribute('aria-activedescendant', `command-option-${index}`);
+    else commandSearchInput.removeAttribute('aria-activedescendant');
+}
+
+function renderCommandList() {
+    const query = commandSearchInput.value.trim();
+    palette.matches = matchCommands(query);
+
+    const groups = [];
+    palette.matches.forEach((command, index) => {
+        if (groups.at(-1)?.name !== command.group) groups.push({ name: command.group, rows: [] });
+        groups.at(-1).rows.push(`
+            <li class="command-item" role="option" id="command-option-${index}" data-index="${index}" aria-selected="false">
+                <span class="command-label">${escapeHtml(command.label)}</span>
+                ${command.hint ? `<span class="command-hint">${escapeHtml(command.hint)}</span>` : ''}
+            </li>`);
+    });
+    commandList.innerHTML = groups.map((group, n) => `
+        <li class="command-group" role="group" aria-labelledby="command-group-${n}">
+            <span class="command-group-label" id="command-group-${n}">${escapeHtml(group.name)}</span>
+            <ul class="command-group-items" role="none">${group.rows.join('')}</ul>
+        </li>`).join('');
+
+    commandList.hidden = !palette.matches.length;
+    commandEmpty.hidden = palette.matches.length > 0;
+    commandEmpty.textContent = palette.matches.length ? '' : `No commands match "${query}"`;
+    commandList.scrollTop = 0;
+    setActiveCommand(palette.matches.length ? 0 : -1);
+}
+
+function moveActiveCommand(step) {
+    const count = palette.matches.length;
+    if (count) setActiveCommand((palette.active + step + count) % count);
+}
+
+// Opened from bare page, the palette has nowhere to hand focus back to, and a hidden search field that kept
+// it would swallow the next shortcut. The close event is queued and can land after a quick reopen.
+function releasePaletteFocus() {
+    if (!commandPalette.open && commandPalette.contains(document.activeElement)) document.activeElement.blur();
+}
+
+// The palette closes first, so a command that opens a dialog of its own finds no modal in the way
+function runCommand(index) {
+    const command = palette.matches[index];
+    if (!command) return;
+    commandPalette.close();
+    releasePaletteFocus();
+    command.run();
+}
+
+function openCommandPalette() {
+    if (isModalOpen() || isPointerBusy()) return;
+    closeContextMenu();
+    palette.commands = buildCommands();
+    commandSearchInput.value = '';
+    renderCommandList();
+    commandPalette.showModal();
+    commandSearchInput.focus();
+}
+
+function toggleCommandPalette() {
+    if (commandPalette.open) commandPalette.close();
+    else openCommandPalette();
+}
+
+commandSearchInput.addEventListener('input', renderCommandList);
+
+commandSearchInput.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        moveActiveCommand(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        runCommand(palette.active);
+    }
+});
+
+// Pressing a row keeps focus in the search field; hovering moves the highlight without scrolling the list
+commandList.addEventListener('mousedown', (e) => e.preventDefault());
+commandList.addEventListener('mousemove', (e) => {
+    const option = e.target.closest('[role="option"]');
+    if (option && Number(option.dataset.index) !== palette.active) setActiveCommand(Number(option.dataset.index), false);
+});
+commandList.addEventListener('click', (e) => {
+    const option = e.target.closest('[role="option"]');
+    if (option) runCommand(Number(option.dataset.index));
+});
+
+commandPalette.addEventListener('close', releasePaletteFocus);
+commandPaletteBtn.addEventListener('click', toggleCommandPalette);
 
 function loadTemplate(key) {
     const template = LAYOUT_TEMPLATES[key];
@@ -5331,13 +5702,15 @@ function exportPng() {
 
 exportPngBtn.addEventListener('click', exportPng);
 
-themeToggleBtn.addEventListener('click', () => {
+function toggleAmbientMode() {
     isAmbientMode = !isAmbientMode;
     wallCanvas.classList.toggle('daylight-mode', !isAmbientMode);
     themeToggleBtn.classList.toggle('daylight-active', !isAmbientMode);
 
     themeToggleBtn.textContent = isAmbientMode ? 'Ambient Mode: ON' : 'Daylight Grid: ON';
-});
+}
+
+themeToggleBtn.addEventListener('click', toggleAmbientMode);
 
 function updateAccentColor(hexColor, shouldSave = true) {
     document.documentElement.style.setProperty('--accent-led', hexColor);

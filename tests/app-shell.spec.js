@@ -232,7 +232,8 @@ test.describe('accessibility', () => {
 
     expect(audit).toEqual({ unnamedButtons: [], unlabeledInputs: [] });
     await expect(page.getByRole('button', { name: 'Keyboard shortcuts' })).toHaveAccessibleName('Keyboard shortcuts');
-    await expect(page.getByRole('switch')).toHaveAccessibleName('Backlight LED: ON');
+    await expect(page.locator('#inspector-box').getByRole('switch')).toHaveAccessibleName('Backlight LED: ON');
+    await expect(page.locator('#power-routing-toggle')).toHaveAccessibleName('Power Routing: OFF');
   });
 
   test('catalog entries are real buttons and every topbar control explains itself', async ({ page }) => {

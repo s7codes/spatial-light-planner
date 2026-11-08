@@ -4,12 +4,15 @@ Live Demo: https://s7codes.github.io/spatial-light-planner/
 
 [![E2E Tests](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml/badge.svg)](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml)
 
-A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place, turn, mirror, align, and distribute them with centimeter precision against reference guides, zoomed in as close as the detail needs, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, preview the backlighting in a dark room on a choice of wall paints, and hand off a bill of materials, drilling coordinates, a spreadsheet-ready CSV, or a high-resolution image of the finished plan. Every wall is kept as a named project in the browser, and any wall can be sent to someone else as a single link.
+A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place, turn, mirror, align, and distribute them with centimeter precision against reference guides, or type exact coordinates, zoomed in as close as the detail needs, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, trace every cable run to the nearest socket, preview the backlighting in a dark room on a choice of wall paints, drive all of it from a `Ctrl + K` command palette, and hand off a bill of materials, drilling coordinates, a spreadsheet-ready CSV, or a high-resolution image of the finished plan. Every wall is kept as a named project in the browser, and any wall can be sent to someone else as a single link.
 
 Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies. Playwright is the only dev dependency, and it powers the end-to-end suite.
 
 ## Highlights
 
+- **Command palette:** `Ctrl + K` (or the HUD button) opens a searchable list of every studio action: mounting any component, view toggles, selection edits, lighting presets, wall paints, projects, and exports. Type a few words, walk the list with the arrow keys, and press `Enter`.
+- **Typed coordinates and wall centering:** The Inspector takes an exact Left X and Top Y in centimeters, clamped to the wall and live while the item is dragged, nudged, or resized. Center H and Center V put a piece, or a whole selection as one rigid block, on the wall's center lines.
+- **Power routing:** A drafting overlay traces each lit item to its nearest wall socket along an orthogonal cable path, labels every run in centimeters, flags runs over `250 cm`, and sums the total cable needed.
 - **Precision placement:** Every position and size lives on a whole-centimeter grid. Dragging, arrow-key nudges, `5 cm` grid snapping, and magnetic alignment all land on exact centimeters, so on-screen readouts never drift from the stored layout.
 - **CAD rulers:** Frosted edge rulers frame the top and left of the wall with a tick every `10 cm` and a label every `50 cm`. Live hairlines read the pointer position in whole centimeters, and a shaded band marks the selection's extent.
 - **Reference guides:** Drag out of either ruler to drop up to 12 dashed guide lines on the wall. Items and whole selections snap to them, and they move in `1 cm` (or `5 cm`) steps, leave when dragged off the wall or double-clicked, and are saved with the layout.
@@ -37,7 +40,7 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Project gallery:** Keep up to 24 walls as named projects. The My Projects dialog shows each one with a schematic thumbnail, its last edited date, and Load, Rename, and Delete, and the open project saves itself after every change.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown or downloadable as one CSV file), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 322 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 342 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -164,6 +167,29 @@ The batch Inspector shows an `Align & Distribute` grid whenever the selection ho
 - **Attic slope:** moving toward the slope only ever deepens an intrusion, so the clear offsets form one run from zero. A unit whose target would cut into the slope steps back a centimeter at a time to the farthest clear spot, and a status message says how many items were held back.
 - **History:** each press is a single undo step. A press that moves nothing records nothing, and the rebuilt Inspector hands keyboard focus back to the same button.
 
+### Coordinate Fields & Wall Centering
+The single-item Inspector shows `Left X (cm)` and `Top Y (cm)` beside the size fields, under the unchanged offset readout.
+
+- **Typing:** a committed value (`Enter` or leaving the field) is rounded to whole centimeters and clamped to `[0, wallWidth - width]` or `[0, wallHeight - height]`, and the cleaned value is written back. An empty field falls back to the current offset. The item, its rulers, the ruler band, and the readout update through the same inline-style path a drag uses, and a change is one undo step; an unchanged value records nothing. Locked items show the fields disabled.
+- **Live sync:** every drag frame, nudge, and grip resize writes the fields in place, and only when a value or limit changed, so the panel is never rebuilt and a focused field keeps its focus and caret. A grip resize also moves the field limits as the item grows.
+- **Center H and Center V:** shown whenever at least one selected unit can move. A single piece lands at `quantize((wall - size) / 2, 1 cm)`, so a half-centimeter center rounds onto the grid. A multi-selection or group moves as one rigid block made of its movable units, locked units staying put, and the block shares `arrangeAlong()` with Align: it stays inside the wall and steps back from the attic slope a centimeter at a time, with the same status message. Each press is one undo step, and a press that moves nothing records nothing.
+
+### Command Palette
+`#command-palette` is a native `<dialog>` hung from the upper third of the screen. `Ctrl + K` / `Cmd + K` opens it from anywhere, including a focused Inspector field, and closes it again; it never opens on top of another dialog. The `Ctrl+K` button in the zoom HUD opens it with the mouse, so the full topbar stays untouched.
+
+- **Commands:** the list is rebuilt each time the palette opens, grouped as Selection (only with a selection: center on the wall, duplicate, lock, remove), Mount (one entry per catalog card), Wall & View, Lighting & Paint, and Project & Export. Each entry calls the same function as its button, card, or shortcut, and shows a hint such as the catalog size, a shortcut, or the current on/off state.
+- **Filtering:** every typed word must appear in the label or the group name, in any order and in any case, so `export png` finds `Export Plan PNG` and `export` alone lists the whole Project & Export group. The first match is highlighted, and a query with no match shows an empty state instead of a blank list.
+- **Keyboard and mouse:** `ArrowDown` and `ArrowUp` move the highlight with wrap-around and keep it scrolled into view, `Enter` runs it, and a click runs any row. Hovering moves the highlight, and pressing a row keeps focus in the search field. The palette closes before the command runs, so commands that open a dialog of their own (projects, spec sheet) work straight away.
+- **Focus:** opened from bare page, the palette has no control to hand focus back to, so focus is released explicitly on close. Otherwise the hidden search field would keep it and swallow the next shortcut, turning `Ctrl + Z` into a text undo.
+
+### Power Routing Overlay
+The `Power Routing` switch in the Lighting panel turns on a live drafting aid. It starts off, is not saved or undone, and, like the rulers and reference guides, never reaches the PNG export.
+
+- **Planning:** every visible lit item (shelf, cube, storage, poster, spotlight, or corner lamp with its backlight on) takes the visible socket with the shortest center-to-center Manhattan distance, `|dx| + |dy|`, rounded to whole centimeters. Ties go to the socket lower in the layer stack, so the choice never flickers during a drag.
+- **Drawing:** each run is an SVG path `M item V socketY H socketX`: straight up or down to the socket's height, then along the wall. The paths sit beneath the items, so the stretch inside an item stays hidden and the cable appears where it leaves the bottom or top edge, while the length pills sit above everything on the run's longer leg. Runs over `250 cm` turn orange with an `.is-long-run` class.
+- **Summary:** the readout under the switch reads `N powered | Total X.X m | Max YYY cm`, or warns `No wall sockets placed (N powered items)` when lit items have nothing to plug into.
+- **Live updates:** renders, drag and nudge frames, grip resizes, and the per-item backlight switch all refresh the overlay, which rebuilds only when a run actually changed, so moving an unrelated item costs a string comparison.
+
 ### Symmetry
 `Flip Horizontally` appears in the batch Inspector whenever two or more items are selected and one unit can move, a single complete group included. `Mirror Across Wall` appears for a single item and is disabled while it is locked.
 
@@ -243,7 +269,7 @@ History is a bounded stack of 30 serialized snapshots covering items (including 
 - A new action after an undo truncates the redo branch.
 - Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size edits, become a single step.
 - A drag commits exactly one snapshot on `mouseup`, and only if something moved. A group drag, a grip resize, and a catalog drop follow the same rule.
-- Batch edits (grouping, rotation, align, distribute, flip, mirror, finish, lock, visibility, duplicate, cut, paste, delete, layer moves) are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
+- Batch edits (grouping, rotation, align, distribute, wall centering, flip, mirror, finish, lock, visibility, duplicate, cut, paste, delete, layer moves) and a typed Left X or Top Y are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
 - Opening another project starts a fresh history, the same as a reload.
 
 ### Project Gallery & Persistence
@@ -283,7 +309,7 @@ The same rows feed the modal tables and the `Copy as Markdown` export, which use
 - **Encoding:** a UTF-8 byte order mark lets Excel read item names correctly.
 
 ### HiDPI Canvas 2D PNG Renderer
-`Export PNG` draws the wall on an offscreen canvas at `wallWidthPx * 2` by `wallHeightPx * 2` with the native Canvas 2D API. It paints in the same stacking order as the live DOM: the wall paint (or its daylight tone with the grid), attic slope, corner glow, then items in layer order, and finally a dimensions caption. Reference guides and the other drafting overlays are left out.
+`Export PNG` draws the wall on an offscreen canvas at `wallWidthPx * 2` by `wallHeightPx * 2` with the native Canvas 2D API. It paints in the same stacking order as the live DOM: the wall paint (or its daylight tone with the grid), attic slope, corner glow, then items in layer order, and finally a dimensions caption. Reference guides, cable runs, and the other drafting overlays are left out.
 
 Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element transforms are read from each element's computed style, so the PNG always matches the CSS on screen without a second copy of the palette. Shadows are painted in isolation by drawing the shape far off canvas and offsetting only its shadow back into place. Shadow offsets and blur ignore the canvas transform, so they are scaled to device pixels by hand.
 
@@ -299,12 +325,14 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 - **Glow geometry:** the glow layer spans the item's border box, so a framed item's glow starts outside its frame. That is also the shape the exporter uses.
 
 ### Accessibility
-- The spec sheet, shortcuts guide, and project gallery are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
+- The spec sheet, shortcuts guide, project gallery, and command palette are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
 - Catalog entries are real buttons, so items can be mounted with `Enter` or `Space`.
 - Every button and input has a visible label, `aria-label`, or `title`, and buttons show a keyboard focus ring. Icon-only buttons such as Undo and Redo carry an `aria-label`.
 - The restyled toggles are still native checkboxes, so they keep keyboard and screen reader support. Their focus ring wraps the whole chip.
 - Transitions and the dialog entrance animation are switched off under `prefers-reduced-motion`.
 - Inspector panel rebuilds hand keyboard focus back to the control that triggered them.
+- The command palette's search field is a `combobox` that controls a `listbox` of `option` rows in labelled groups. The highlighted row carries `aria-selected="true"` and is announced through `aria-activedescendant`, so focus never leaves the field, and the empty state is a `status` region.
+- The Power Routing control is a `role="switch"` button with `aria-checked`, described by its live summary line, and the Left X and Top Y fields are labelled inputs.
 - The context menu uses `role="menu"` with `menuitem` buttons, exposes its shortcuts through `aria-keyshortcuts`, and is fully keyboard operable.
 - The compact room feature tiles show short names and carry the full name and size in their `aria-label`.
 - The zoom HUD is a labelled `role="group"`: the step buttons carry `aria-label`s, and the percentage button announces itself as a reset with the current level.
@@ -339,6 +367,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 | `Space` + drag, or middle-button drag | Pan the view |
 | `L` | Lock or unlock the selection's position and properties |
 | `Delete` / `Backspace` | Remove the selected unlocked items |
+| `Ctrl + K` / `Cmd + K` | Open or close the command palette |
 | `?` | Toggle the keyboard shortcuts guide |
 | `Escape` | Close the open menu or modal, or clear the selection |
 
@@ -368,7 +397,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 322 tests in 27 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 342 tests in 28 spec files, one per feature area.
 
 ```bash
 npm install
@@ -406,6 +435,7 @@ npm test
 | `csv-export` | Filename, byte order mark, exact CRLF payload, rows checked against the on-screen tables, grouped and turned pieces, RFC 4180 quoting read back by a strict parser, formula guard, empty wall, `Downloaded!` label |
 | `align-guides-paint` | The Align & Distribute grid and when it shows, all six alignments and both distributions as single undo steps, whole-cm centering and gap rounding, rigid groups, locked anchors, the attic slope stop, ruler bands; pulling guides from both rulers, hidden until on the wall, Escape and off-wall cancels, 5 cm steps, moving, merging, drag-off and double-click removal, items still winning presses over a guide, item and group snapping, export and import sanitizing, reload, wall resize pruning, the 12-guide limit; wall paint swatches, undo, Daylight Grid tones, PNG parity in both modes, per-project persistence, templates and reset |
 | `zoom-clipboard-share` | HUD steps, limits and exact reset of the resting geometry, fitted walls, `Ctrl + Wheel` about the pointer, `Space` and middle-button panning with no item drags, selections or deselecting clicks, `Escape` mid-pan; drags with hairline readouts, selection boxes, catalog drops and parked-ruler guide pulls at 150% and panned; copy and cascading pastes, fresh ids, unlocked copies, new independent groups, cut with locked items, edge clamping, the slope slide, field and text-selection guards; Flip Horizontally with rotation swap, rigid groups, locked anchors and the slope stop, Mirror Across Wall and its centered no-op; share links copied, opened in a first-time browser, opened as a new project, opened in place by a hash change, broken and truncated links, and a full gallery |
+| `commands-coords-power` | Left X and Top Y fields with wall limits, typed moves with readout, rulers and ruler band, clamping, rounding, empty and unchanged values, single-step undo and redo, live sync through drags, nudges and grip resizes without a rebuild or lost focus, locked items; Center H and Center V for single items with half-centimeter rounding, rigid multi-selection blocks with locked units held, the attic slope stop; the palette from `Ctrl + K`, `Cmd + K` and the HUD, closing paths, no stacking on other dialogs, grouped commands and selection-only entries, word filtering across labels and groups, the empty state, wrap-around arrows with `aria-activedescendant`, hover, click and `Enter`, mounting like a catalog click, commands driving view toggles, paint, guides, selection edits, exports and dialogs, and focus released after a command; the routing switch, the no-socket warning, exact orthogonal paths and Manhattan lengths, live updates through socket drags, nudges, LED switches, rotations and hidden sockets, nearest-socket choice, long-run flags, and a PNG export identical with the overlay on |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:
@@ -426,15 +456,15 @@ How the suite is built:
 ## Project Structure
 
 ```
-index.html                    App shell, catalog, inspector, canvas rulers, dialogs, context menu, inline SVG
-                              brand mark, and favicon
-styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, dialogs,
-                              and the project gallery
+index.html                    App shell, catalog, inspector, canvas rulers, dialogs, command palette, context
+                              menu, inline SVG brand mark, and favicon
+styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, cable runs,
+                              dialogs, the command palette, and the project gallery
 scripts/planner-engine.js     State, selection model, history, project storage and share links, sanitizer,
                               viewport zoom and pan, drag and selection-box engine, alignment, align,
-                              distribute and mirror, clipboard, reference guides, wall paint, collision
-                              checks, context menu, spec sheet with CSV export, and the Canvas 2D PNG
-                              renderer
+                              distribute, wall centering and mirror, clipboard, reference guides, wall paint,
+                              power routing, collision checks, context menu, command palette, spec sheet with
+                              CSV export, and the Canvas 2D PNG renderer
 tests/*.spec.js               Playwright end-to-end specs, one per feature area
 tests/support/                Fixtures, shared helpers, and the zero-dependency static server
 playwright.config.js          Chromium project, local web server, and CI reporters

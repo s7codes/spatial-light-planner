@@ -35,6 +35,19 @@
     display: none !important;
 }
 
+/* Read by screen readers, kept off screen */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 body {
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     /* Some UI fonts, Inter among them, swap the x in "300 x 250" for a multiplication sign through contextual alternates */
@@ -960,6 +973,9 @@ button:focus-visible {
     --door-line: rgba(148, 163, 184, 0.3);
     --window-glass: rgba(96, 165, 250, 0.12);
     --window-frame: #5b6576;
+    --power-color: #facc15;
+    --power-warn: #fb923c;
+    --power-text: #1f1600;
 }
 
 .wall.daylight-mode {
@@ -989,6 +1005,9 @@ button:focus-visible {
     --door-line: rgba(71, 85, 105, 0.32);
     --window-glass: rgba(59, 130, 246, 0.12);
     --window-frame: #94a3b8;
+    --power-color: #ca8a04;
+    --power-warn: #ea580c;
+    --power-text: #ffffff;
 }
 
 /* No z-index here on purpose, so items keep stacking against the glow and overlays */
@@ -1935,6 +1954,56 @@ body.is-selecting * {
     bottom: 3px;
 }
 
+/* Power routing. The layer has no z-index of its own, so its parts stack straight into the wall: the runs
+   at 1 under the items (2), which hide the stretch inside each item, and the length pills at 5 above them. */
+.power-routes {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.power-routes-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+    overflow: visible;
+}
+
+.power-route {
+    fill: none;
+    stroke: var(--power-color);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.power-route.is-long-run {
+    stroke: var(--power-warn);
+}
+
+.power-badge {
+    position: absolute;
+    z-index: 5;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background-color: var(--power-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    color: var(--power-text);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 14px;
+    white-space: nowrap;
+    transform: translate(-50%, -50%);
+}
+
+.power-badge.is-long-run {
+    background-color: var(--power-warn);
+    color: #fff;
+}
+
 /* Floating zoom control, frosted like the rulers. It sits outside #wall and pans with nothing. */
 .zoom-hud {
     position: absolute;
@@ -1982,6 +2051,18 @@ body.is-selecting * {
 .zoom-btn:disabled {
     opacity: 0.35;
     cursor: default;
+}
+
+.zoom-hud-divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 3px;
+    background-color: var(--hairline-strong);
+}
+
+.zoom-btn.command-trigger {
+    font-size: 11px;
+    letter-spacing: 0.02em;
 }
 
 /* Space held: the whole canvas becomes a grab handle, and a pan in progress shows the closed hand */
@@ -2301,6 +2382,23 @@ body.is-dragging-guide-x * {
 .led-toggle.is-on .led-toggle-thumb {
     transform: translateX(12px);
     background-color: #fff;
+}
+
+.power-toggle.is-on .led-toggle-track {
+    background-color: #facc15;
+    box-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
+}
+
+.power-summary {
+    margin-top: -2px;
+    font-size: 11px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.power-summary.is-warning {
+    color: #fb923c;
 }
 
 .rotate-btn {
@@ -2788,6 +2886,38 @@ body.is-dragging-guide-x * {
     font-variant-numeric: tabular-nums;
 }
 
+.center-wall-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.center-wall-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 4px;
+    font-size: 11px;
+}
+
+/* Two wall edges with a piece centered between them; the vertical glyph is the same one turned */
+.center-icon {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    background-repeat: no-repeat;
+    --bar: linear-gradient(currentColor, currentColor);
+    background-image: var(--bar), var(--bar), var(--bar);
+    background-size: 1.5px 12px, 1.5px 12px, 5px 6px;
+    background-position: 0 0, 10.5px 0, 3.5px 3px;
+}
+
+.center-icon.is-vertical {
+    transform: rotate(90deg);
+}
+
 .layer-buttons {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -3143,6 +3273,145 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 
 .projects-modal {
     width: min(720px, calc(100vw - 48px));
+}
+
+/* Hangs from the upper third like an editor's command bar rather than sitting in the middle */
+.command-modal {
+    width: min(560px, calc(100vw - 48px));
+    margin: 14vh auto auto;
+}
+
+.command-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--hairline);
+}
+
+/* A magnifier: a ring and a short handle drawn with one pseudo-element */
+.command-search-icon {
+    position: relative;
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border: 1.5px solid var(--text-faint);
+    border-radius: 50%;
+}
+
+.command-search-icon::after {
+    content: "";
+    position: absolute;
+    right: -4px;
+    bottom: -3px;
+    width: 5px;
+    height: 1.5px;
+    border-radius: 1px;
+    background-color: var(--text-faint);
+    transform: rotate(45deg);
+}
+
+.command-search-input {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    border: 0;
+    background-color: transparent;
+    color: var(--text-main);
+    font-size: 14px;
+}
+
+.command-search-input:focus {
+    outline: none;
+}
+
+.command-search-input::placeholder {
+    color: var(--text-faint);
+}
+
+.command-list {
+    max-height: min(380px, calc(100vh - 14vh - 160px));
+    padding: 6px;
+    overflow-y: auto;
+    list-style: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.command-group + .command-group {
+    margin-top: 4px;
+}
+
+.command-group-label {
+    display: block;
+    padding: 8px 10px 4px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+
+.command-group-items {
+    list-style: none;
+}
+
+.command-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12.5px;
+    cursor: pointer;
+}
+
+.command-item.is-active {
+    background-color: rgba(255, 255, 255, 0.07);
+    box-shadow: inset 2px 0 0 var(--accent-led);
+    color: var(--text-main);
+}
+
+.command-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.command-hint {
+    flex-shrink: 0;
+    color: var(--text-faint);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.command-empty {
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12.5px;
+}
+
+.command-footer {
+    display: flex;
+    gap: 16px;
+    padding: 9px 14px;
+    border-top: 1px solid var(--hairline);
+    background-color: rgba(255, 255, 255, 0.015);
+    color: var(--text-faint);
+    font-size: 11px;
+}
+
+.command-footer kbd,
+.command-esc {
+    min-width: 0;
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
 }
 
 .btn-accent {
