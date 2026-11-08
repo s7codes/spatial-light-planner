@@ -16,7 +16,8 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Lighting preview:** Per-item backlights, a corner floor lamp glow, RGB pickers, presets, and a master dimmer, with an Ambient Mode for night and a Daylight Grid for layout work.
 - **Editing workflow:** 30-step undo/redo, duplication, item locking, layer ordering, and three curated starter templates.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown), JSON export/import, and a 2x HiDPI PNG snapshot.
-- **Tested end to end:** 165 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
+- **Tested end to end:** 169 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -41,6 +42,16 @@ Glows are pure CSS. Each item's `::before` pseudo-element carries `box-shadow` l
 
 Per-item backlights toggle a `.led-off` class, and Daylight Grid mode hides every glow through a single selector.
 
+The same three properties tint the interface: the logo's gradient stops and light beam, the catalog thumbnails, the price tags, and the brightness track all follow the current preset without any JavaScript of their own.
+
+### Interface Design System
+The studio chrome is built from a small set of tokens on `:root`: layered obsidian surfaces (`--bg-app`, `--bg-panel`, `--bg-raised`, `--bg-inset`), `1px` hairlines at 7% white paired with a soft inset top highlight, `6px` and `8px` radii, and a single `160ms` ease-out curve for every transition.
+
+- **Topbar:** a `1fr auto 1fr` grid keeps the wall-size control on the same center line as the canvas. When the action cluster outgrows its half on a narrow screen, the grid hands it the extra room instead of letting the controls overlap.
+- **Catalog cards:** each card draws a miniature of its piece with CSS gradients keyed off `data-type`, so the catalog needs no images and stays in sync with the item finishes.
+- **Controls:** the layout toggles are native checkboxes drawn as small status lights, the finish picker is a segmented control with a swatch bar per finish, and the brightness slider fills its track from `--led-opacity`.
+- **Wall parity:** the wall surface, item finishes, and labels are untouched by the theme, and the wall only carries outer shadows, so the PNG export still matches the screen pixel for pixel.
+
 ### Collision Math
 Items are axis-aligned rectangles, so item-to-item overlap is a standard AABB test. The attic slope is a right triangle with side `S = 225 px` whose diagonal follows `y = x - (wallWidthPx - S)`.
 
@@ -60,7 +71,7 @@ History is a bounded stack of 30 serialized snapshots covering items (including 
 
 - Identical consecutive snapshots are dropped.
 - A new action after an undo truncates the redo branch.
-- Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size spinner clicks, become a single step.
+- Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size edits, become a single step.
 - A drag commits exactly one snapshot on `mouseup`, and only if the item moved.
 
 ### XSS-Safe JSON Schema Sanitizer
@@ -90,7 +101,9 @@ Item fills, borders, corner radii, drop shadows, and glow layers are read from e
 ### Accessibility
 - Both modals are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
 - Catalog entries are real buttons, so items can be mounted with `Enter` or `Space`.
-- Every button and input has a visible label, `aria-label`, or `title`, and buttons show a keyboard focus ring.
+- Every button and input has a visible label, `aria-label`, or `title`, and buttons show a keyboard focus ring. Icon-only buttons such as Undo and Redo carry an `aria-label`.
+- The restyled toggles are still native checkboxes, so they keep keyboard and screen reader support. Their focus ring wraps the whole chip.
+- Transitions and the dialog entrance animation are switched off under `prefers-reduced-motion`.
 - Inspector panel rebuilds hand keyboard focus back to the control that triggered them.
 
 ## Keyboard Shortcuts
@@ -134,7 +147,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 165 tests in 11 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 169 tests in 11 spec files, one per feature area.
 
 ```bash
 npm install
@@ -156,7 +169,7 @@ npm test
 | `templates` | All three templates: collision-free, on grid, labels inside the wall, one undo step |
 | `spec-sheet` | BOM grouping, drilling coordinates, Markdown export, clipboard fallback, dialog behavior |
 | `png-export` | 2x output size, finishes, glows, dimmer, daylight grid, attic slope, layer order |
-| `app-shell` | Zero failed requests, favicon, shortcuts guide, `Escape`, accessibility audit, responsive layout |
+| `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:
 
@@ -174,8 +187,8 @@ How the suite is built:
 ## Project Structure
 
 ```
-index.html                    App shell, catalog, inspector, dialogs, and inline SVG favicon
-styles/studio-workspace.css   Layout, finish themes, lighting layers, rulers, guides, and dialogs
+index.html                    App shell, catalog, inspector, dialogs, inline SVG brand mark, and favicon
+styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, and dialogs
 scripts/planner-engine.js     State, history, persistence, sanitizer, drag engine, alignment,
                               collision checks, spec sheet, and the Canvas 2D PNG renderer
 tests/*.spec.js               Playwright end-to-end specs, one per feature area
@@ -186,7 +199,7 @@ playwright.config.js          Chromium project, local web server, and CI reporte
 
 ## Browser Support
 
-Current versions of Chrome, Edge, Firefox, and Safari (15.4 or later, for the native `<dialog>` element). The automated suite runs in Chromium.
+Current versions of Chrome, Edge, Firefox, and Safari (15.4 or later, for the native `<dialog>` element). A few accent tints use `color-mix()` inside an `@supports` block, so older engines show the same layout with fixed tints of the default accent. The automated suite runs in Chromium.
 
 ## License
 

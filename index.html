@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="Plan shelving, framed art and ambient RGB lighting on a to-scale wall before drilling.">
     <title>Spatial & Ambient Light Planner</title>
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23181b22'/%3E%3Ccircle cx='32' cy='32' r='21' fill='none' stroke='%23ff9d42' stroke-opacity='0.35' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='11' fill='%23ff9d42'/%3E%3C/svg%3E">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ff9d42'/%3E%3Cstop offset='1' stop-color='%238b5cf6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='%2311141b'/%3E%3Cpath d='M16 3.5 L27 9 L27 22 L16 27.5 L5 22 L5 9 Z' fill='none' stroke='%23ffffff' stroke-opacity='0.3' stroke-width='1.6'/%3E%3Cpath d='M16 3.5 L16 27.5 M5 9 L16 15.25 L27 9 M5 22 L16 15.25 L27 22' fill='none' stroke='%23ffffff' stroke-opacity='0.42' stroke-width='1.1'/%3E%3Cpolygon points='10,13.75 16,10.75 22,13.75 16,16.75' fill='url(%23g)'/%3E%3Cpath d='M16 10.25 L16 21.75' stroke='%23ff9d42' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='15.25' r='1.7' fill='%23ffffff'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="styles/studio-workspace.css">
     <script src="scripts/planner-engine.js" defer></script>
 </head>
@@ -13,31 +13,51 @@
 
     <header class="topbar">
         <div class="logo">
-            <span class="logo-dot"></span>
-            <h1>Spatial Studio <span class="badge">v1.0</span></h1>
+            <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+                <defs>
+                    <linearGradient id="logo-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" class="logo-stop-accent" />
+                        <stop offset="100%" class="logo-stop-corner" />
+                    </linearGradient>
+                </defs>
+                <path d="M16 2 L28 8 L28 22 L16 28 L4 22 L4 8 Z" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" />
+                <path d="M16 2 L16 28 M4 8 L16 15 L28 8 M4 22 L16 15 L28 22" fill="none" stroke="rgba(255,255,255,0.28)" stroke-width="1" />
+                <polygon points="10,13.5 16,10.5 22,13.5 16,16.5" fill="url(#logo-glow)" opacity="0.9" />
+                <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
+                <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
+            </svg>
+            <h1>Spatial Studio <span class="badge">v1.1</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
             <span class="wall-dim-label">Wall</span>
-            <input type="number" id="wall-width-input" class="wall-dim-input" min="150" max="400" step="1" value="300" aria-label="Wall width in cm" title="Wall width (150-400 cm)">
-            <span>x</span>
-            <input type="number" id="wall-height-input" class="wall-dim-input" min="150" max="300" step="1" value="250" aria-label="Wall height in cm" title="Wall height (150-300 cm)">
-            <span>cm</span>
+            <span class="wall-dim-fields">
+                <input type="number" id="wall-width-input" class="wall-dim-input" min="150" max="400" step="1" value="300" aria-label="Wall width in cm" title="Wall width (150-400 cm)">
+                <span class="wall-dim-sep">x</span>
+                <input type="number" id="wall-height-input" class="wall-dim-input" min="150" max="300" step="1" value="250" aria-label="Wall height in cm" title="Wall height (150-300 cm)">
+                <span class="wall-dim-unit">cm</span>
+            </span>
             <span id="scale-note" class="scale-note">(1 cm = 2.5 px)</span>
         </div>
 
         <div class="actions">
-            <label class="topbar-toggle" title="Snap drag positions to a 5 cm grid">
-                <input type="checkbox" id="snap-grid-toggle">
-                <span>Snap 5cm</span>
-            </label>
-            <label class="topbar-toggle" title="Show the 90 x 90 cm sloped ceiling and check items against it">
-                <input type="checkbox" id="attic-slope-toggle">
-                <span>Attic Slope</span>
-            </label>
+            <div class="toggle-group" role="group" aria-label="Layout aids">
+                <label class="topbar-toggle" title="Snap drag positions to a 5 cm grid">
+                    <input type="checkbox" id="snap-grid-toggle">
+                    <span>Snap 5cm</span>
+                </label>
+                <label class="topbar-toggle" title="Show the 90 x 90 cm sloped ceiling and check items against it">
+                    <input type="checkbox" id="attic-slope-toggle">
+                    <span>Attic Slope</span>
+                </label>
+            </div>
             <div class="btn-group" role="group" aria-label="History">
-                <button id="undo-btn" class="btn-secondary" title="Undo (Ctrl+Z)" disabled>Undo</button>
-                <button id="redo-btn" class="btn-secondary" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
+                <button id="undo-btn" class="btn-secondary btn-icon" aria-label="Undo" title="Undo (Ctrl+Z)" disabled>
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M6 3.5 2.5 7 6 10.5" /><path d="M3 7h6.5a3.5 3.5 0 0 1 0 7H8" /></svg>
+                </button>
+                <button id="redo-btn" class="btn-secondary btn-icon" aria-label="Redo" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>
+                    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3.5 13.5 7 10 10.5" /><path d="M13 7H6.5a3.5 3.5 0 0 0 0 7H8" /></svg>
+                </button>
             </div>
             <button id="reset-wall-btn" class="btn-secondary" title="Reset wall size, layout and lighting to the defaults">Reset Layout</button>
             <button id="theme-toggle-btn" class="btn-ambient" title="Switch between Ambient Mode and the Daylight Grid">
@@ -202,9 +222,9 @@
                 <div class="control-group">
                     <label>Presets</label>
                     <div class="preset-buttons">
-                        <button class="btn-preset" data-accent="#ff9d42" data-corner="#8b5cf6" title="Apply the Warm Walnut lighting preset">Warm Walnut</button>
-                        <button class="btn-preset" data-accent="#00f2fe" data-corner="#ff0844" title="Apply the Neon Contrast lighting preset">Neon Contrast</button>
-                        <button class="btn-preset" data-accent="#38ef7d" data-corner="#11998e" title="Apply the Soft Green lighting preset">Soft Green</button>
+                        <button class="btn-preset" data-accent="#ff9d42" data-corner="#8b5cf6" style="--preset-accent: #ff9d42; --preset-corner: #8b5cf6;" title="Apply the Warm Walnut lighting preset">Warm Walnut</button>
+                        <button class="btn-preset" data-accent="#00f2fe" data-corner="#ff0844" style="--preset-accent: #00f2fe; --preset-corner: #ff0844;" title="Apply the Neon Contrast lighting preset">Neon Contrast</button>
+                        <button class="btn-preset" data-accent="#38ef7d" data-corner="#11998e" style="--preset-accent: #38ef7d; --preset-corner: #11998e;" title="Apply the Soft Green lighting preset">Soft Green</button>
                     </div>
                 </div>
             </div>

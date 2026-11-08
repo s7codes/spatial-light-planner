@@ -67,6 +67,31 @@ test.describe('page shell', () => {
     expect(icon.inline).toBe(true);
     expect(icon.width).toBeGreaterThan(0);
   });
+
+  test('the logo mark follows the live lighting colors', async ({ page }) => {
+    const logoColors = () =>
+      page.evaluate(() => {
+        const read = (selector, property) => getComputedStyle(document.querySelector(selector))[property];
+        return {
+          accentStop: read('.logo-stop-accent', 'stopColor'),
+          cornerStop: read('.logo-stop-corner', 'stopColor'),
+          beam: read('.logo-beam', 'stroke'),
+        };
+      });
+    expect(await logoColors()).toEqual({
+      accentStop: 'rgb(255, 157, 66)',
+      cornerStop: 'rgb(139, 92, 246)',
+      beam: 'rgb(255, 157, 66)',
+    });
+
+    await page.getByRole('button', { name: 'Neon Contrast' }).click();
+
+    expect(await logoColors()).toEqual({
+      accentStop: 'rgb(0, 242, 254)',
+      cornerStop: 'rgb(255, 8, 68)',
+      beam: 'rgb(0, 242, 254)',
+    });
+  });
 });
 
 test.describe('keyboard shortcuts guide', () => {
@@ -245,7 +270,41 @@ test.describe('accessibility', () => {
   });
 });
 
+const topbarBoxes = (page) =>
+  page.evaluate(() => {
+    const box = (selector) => {
+      const { left, right } = document.querySelector(selector).getBoundingClientRect();
+      return { left, right, center: (left + right) / 2 };
+    };
+    return {
+      logo: box('.logo'),
+      dimensions: box('.wall-dimensions-display'),
+      actions: box('.actions'),
+      canvas: box('.canvas-area'),
+    };
+  });
+
 test.describe('responsive layout', () => {
+  // Wide enough for any fallback UI font, so the check does not depend on the fonts a CI runner has
+  for (const width of [1600, 1920]) {
+    test(`the wall size control sits on the canvas center line at ${width} px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+
+      const { dimensions, canvas } = await topbarBoxes(page);
+      expect(Math.abs(dimensions.center - canvas.center)).toBeLessThanOrEqual(1);
+    });
+  }
+
+  test('a narrow topbar gives the actions room instead of overlapping the wall size control', async ({ page }) => {
+    await loadLayout(page, { wallWidthCm: 400, wallHeightCm: 300, items: [] });
+    await page.setViewportSize({ width: 1300, height: 700 });
+    await nextFrame(page);
+
+    const { logo, dimensions, actions } = await topbarBoxes(page);
+    expect(logo.right).toBeLessThanOrEqual(dimensions.left);
+    expect(dimensions.right).toBeLessThanOrEqual(actions.left);
+  });
+
   for (const width of [1300, 1400, 1440]) {
     test(`the topbar fits at ${width} px, even with the fit note showing`, async ({ page }) => {
       await loadLayout(page, { wallWidthCm: 400, wallHeightCm: 300, items: [] });
