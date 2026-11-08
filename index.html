@@ -26,7 +26,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v1.5</span></h1>
+            <h1>Spatial Studio <span class="badge">v1.6</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -59,6 +59,7 @@
                     <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M10 3.5 13.5 7 10 10.5" /><path d="M13 7H6.5a3.5 3.5 0 0 0 0 7H8" /></svg>
                 </button>
             </div>
+            <button type="button" id="projects-btn" class="btn-secondary" title="My Projects: save, open, rename and delete layouts">Projects</button>
             <button id="reset-wall-btn" class="btn-secondary" title="Reset wall size, layout and lighting to the defaults">Reset Layout</button>
             <button id="theme-toggle-btn" class="btn-ambient" title="Switch between Ambient Mode and the Daylight Grid">
                 Ambient Mode: ON
@@ -203,6 +204,20 @@
 
                 <div class="corner-led-glow"></div>
             </div>
+
+            <div class="canvas-rulers" aria-hidden="true">
+                <div id="ruler-corner" class="ruler-corner">cm</div>
+                <div id="ruler-x" class="canvas-ruler ruler-x">
+                    <div class="ruler-scale"></div>
+                    <div class="ruler-span" hidden></div>
+                    <div class="ruler-hairline" hidden><span class="ruler-readout"></span></div>
+                </div>
+                <div id="ruler-y" class="canvas-ruler ruler-y">
+                    <div class="ruler-scale"></div>
+                    <div class="ruler-span" hidden></div>
+                    <div class="ruler-hairline" hidden><span class="ruler-readout"></span></div>
+                </div>
+            </div>
         </section>
 
         <!-- Inspector & Lighting Sidebar -->
@@ -278,6 +293,7 @@
                 </div>
                 <div class="modal-actions">
                     <button type="button" id="copy-markdown-btn" class="btn-secondary" title="Copy both tables as Markdown">Copy as Markdown</button>
+                    <button type="button" id="export-csv-btn" class="btn-secondary" title="Download both tables as a CSV file for spreadsheets">Export CSV</button>
                     <button type="button" id="close-spec-btn" class="btn-secondary">Close</button>
                 </div>
             </header>
@@ -399,6 +415,33 @@
                         ungroups it. Double-click a grouped item to pick it on its own, or a text note to edit it.
                     </p>
                 </div>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="projects-modal" class="app-modal projects-modal" aria-labelledby="projects-modal-title">
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2 id="projects-modal-title">My Projects</h2>
+                    <p id="projects-subtitle" class="modal-subtitle"></p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="close-projects-btn" class="btn-secondary">Close</button>
+                </div>
+            </header>
+
+            <div class="modal-body">
+                <form id="new-project-form" class="new-project">
+                    <label for="new-project-name">Save the current wall as a new project</label>
+                    <div class="new-project-row">
+                        <input type="text" id="new-project-name" class="new-project-input" maxlength="60" placeholder="Living room wall" autocomplete="off">
+                        <button type="submit" id="save-project-btn" class="btn-accent">Save as New Project</button>
+                    </div>
+                    <p id="project-limit-note" class="project-limit-note" hidden>That is the limit of 24 projects. Delete one to save another.</p>
+                </form>
+
+                <ul id="project-list" class="project-list" aria-label="Saved projects"></ul>
             </div>
         </div>
     </dialog>

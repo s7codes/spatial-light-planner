@@ -15,9 +15,17 @@ const WALL_HEIGHT_LIMITS_CM = [150, 300];
 const WALL_BORDER_PX = 2; // keep in sync with the .wall border
 const CANVAS_PADDING_PX = 24;
 
-const STORAGE_KEY = 'spatial_studio_state_v1';
+// Before v1.6 a single layout lived under the legacy key. Projects now keep a small index plus one
+// key per layout, so autosave only ever rewrites the layout that is open.
+const LEGACY_STORAGE_KEY = 'spatial_studio_state_v1';
+const PROJECT_INDEX_KEY = 'spatial_studio_projects_v1';
+const PROJECT_LAYOUT_PREFIX = 'spatial_studio_project_v1_';
+const PROJECT_ID_PATTERN = /^project-[a-z0-9-]{1,40}$/i;
+const MAX_PROJECTS = 24;
+const PROJECT_NAME_LENGTH = 60;
 const EXPORT_VERSION = '1.5';
 const EXPORT_FILENAME = 'spatial-studio-layout.json';
+const CSV_FILENAME = 'spatial-studio-specs.csv';
 const PNG_FILENAME = 'spatial-studio-plan.png';
 const PNG_PIXEL_RATIO = 2;
 const SHADOW_SHIFT_PX = 10000;
@@ -27,6 +35,12 @@ const WALL_FILL = { ambient: '#1c1f26', daylight: '#e5e7eb' };
 const DAYLIGHT_GRID_PX = 10 * SCALE;
 
 const COPY_LABEL = 'Copy as Markdown';
+const CSV_LABEL = 'Export CSV';
+const RULER_SIZE_PX = 16;
+const RULER_GAP_PX = 4;
+const RULER_TICK_CM = 10;
+const RULER_LABEL_CM = 50;
+const RULER_LABEL_ROOM_PX = 24;
 const MOUNTING_NOTE = "Distances in cm from the left wall edge, the ceiling, and the floor to the item's left, top, and bottom edges.";
 const LOCK_ICON_HTML = '<span class="lock-icon" aria-hidden="true"></span>';
 
@@ -119,10 +133,25 @@ const closeSpecBtn = document.getElementById('close-spec-btn');
 
 const shortcutsBtn = document.getElementById('shortcuts-btn');
 const shortcutsModal = document.getElementById('shortcuts-modal');
+const exportCsvBtn = document.getElementById('export-csv-btn');
+
+const projectsBtn = document.getElementById('projects-btn');
+const projectsModal = document.getElementById('projects-modal');
+const projectsSubtitle = document.getElementById('projects-subtitle');
+const projectList = document.getElementById('project-list');
+const newProjectForm = document.getElementById('new-project-form');
+const newProjectName = document.getElementById('new-project-name');
+const saveProjectBtn = document.getElementById('save-project-btn');
+const projectLimitNote = document.getElementById('project-limit-note');
+const closeProjectsBtn = document.getElementById('close-projects-btn');
+
+const rulerX = document.getElementById('ruler-x');
+const rulerY = document.getElementById('ruler-y');
+const rulerCorner = document.getElementById('ruler-corner');
 const closeShortcutsBtn = document.getElementById('close-shortcuts-btn');
 const templateButtons = document.querySelectorAll('.template-btn');
 
-const isModalOpen = () => specModal.open || shortcutsModal.open;
+const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open;
 
 const accentColorPicker = document.getElementById('accent-color-picker');
 const accentHexCode = document.getElementById('accent-hex-code');
@@ -222,14 +251,19 @@ let wallClickGuard = 0;
 let suppressAltMenu = false;
 let idCounter = 0;
 let ioStatusTimer = 0;
-let fitFrame = 0;
 let copyLabelTimer = 0;
+let csvLabelTimer = 0;
+
+// Index entries are { id, name, timestamp }; each layout sits in storage under its own key
+let projects = [];
+let activeProjectId = null;
 
 let wallWidthCm = DEFAULT_WALL_WIDTH_CM;
 let wallHeightCm = DEFAULT_WALL_HEIGHT_CM;
 let wallWidthPx = wallWidthCm * SCALE;
 let wallHeightPx = wallHeightCm * SCALE;
 let viewScale = 1;
+let fittedCanvasSize = '';
 
 let labelMetrics = { single: 34, digit: 6, height: 18 };
 let itemLabelSizes = new Map();
@@ -388,6 +422,7 @@ function setWallDimensions(widthCm, heightCm) {
 }
 
 function fitWallToViewport() {
+    fittedCanvasSize = `${canvasArea.clientWidth}x${canvasArea.clientHeight}`;
     const availableWidth = canvasArea.clientWidth - CANVAS_PADDING_PX * 2;
     const availableHeight = canvasArea.clientHeight - CANVAS_PADDING_PX * 2;
     const fit = Math.min(
@@ -415,7 +450,108 @@ function fitWallToViewport() {
     if (catalogDrag.active) {
         catalogDrag.canvasRect = canvasArea.getBoundingClientRect();
     }
+    layoutRulers();
 }
+
+// Edge rulers live in the canvas padding, outside #wall, so they never touch the wall's bounding box
+// or the drag math. Their origin is the wall's content corner in screen space, cached at each fit.
+const rulerOrigin = { left: 0, top: 0 };
+const crosshair = { clientX: 0, clientY: 0, frameId: 0, over: false };
+
+function rulerMarkup(lengthCm, axis) {
+    const position = axis === 'x' ? 'left' : 'top';
+    const marks = [];
+    for (let cm = 0; cm <= lengthCm; cm += RULER_TICK_CM) {
+        const offset = cm * SCALE * viewScale;
+        const major = cm % RULER_LABEL_CM === 0;
+        marks.push(`<span class="ruler-tick${major ? ' is-major' : ''}" style="${position}: ${offset}px"></span>`);
+        // A label with no room left before the far end would be clipped, so it sits before its tick instead
+        if (major) {
+            const end = cm > 0 && (lengthCm - cm) * SCALE * viewScale < RULER_LABEL_ROOM_PX ? ' is-end' : '';
+            marks.push(`<span class="ruler-label${end}" style="${position}: ${offset}px">${cm}</span>`);
+        }
+    }
+    return marks.join('');
+}
+
+function layoutRulers() {
+    const canvasRect = canvasArea.getBoundingClientRect();
+    const wallRect = wallCanvas.getBoundingClientRect();
+    const border = WALL_BORDER_PX * viewScale;
+    const left = wallRect.left + border - canvasRect.left;
+    const top = wallRect.top + border - canvasRect.top;
+    const offset = border + RULER_GAP_PX + RULER_SIZE_PX;
+
+    rulerOrigin.left = wallRect.left + border;
+    rulerOrigin.top = wallRect.top + border;
+
+    Object.assign(rulerX.style, {
+        left: `${left}px`, top: `${top - offset}px`, width: `${wallWidthPx * viewScale}px`, height: `${RULER_SIZE_PX}px`
+    });
+    Object.assign(rulerY.style, {
+        left: `${left - offset}px`, top: `${top}px`, width: `${RULER_SIZE_PX}px`, height: `${wallHeightPx * viewScale}px`
+    });
+    Object.assign(rulerCorner.style, {
+        left: `${left - offset}px`, top: `${top - offset}px`, width: `${RULER_SIZE_PX}px`, height: `${RULER_SIZE_PX}px`
+    });
+    rulerX.querySelector('.ruler-scale').innerHTML = rulerMarkup(wallWidthCm, 'x');
+    rulerY.querySelector('.ruler-scale').innerHTML = rulerMarkup(wallHeightCm, 'y');
+    syncRulerSpans();
+    applyCrosshair();
+}
+
+// The selected box is shaded on both rulers, the way CAD tools mark a selection's extent
+function syncRulerSpans() {
+    const selected = getSelectedItems();
+    const spanX = rulerX.querySelector('.ruler-span');
+    const spanY = rulerY.querySelector('.ruler-span');
+    spanX.hidden = spanY.hidden = !selected.length;
+    if (!selected.length) return;
+
+    const box = selected.length === 1 ? selected[0] : getBounds(selected);
+    spanX.style.left = `${box.left * viewScale}px`;
+    spanX.style.width = `${box.width * viewScale}px`;
+    spanY.style.top = `${box.top * viewScale}px`;
+    spanY.style.height = `${box.height * viewScale}px`;
+}
+
+function applyCrosshair() {
+    crosshair.frameId = 0;
+    const hairX = rulerX.querySelector('.ruler-hairline');
+    const hairY = rulerY.querySelector('.ruler-hairline');
+    const x = (crosshair.clientX - rulerOrigin.left) / viewScale;
+    const y = (crosshair.clientY - rulerOrigin.top) / viewScale;
+    const inside = crosshair.over && !isModalOpen() && x >= 0 && y >= 0 && x <= wallWidthPx && y <= wallHeightPx;
+
+    hairX.hidden = hairY.hidden = !inside;
+    if (!inside) return;
+
+    hairX.style.transform = `translateX(${x * viewScale}px)`;
+    hairY.style.transform = `translateY(${y * viewScale}px)`;
+    hairX.firstElementChild.textContent = Math.round(x / SCALE);
+    hairY.firstElementChild.textContent = Math.round(y / SCALE);
+    // Readouts flip to the inner side near the far end so they are never clipped by the ruler
+    hairX.classList.toggle('is-flipped', x > wallWidthPx - 40 / viewScale);
+    hairY.classList.toggle('is-flipped', y > wallHeightPx - 40 / viewScale);
+}
+
+window.addEventListener('mousemove', (e) => {
+    crosshair.clientX = e.clientX;
+    crosshair.clientY = e.clientY;
+    crosshair.over = true;
+    if (!crosshair.frameId) crosshair.frameId = requestAnimationFrame(applyCrosshair);
+});
+
+document.documentElement.addEventListener('mouseleave', () => {
+    crosshair.over = false;
+    applyCrosshair();
+});
+
+// The window, late fonts or panel changes can all resize the canvas, so its size is watched directly.
+// The observer also reports once at startup, after boot has already fitted that same size.
+new ResizeObserver(() => {
+    if (`${canvasArea.clientWidth}x${canvasArea.clientHeight}` !== fittedCanvasSize) fitWallToViewport();
+}).observe(canvasArea);
 
 // Items larger than a shrunken wall are cut down to fit, then everything is pushed back inside
 function clampItemsToWall() {
@@ -427,17 +563,113 @@ function clampItemsToWall() {
     });
 }
 
+// Storage can be full, blocked or switched off; the planner keeps working in memory either way
+function storageGet(key) {
+    try {
+        return localStorage.getItem(key);
+    } catch {
+        return null;
+    }
+}
+
+function storageSet(key, value) {
+    try {
+        localStorage.setItem(key, value);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function storageRemove(key) {
+    try {
+        localStorage.removeItem(key);
+    } catch {
+        // Nothing left to clean up when storage is unavailable
+    }
+}
+
+const currentLayoutData = () => ({
+    items: wallItems,
+    wallWidthCm,
+    wallHeightCm,
+    accentColor: accentColorPicker.value,
+    cornerColor: cornerColorPicker.value,
+    brightness: brightnessSlider.value,
+    atticSlope: atticSlopeToggle.checked
+});
+
+const activeProject = () => projects.find(project => project.id === activeProjectId);
+const createProjectId = () => `project-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
+const cleanProjectName = (raw, fallback) => (typeof raw === 'string' && raw.trim()
+    ? raw.trim().replace(/\s+/g, ' ').slice(0, PROJECT_NAME_LENGTH)
+    : fallback);
+
+const writeProjectIndex = () =>
+    storageSet(PROJECT_INDEX_KEY, JSON.stringify({ activeId: activeProjectId, projects }));
+const writeProjectLayout = (id, layout = currentLayoutData()) =>
+    storageSet(PROJECT_LAYOUT_PREFIX + id, JSON.stringify(layout));
+
+function readProjectLayout(id) {
+    try {
+        return JSON.parse(storageGet(PROJECT_LAYOUT_PREFIX + id));
+    } catch {
+        return null;
+    }
+}
+
 function saveState() {
-    const payload = {
-        items: wallItems,
-        wallWidthCm,
-        wallHeightCm,
-        accentColor: accentColorPicker.value,
-        cornerColor: cornerColorPicker.value,
-        brightness: brightnessSlider.value,
-        atticSlope: atticSlopeToggle.checked
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    const project = activeProject();
+    if (!project) return;
+
+    project.timestamp = Date.now();
+    if (!writeProjectLayout(project.id) || !writeProjectIndex()) {
+        showIoStatus('Could not save: browser storage is full or blocked.', 'error');
+    }
+}
+
+function readProjectIndex() {
+    let data;
+    try {
+        data = JSON.parse(storageGet(PROJECT_INDEX_KEY));
+    } catch {
+        return null;
+    }
+    if (!data || !Array.isArray(data.projects)) return null;
+
+    const seen = new Set();
+    const list = [];
+    data.projects.forEach(entry => {
+        if (!entry || !PROJECT_ID_PATTERN.test(entry.id) || seen.has(entry.id) || list.length >= MAX_PROJECTS) return;
+        seen.add(entry.id);
+        list.push({
+            id: entry.id,
+            name: cleanProjectName(entry.name, 'Untitled Project'),
+            timestamp: toFiniteNumber(entry.timestamp) ?? Date.now()
+        });
+    });
+    return { activeId: typeof data.activeId === 'string' ? data.activeId : null, projects: list };
+}
+
+// The first boot after the upgrade keeps the old single save as the Default Project. A later leftover
+// under the legacy key, or one that no longer parses, is simply dropped.
+function migrateLegacyState() {
+    const raw = storageGet(LEGACY_STORAGE_KEY);
+    if (raw === null) return;
+
+    if (!projects.length) {
+        try {
+            normalizeLayout(JSON.parse(raw));
+            const project = { id: createProjectId(), name: 'Default Project', timestamp: Date.now() };
+            if (storageSet(PROJECT_LAYOUT_PREFIX + project.id, raw)) {
+                projects.push(project);
+                activeProjectId = project.id;
+            }
+        } catch {
+            // A corrupt single save is discarded and the planner starts from the starter layout
+        }
+    }
+    storageRemove(LEGACY_STORAGE_KEY);
 }
 
 function toFiniteNumber(value) {
@@ -583,19 +815,41 @@ function applyLayoutSettings(layout) {
     if (layout.brightness !== null) setBrightness(layout.brightness);
 }
 
-function loadState() {
+function applyDefaultLayout() {
     setWallDimensions(DEFAULT_WALL_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM);
-    atticSlopeToggle.checked = false;
     wallItems = cloneDefaults();
+    atticSlopeToggle.checked = false;
+    updateAccentColor('#ff9d42', false);
+    updateCornerColor('#8b5cf6', false);
+    setBrightness(100);
+}
 
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
+// A layout that is missing or fails validation leaves the starter layout in place
+function applyProjectLayout(data) {
+    applyDefaultLayout();
+    if (!data) return;
 
     try {
-        applyLayoutSettings(normalizeLayout(JSON.parse(raw)));
+        applyLayoutSettings(normalizeLayout(data));
     } catch {
         wallItems = cloneDefaults();
     }
+}
+
+function loadState() {
+    const index = readProjectIndex();
+    projects = index ? index.projects : [];
+    activeProjectId = index ? index.activeId : null;
+    migrateLegacyState();
+
+    if (!projects.length) projects.push({ id: createProjectId(), name: 'Default Project', timestamp: Date.now() });
+    if (!activeProject()) activeProjectId = [...projects].sort((a, b) => b.timestamp - a.timestamp)[0].id;
+
+    applyProjectLayout(readProjectLayout(activeProjectId));
+    // Opening a project is not an edit, so its timestamp stays as it was
+    writeProjectLayout(activeProjectId);
+    writeProjectIndex();
+    syncProjectsButton();
 }
 
 const serializeHistoryState = () => JSON.stringify({
@@ -1205,6 +1459,7 @@ function syncPositions(members) {
 
 function syncSelectionBounds() {
     const selected = getSelectedItems();
+    syncRulerSpans();
     selectionBounds.hidden = selected.length < 2;
     if (selected.length < 2) return;
 
@@ -1256,6 +1511,7 @@ function syncItemSize(item, el) {
     updateDistanceGuides();
     updateInspectorLive();
     syncInspectorSize(item);
+    syncRulerSpans();
 }
 
 function startResize(e) {
@@ -3084,13 +3340,8 @@ wallWidthInput.addEventListener('change', handleWallResize);
 wallHeightInput.addEventListener('change', handleWallResize);
 
 resetWallBtn.addEventListener('click', () => {
-    setWallDimensions(DEFAULT_WALL_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM);
-    wallItems = cloneDefaults();
+    applyDefaultLayout();
     selectedItemIds = [];
-    atticSlopeToggle.checked = false;
-    updateAccentColor('#ff9d42', false);
-    updateCornerColor('#8b5cf6', false);
-    setBrightness(100);
     renderPlanner();
     applyAtticSlope();
     updateInspectorPanel();
@@ -3225,6 +3476,8 @@ function buildMountingRows() {
             return {
                 name: item.name,
                 size: `${toCm(item.width)} x ${heightCm} cm`,
+                widthCm: toCm(item.width),
+                heightCm,
                 left: toCm(item.left),
                 top: topCm,
                 floor: wallHeightCm - topCm - heightCm
@@ -3343,14 +3596,270 @@ function openSpecSheet() {
     if (isModalOpen() || isPointerBusy()) return;
 
     clearTimeout(copyLabelTimer);
+    clearTimeout(csvLabelTimer);
     copyMarkdownBtn.textContent = COPY_LABEL;
+    exportCsvBtn.textContent = CSV_LABEL;
     renderSpecSheet();
     specModal.showModal();
+}
+
+// RFC 4180: a field holding a comma, quote or line break is quoted and its quotes are doubled.
+// Text that starts like a formula gets a leading apostrophe so a spreadsheet shows it instead of running it.
+function csvField(value) {
+    let text = String(value);
+    if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+const csvRow = (cells) => cells.map(csvField).join(',');
+
+function buildSpecCsv() {
+    const count = furnitureItems().length;
+    const lines = [
+        csvRow(['Spatial Studio Spec Sheet']),
+        csvRow(['Wall (cm)', `${wallWidthCm} x ${wallHeightCm}`]),
+        '',
+        csvRow(['Bill of Materials']),
+        csvRow(['Item', 'Width (cm)', 'Height (cm)', 'Finish', 'Qty', 'Unit Price (USD)', 'Subtotal (USD)']),
+        ...buildBomRows().map(row => csvRow([
+            row.name, row.widthCm, row.heightCm, finishLabel(row.finish), row.qty,
+            row.price.toFixed(2), (row.price * row.qty).toFixed(2)
+        ])),
+        csvRow(['Total', '', '', '', count, '', totalPrice().toFixed(2)]),
+        '',
+        csvRow(['Mounting & Drilling Coordinates']),
+        csvRow(['Item', 'Width (cm)', 'Height (cm)', 'From Left (cm)', 'From Ceiling (cm)', 'From Floor (cm)']),
+        ...buildMountingRows().map(row => csvRow([row.name, row.widthCm, row.heightCm, row.left, row.top, row.floor]))
+    ];
+    return `${lines.join('\r\n')}\r\n`;
+}
+
+function flashCsvLabel(text) {
+    clearTimeout(csvLabelTimer);
+    exportCsvBtn.textContent = text;
+    csvLabelTimer = setTimeout(() => { exportCsvBtn.textContent = CSV_LABEL; }, 2000);
+}
+
+// The byte order mark lets spreadsheet apps read item names as UTF-8
+function exportSpecCsv() {
+    downloadBlob(new Blob(['\ufeff', buildSpecCsv()], { type: 'text/csv;charset=utf-8' }), CSV_FILENAME);
+    flashCsvLabel('Downloaded!');
 }
 
 viewSpecBtn.addEventListener('click', openSpecSheet);
 closeSpecBtn.addEventListener('click', () => specModal.close());
 copyMarkdownBtn.addEventListener('click', copySpecMarkdown);
+exportCsvBtn.addEventListener('click', exportSpecCsv);
+
+// Project gallery. Cards are listed most recently edited first; the open project cannot be deleted,
+// so there is always one project for autosave to write to.
+const PROJECT_DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+});
+const THUMB_COLORS = {
+    walnut: '#8b5a2b', oak: '#c89d66', black: '#525a66', white: '#e5e7eb',
+    socket: '#d3d8e0', door: 'rgba(148, 163, 184, 0.4)', window: 'rgba(96, 165, 250, 0.45)', note: '#fde68a'
+};
+
+// The open project is read from the live wall; the others from storage, through the usual sanitizer
+function projectLayout(project) {
+    const data = project.id === activeProjectId ? currentLayoutData() : readProjectLayout(project.id);
+    try {
+        return normalizeLayout(data || {});
+    } catch {
+        return null;
+    }
+}
+
+function projectThumbHtml(layout) {
+    if (!layout) return '<span class="project-thumb is-empty" aria-hidden="true"></span>';
+    const width = layout.wallWidthCm * SCALE;
+    const height = layout.wallHeightCm * SCALE;
+    const rects = layout.items.filter(item => !item.hidden).map(item => `
+        <rect x="${item.left}" y="${item.top}" width="${item.width}" height="${item.height}" rx="3"
+              fill="${THUMB_COLORS[isFeature(item) ? item.type : item.finish] || THUMB_COLORS.walnut}" />`).join('');
+    return `
+        <svg class="project-thumb" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <rect class="project-thumb-wall" width="${width}" height="${height}" />${rects}
+        </svg>`;
+}
+
+function projectCardHtml(project) {
+    const layout = projectLayout(project);
+    const current = project.id === activeProjectId;
+    const name = escapeHtml(project.name);
+    const count = layout ? layout.items.length : 0;
+    const details = layout
+        ? ` | ${count} item${count === 1 ? '' : 's'} | ${layout.wallWidthCm} x ${layout.wallHeightCm} cm`
+        : ' | Unreadable layout';
+    return `
+        <li class="project-card${current ? ' is-current' : ''}" data-project-id="${project.id}">
+            ${projectThumbHtml(layout)}
+            <div class="project-info">
+                <div class="project-title">
+                    <span class="project-name">${name}</span>
+                    ${current ? '<span class="project-badge">Open</span>' : ''}
+                </div>
+                <span class="project-meta">Edited ${PROJECT_DATE_FORMAT.format(project.timestamp)}${details}</span>
+            </div>
+            <div class="project-actions">
+                <button type="button" class="btn-secondary" data-action="load" aria-label="Load ${name}" ${current ? 'disabled' : ''}>Load</button>
+                <button type="button" class="btn-secondary" data-action="rename" aria-label="Rename ${name}">Rename</button>
+                <button type="button" class="btn-danger" data-action="delete" aria-label="Delete ${name}" ${current ? 'disabled title="The open project cannot be deleted"' : ''}>Delete</button>
+            </div>
+        </li>`;
+}
+
+function renderProjects() {
+    // Reversed first so that two saves within the same millisecond still list the newer one on top
+    const sorted = [...projects].reverse().sort((a, b) => b.timestamp - a.timestamp);
+    const full = projects.length >= MAX_PROJECTS;
+    projectList.innerHTML = sorted.map(projectCardHtml).join('');
+    projectsSubtitle.textContent = `${projects.length} saved project${projects.length === 1 ? '' : 's'}. Changes save to the open project automatically.`;
+    saveProjectBtn.disabled = full;
+    newProjectName.disabled = full;
+    projectLimitNote.hidden = !full;
+    syncProjectsButton();
+}
+
+const syncProjectsButton = () => { projectsBtn.title = `My Projects (open: ${activeProject().name})`; };
+
+function saveAsNewProject() {
+    if (projects.length >= MAX_PROJECTS) return;
+
+    const project = {
+        id: createProjectId(),
+        name: cleanProjectName(newProjectName.value, `Project ${projects.length + 1}`),
+        timestamp: Date.now()
+    };
+    projects.push(project);
+    activeProjectId = project.id;
+    saveState();
+    newProjectName.value = '';
+    renderProjects();
+    showIoStatus(`Saved as ${project.name}.`, 'success');
+}
+
+// Each project keeps its own undo history, so switching starts a fresh one
+function openProject(id) {
+    const project = projects.find(entry => entry.id === id);
+    if (!project || id === activeProjectId || isPointerBusy()) return;
+
+    activeProjectId = id;
+    selectedItemIds = [];
+    applyProjectLayout(readProjectLayout(id));
+    renderPlanner();
+    applyAtticSlope();
+    updateInspectorPanel();
+    historyStack = [];
+    historyIndex = -1;
+    pushHistory();
+    writeProjectIndex();
+    projectsModal.close();
+    syncProjectsButton();
+    showIoStatus(`Opened ${project.name}.`, 'success');
+}
+
+// Delete takes two presses; the first arms the button for a few seconds
+function deleteProject(project, button) {
+    if (project.id === activeProjectId) return;
+    if (!button.classList.contains('is-armed')) {
+        button.classList.add('is-armed');
+        button.textContent = 'Confirm';
+        button.setAttribute('aria-label', `Confirm deleting ${project.name}`);
+        setTimeout(() => {
+            if (!button.isConnected) return;
+            button.classList.remove('is-armed');
+            button.textContent = 'Delete';
+            button.setAttribute('aria-label', `Delete ${project.name}`);
+        }, 3000);
+        return;
+    }
+
+    projects = projects.filter(entry => entry.id !== project.id);
+    storageRemove(PROJECT_LAYOUT_PREFIX + project.id);
+    writeProjectIndex();
+    renderProjects();
+    // The pressed button is gone with its card, so focus would otherwise fall out of the dialog
+    newProjectName.focus();
+}
+
+// Escape inside the rename field cancels the edit, and that same key must not close the whole dialog
+let renameEscape = false;
+
+// The card is patched in place rather than re-rendered: a click that ends the rename by blurring the
+// field must still land on the button it was aimed at
+function startProjectRename(card, project) {
+    const label = card.querySelector('.project-name');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'project-rename';
+    input.value = project.name;
+    input.maxLength = PROJECT_NAME_LENGTH;
+    input.setAttribute('aria-label', 'Project name');
+    label.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let finished = false;
+    const finish = (save, refocus) => {
+        if (finished) return;
+        finished = true;
+        if (save) {
+            project.name = cleanProjectName(input.value, project.name);
+            writeProjectIndex();
+            syncProjectsButton();
+        }
+        label.textContent = project.name;
+        input.replaceWith(label);
+        card.querySelectorAll('button[data-action]').forEach(button => {
+            if (!button.classList.contains('is-armed')) button.setAttribute('aria-label', `${button.textContent} ${project.name}`);
+        });
+        if (refocus) card.querySelector('[data-action="rename"]').focus();
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            finish(true, true);
+        } else if (e.key === 'Escape') {
+            // The flag only covers the cancel event this same key press may raise
+            renameEscape = true;
+            setTimeout(() => { renameEscape = false; }, 0);
+            finish(false, true);
+        }
+    });
+    input.addEventListener('blur', () => finish(true, false));
+}
+
+projectList.addEventListener('click', (e) => {
+    const button = e.target.closest('button[data-action]');
+    const card = e.target.closest('.project-card');
+    const project = card && projects.find(entry => entry.id === card.dataset.projectId);
+    if (!button || !project) return;
+
+    if (button.dataset.action === 'load') openProject(project.id);
+    else if (button.dataset.action === 'rename') startProjectRename(card, project);
+    else if (button.dataset.action === 'delete') deleteProject(project, button);
+});
+
+projectsModal.addEventListener('cancel', (e) => {
+    if (renameEscape) e.preventDefault();
+});
+
+newProjectForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveAsNewProject();
+});
+
+function openProjects() {
+    if (isModalOpen() || isPointerBusy()) return;
+    renderProjects();
+    projectsModal.showModal();
+    newProjectName.focus();
+}
+
+projectsBtn.addEventListener('click', openProjects);
+closeProjectsBtn.addEventListener('click', () => projectsModal.close());
 
 // Only a click that starts and ends on the backdrop closes a dialog, so dragging a text
 // selection out of the panel does not dismiss it
@@ -3367,6 +3876,7 @@ function closeOnBackdropClick(dialog) {
 
 closeOnBackdropClick(specModal);
 closeOnBackdropClick(shortcutsModal);
+closeOnBackdropClick(projectsModal);
 
 function openShortcuts() {
     if (isModalOpen() || isPointerBusy()) return;
@@ -3948,14 +4458,7 @@ presetButtons.forEach(button => {
     });
 });
 
-window.addEventListener('resize', () => {
-    closeContextMenu();
-    if (fitFrame) return;
-    fitFrame = requestAnimationFrame(() => {
-        fitFrame = 0;
-        fitWallToViewport();
-    });
-});
+window.addEventListener('resize', closeContextMenu);
 
 measureLabelMetrics();
 loadState();

@@ -735,6 +735,7 @@ button:focus-visible {
 
 /* Wall canvas: a fine dot grid inside a faint 160px architectural grid, lit softly from the center */
 .canvas-area {
+    position: relative;
     flex: 1;
     min-width: 0;
     min-height: 0;
@@ -750,6 +751,170 @@ button:focus-visible {
         linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
     background-size: 100% 100%, 16px 16px, 160px 160px, 160px 160px;
     background-position: center;
+}
+
+/* CAD edge rulers. They sit in the canvas padding outside #wall and are positioned from JS at every fit,
+   so the wall's own box and the drag math never see them. Frosted like the context menu. */
+.canvas-rulers {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.canvas-ruler,
+.ruler-corner {
+    position: absolute;
+    overflow: hidden;
+    border-radius: 3px;
+    background-color: rgba(17, 20, 27, 0.72);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    /* An inset ring instead of a border, so tick offsets start at the true edge */
+    box-shadow: inset 0 0 0 1px var(--hairline), 0 1px 2px rgba(0, 0, 0, 0.35);
+    color: var(--text-faint);
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+.ruler-corner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.ruler-scale,
+.ruler-span,
+.ruler-hairline {
+    position: absolute;
+}
+
+.ruler-scale {
+    inset: 0;
+}
+
+.ruler-tick {
+    position: absolute;
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.ruler-tick.is-major {
+    background-color: rgba(255, 255, 255, 0.45);
+}
+
+/* Ticks grow out of the edge that faces the wall */
+.ruler-x .ruler-tick {
+    bottom: 0;
+    width: 1px;
+    height: 4px;
+}
+
+.ruler-x .ruler-tick.is-major {
+    height: 8px;
+}
+
+.ruler-y .ruler-tick {
+    right: 0;
+    width: 4px;
+    height: 1px;
+}
+
+.ruler-y .ruler-tick.is-major {
+    width: 8px;
+}
+
+.ruler-label {
+    position: absolute;
+    white-space: nowrap;
+}
+
+.ruler-x .ruler-label {
+    top: 2px;
+    margin-left: 3px;
+}
+
+.ruler-x .ruler-label.is-end {
+    transform: translateX(calc(-100% - 6px));
+}
+
+/* Vertical labels read bottom to top, like a tape measure held against the wall */
+.ruler-y .ruler-label {
+    left: 2px;
+    margin-top: 3px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+}
+
+.ruler-y .ruler-label.is-end {
+    transform: rotate(180deg) translateY(calc(100% + 6px));
+}
+
+.ruler-span {
+    background-color: rgba(59, 130, 246, 0.22);
+}
+
+.ruler-x .ruler-span {
+    top: 0;
+    bottom: 0;
+}
+
+.ruler-y .ruler-span {
+    left: 0;
+    right: 0;
+}
+
+.ruler-hairline {
+    top: 0;
+    left: 0;
+    background-color: rgba(248, 250, 252, 0.7);
+}
+
+.ruler-x .ruler-hairline {
+    bottom: 0;
+    width: 1px;
+}
+
+.ruler-y .ruler-hairline {
+    right: 0;
+    height: 1px;
+}
+
+.ruler-readout {
+    position: absolute;
+    padding: 1px 3px;
+    border-radius: 2px;
+    background-color: #f8fafc;
+    color: #0b0d11;
+    font-size: 8.5px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ruler-x .ruler-readout {
+    top: 2px;
+    left: 3px;
+}
+
+.ruler-x .is-flipped .ruler-readout {
+    left: auto;
+    right: 3px;
+}
+
+.ruler-y .ruler-readout {
+    top: 3px;
+    left: 1px;
+    padding: 3px 1px;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+}
+
+.ruler-y .is-flipped .ruler-readout {
+    top: auto;
+    bottom: 3px;
 }
 
 .wall {
@@ -2685,6 +2850,197 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 
 .shortcuts-modal {
     width: min(620px, calc(100vw - 48px));
+}
+
+.projects-modal {
+    width: min(720px, calc(100vw - 48px));
+}
+
+.btn-accent {
+    flex-shrink: 0;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid rgba(255, 157, 66, 0.55);
+    border-radius: var(--radius-sm);
+    background-color: rgba(255, 157, 66, 0.16);
+    box-shadow: var(--highlight), var(--lift);
+    color: var(--text-main);
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color var(--motion), border-color var(--motion);
+}
+
+.btn-accent:hover:not(:disabled) {
+    border-color: rgba(255, 157, 66, 0.8);
+    background-color: rgba(255, 157, 66, 0.26);
+}
+
+.btn-accent:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.new-project {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-raised);
+    box-shadow: var(--highlight);
+}
+
+.new-project label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.new-project-row {
+    display: flex;
+    gap: 8px;
+}
+
+.new-project-input,
+.project-rename {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 10px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-inset);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+    color: var(--text-main);
+    font: inherit;
+    font-size: 13px;
+}
+
+.new-project-input:focus,
+.project-rename:focus {
+    outline: none;
+    border-color: var(--accent-led);
+    box-shadow: 0 0 0 3px rgba(255, 157, 66, 0.2);
+}
+
+.project-limit-note {
+    font-size: 12px;
+    color: #fbbf24;
+}
+
+.project-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    list-style: none;
+}
+
+.project-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-raised);
+    box-shadow: var(--highlight), var(--lift);
+    transition: border-color var(--motion), background-color var(--motion);
+}
+
+.project-card:hover {
+    border-color: var(--hairline-strong);
+    background-color: var(--bg-raised-hover);
+}
+
+.project-card.is-current {
+    border-color: rgba(255, 157, 66, 0.4);
+}
+
+/* A schematic of the saved wall, drawn from its items so the gallery needs no screenshots */
+.project-thumb {
+    flex-shrink: 0;
+    width: 84px;
+    height: 56px;
+    border-radius: 4px;
+    background-color: var(--bg-inset);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.project-thumb-wall {
+    fill: #1c1f26;
+}
+
+.project-info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.project-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.project-name {
+    overflow: hidden;
+    font-size: 13.5px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-badge {
+    flex-shrink: 0;
+    padding: 1px 7px;
+    border: 1px solid rgba(255, 157, 66, 0.4);
+    border-radius: 999px;
+    background-color: rgba(255, 157, 66, 0.1);
+    color: #fdba74;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.project-meta {
+    overflow: hidden;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+}
+
+.project-actions .btn-secondary,
+.project-actions .btn-danger {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 12px;
+}
+
+.project-actions .btn-danger {
+    min-width: 68px;
+}
+
+.project-actions .btn-danger.is-armed {
+    border-color: rgba(239, 68, 68, 0.8);
+    background-color: rgba(239, 68, 68, 0.3);
+    color: #fff;
 }
 
 /* The panel fills the whole dialog, so only backdrop clicks ever target the dialog itself */

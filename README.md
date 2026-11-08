@@ -4,13 +4,14 @@ Live Demo: https://s7codes.github.io/spatial-light-planner/
 
 [![E2E Tests](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml/badge.svg)](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml)
 
-A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place and turn them with centimeter precision, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, preview the backlighting in a dark room, and hand off a bill of materials, drilling coordinates, or a high-resolution image of the finished plan.
+A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place and turn them with centimeter precision, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, preview the backlighting in a dark room, and hand off a bill of materials, drilling coordinates, a spreadsheet-ready CSV, or a high-resolution image of the finished plan. Every wall is kept as a named project in the browser.
 
 Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies. Playwright is the only dev dependency, and it powers the end-to-end suite.
 
 ## Highlights
 
 - **Precision placement:** Every position and size lives on a whole-centimeter grid. Dragging, arrow-key nudges, `5 cm` grid snapping, and magnetic alignment all land on exact centimeters, so on-screen readouts never drift from the stored layout.
+- **CAD rulers:** Frosted edge rulers frame the top and left of the wall with a tick every `10 cm` and a label every `50 cm`. Live hairlines read the pointer position in whole centimeters, and a shaded band marks the selection's extent.
 - **Live measurement:** Dashed rulers show the distance from the left wall and the ceiling, plus the clearance to the nearest neighbor on every side. Green guides appear whenever an edge or center lines up with another item or the wall center.
 - **Smart measurements:** Hold `Alt` / `Option` with something selected and point at any other item, or at bare wall, for Figma-style red distance lines and badges between the two boxes.
 - **Room constraints:** Configurable wall size (`150-400 x 150-300 cm`), AABB overlap warnings, and an optional `90 x 90 cm` 45-degree attic slope with exact intrusion detection.
@@ -26,9 +27,10 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Context menu:** Right-click any item for a frosted-glass menu with Duplicate, Group, Ungroup, Bring Forward, Send Backward, Rotate, Lock / Unlock, and Delete. Inside a selection it acts on all of it.
 - **Per-item lighting:** Give any single item its own independent LED color, live on the wall and in the PNG export, or hand it back to the global picker with one click.
 - **Editing workflow:** 30-step undo/redo, duplication, item locking, layer ordering, and three curated starter templates.
-- **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown), JSON export/import, and a 2x HiDPI PNG snapshot.
+- **Project gallery:** Keep up to 24 walls as named projects. The My Projects dialog shows each one with a schematic thumbnail, its last edited date, and Load, Rename, and Delete, and the open project saves itself after every change.
+- **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown or downloadable as one CSV file), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 278 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 295 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -47,6 +49,14 @@ Wall pixel sizes are derived from the wall's centimeter dimensions. The wall use
 Wall bounds are read once per drag, ruler label sizes are measured once at startup, and item label sizes once per render. No layout reads happen inside the frame loop. Alignment guide elements come from a small reusable pool.
 
 Lamps and spotlights carry labels wider than themselves. When such an item sits near a wall edge, its label is shifted just far enough to stay inside the wall, live during drags and in the PNG export, instead of being clipped.
+
+### Canvas Rulers
+Edge rulers run along the top and left of the wall, the way CAD tools frame a drawing. They are absolutely positioned in the canvas padding, outside `#wall`, so the wall's box, its fit scale, and the drag math never see them. `pointer-events: none` lets every press fall through to the canvas.
+
+- **Scale:** ticks sit every `10 cm` and labels every `50 cm`, at `cm * 2.5 * fitScale` px from the wall's inner corner. The marks are rebuilt only when the wall is fitted again (a wall resize, or a window or panel change reported by a `ResizeObserver` on the canvas), never on pointer moves. A label too close to the far end moves to the near side of its tick instead of being clipped.
+- **Hairlines:** `mousemove` only stores the pointer. One `requestAnimationFrame` callback per frame converts it to wall space from the ruler origin cached at the last fit, then writes a `transform` on each hairline and its whole-centimeter readout, with no layout reads. The hairlines hide off the wall, when the pointer leaves the window, and while a dialog is open, and their readouts swap sides near the far end.
+- **Selection extent:** the selected item, or a multi-selection's bounding box, is shaded on both rulers. The band follows drags and resizes through the same inline-style path as the selection outline.
+- **Styling:** a translucent obsidian fill under `backdrop-filter: blur(8px)`, with an inset ring instead of a border so tick offsets start at the true edge.
 
 ### Direct Manipulation
 Resizing and catalog drops reuse the drag engine's rules: one `requestAnimationFrame` per frame, pointer positions converted to wall space by dividing by the fit scale, and every result quantized to `1 cm` (or `5 cm` with snapping) before it is clamped.
@@ -177,9 +187,19 @@ History is a bounded stack of 30 serialized snapshots covering items (including 
 - Bursts of the same action are coalesced: held arrow-key nudges on one item, or rapid wall-size edits, become a single step.
 - A drag commits exactly one snapshot on `mouseup`, and only if something moved. A group drag, a grip resize, and a catalog drop follow the same rule.
 - Batch edits (grouping, rotation, finish, lock, visibility, duplicate, delete, layer moves) are one step each, held nudges on the same selection merge into one, and a color pick is one step however long the picker stays open.
+- Opening another project starts a fresh history, the same as a reload.
+
+### Project Gallery & Persistence
+Layouts are stored per project instead of as one save.
+
+- **Storage split:** a small index (`spatial_studio_projects_v1`) holds the open project id and each project's `id`, `name`, and `timestamp`. Every layout sits under its own key, so autosave rewrites only the open project, and the brightness slider and drags stay cheap however many projects exist.
+- **Migration:** on the first boot after the upgrade, the single save from earlier versions passes through the sanitizer and becomes the `Default Project`, and the old key is removed. Once the gallery exists, a leftover or unreadable old save is simply dropped.
+- **Recovery:** the index is validated on load. Malformed or duplicate ids are dropped, names are trimmed and limited to 60 characters, and at most 24 projects are kept. A missing open project falls back to the most recently edited one, and an unreadable layout opens as the starter wall. Every storage call is guarded, so full or blocked storage shows a status message while the planner keeps working in memory.
+- **Gallery:** projects are listed most recently edited first, each with a schematic SVG thumbnail drawn from its items, its last edited date, item count, and wall size. `Save as New Project` forks the current wall under a new name, and a blank name becomes `Project N`. Loading a project clears the selection and the history.
+- **Rename and delete:** Rename edits the name in place. `Enter` saves, `Escape` cancels without closing the dialog, and clicking away saves. The card is patched rather than re-rendered, so a click that ends a rename still lands on the button it was aimed at. Delete needs a second press within three seconds, and the open project cannot be deleted, so autosave always has a target.
 
 ### XSS-Safe JSON Schema Sanitizer
-Saved state, imported files, and starter templates all pass through one `normalizeLayout()` function. Nothing is applied until the whole file validates, so a bad file never leaves a half-loaded wall.
+Saved projects, imported files, and starter templates all pass through one `normalizeLayout()` function. Nothing is applied until the whole file validates, so a bad file never leaves a half-loaded wall.
 
 - **Wall:** dimensions are rounded to whole centimeters and clamped to the allowed range. Files from v0.7, which carry no wall size, load on the default `300 x 250 cm` wall.
 - **Items:** unknown types are skipped and reported. Invalid finishes, sizes, and prices fall back to catalog values read from the catalog markup itself. Geometry is snapped to whole centimeters and clamped inside the wall. `ledEnabled`, `locked`, and `hidden` only accept real booleans, `itemLedColor` only a 6-digit hex color (stored lowercase) or `null`, `rotation` only a quarter turn (anything else falls back to `0`), and `groupId` only a short run of letters, digits, `-`, and `_`.
@@ -196,6 +216,12 @@ From Floor = wallHeightCm - topCm - heightCm
 ```
 
 The same rows feed the modal tables and the `Copy as Markdown` export, which uses the async Clipboard API with a selection-based fallback.
+
+`Export CSV` downloads both tables as one `spatial-studio-specs.csv` file: a short header block, the bill of materials with separate width and height columns, plain two-decimal prices and a total row, then the drilling table.
+
+- **RFC 4180:** lines end in CRLF, and any field holding a comma, quote, or line break is quoted with its quotes doubled.
+- **Formula guard:** text that starts with `=`, `+`, `-`, `@`, a tab, or a carriage return gets a leading apostrophe, so a spreadsheet shows it instead of evaluating it. Numbers are left untouched.
+- **Encoding:** a UTF-8 byte order mark lets Excel read item names correctly.
 
 ### HiDPI Canvas 2D PNG Renderer
 `Export PNG` draws the wall on an offscreen canvas at `wallWidthPx * 2` by `wallHeightPx * 2` with the native Canvas 2D API. It paints in the same stacking order as the live DOM: background or daylight grid, attic slope, corner glow, then items in layer order, and finally a dimensions caption.
@@ -214,7 +240,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 - **Glow geometry:** the glow layer spans the item's border box, so a framed item's glow starts outside its frame. That is also the shape the exporter uses.
 
 ### Accessibility
-- Both modals are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
+- The spec sheet, shortcuts guide, and project gallery are native `<dialog>` elements opened with `showModal()`. Focus moves inside, the page behind becomes inert, `Escape` closes them, and focus returns to the control that opened them. Only one can be open at a time.
 - Catalog entries are real buttons, so items can be mounted with `Enter` or `Space`.
 - Every button and input has a visible label, `aria-label`, or `title`, and buttons show a keyboard focus ring. Icon-only buttons such as Undo and Redo carry an `aria-label`.
 - The restyled toggles are still native checkboxes, so they keep keyboard and screen reader support. Their focus ring wraps the whole chip.
@@ -222,6 +248,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 - Inspector panel rebuilds hand keyboard focus back to the control that triggered them.
 - The context menu uses `role="menu"` with `menuitem` buttons, exposes its shortcuts through `aria-keyshortcuts`, and is fully keyboard operable.
 - The compact room feature tiles show short names and carry the full name and size in their `aria-label`.
+- The canvas rulers are decorative and `aria-hidden`, since the Inspector already reports the selected item's offset. In the project gallery, the rename field is labelled, every card button names its project, and an armed delete button announces itself as a confirmation.
 - The Layers panel is a `role="tree"` of `treeitem` rows with `aria-level`, `aria-selected`, and `aria-expanded`. Its eye and padlock are real buttons with `aria-pressed` and labels that name the item, and the note editor and Inspector field are labelled text areas.
 
 ## Keyboard Shortcuts
@@ -274,7 +301,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 278 tests in 22 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 295 tests in 25 spec files, one per feature area.
 
 ```bash
 npm install
@@ -307,13 +334,17 @@ npm test
 | `measure` | Alt-hover gap lines and badges, diagonal extensions, wall-edge and nested measurements, group boxes, live updates while nudging, idle states, Alt magnet bypass |
 | `grouping-layers` | `Ctrl + G` / `Ctrl + Shift + G`, whole-group selection by click, marquee and `Shift`, double-click to a member, group drag, nudge, duplicate and rigid rotation, block layer moves, menu and Inspector controls, locked members, export, reload and sanitizing; layer list order and collapse, row selection, simulated and real HTML5 drag and drop, eye and padlock on items and groups |
 | `text-notes` | $0 note from the catalog, double-click editing with `Escape` and click-away saves, history, empty and unchanged notes, locked notes, Inspector field, no collisions or spec sheet rows, PNG paper and line-wrap parity, import cleaning |
+| `canvas-rulers` | Tick and label counts, positions against the fit scale, rebuilt marks after a wall resize, unclipped end labels, pointer hairlines with whole-cm readouts and no DOM rebuild, hiding off the wall and behind dialogs, selection bands, exact drags beneath the rulers |
+| `projects` | Default Project on first visit, autosave into the open project, one-time legacy migration, Save as New Project, Load with a fresh history, name cleaning and escaping, in-place rename with `Enter`, `Escape` and click-away, two-step delete, damaged index and layout recovery, the 24-project limit |
+| `csv-export` | Filename, byte order mark, exact CRLF payload, rows checked against the on-screen tables, grouped and turned pieces, RFC 4180 quoting read back by a strict parser, formula guard, empty wall, `Downloaded!` label |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:
 
 - `playwright.config.js` boots `tests/support/static-server.js`, a zero-dependency Node server, so the app is tested over HTTP as it is served in production.
 - Every test starts in a fresh browser context with clean storage, and fails on any uncaught exception or console error.
-- The group drag and per-item color tests tag item elements first and check the tags afterwards, which proves those updates write inline styles instead of rebuilding the DOM.
+- The group drag, per-item color, and ruler hairline tests tag elements first and check the tags afterwards, which proves those updates write inline styles instead of rebuilding the DOM.
+- Storage tests seed `localStorage` the way a returning visitor would have left it, including broken JSON, and reload the app on top of it.
 - The engine is a classic script, so helpers read its state through `page.evaluate` instead of adding test hooks to the app.
 - Gap ruler readouts are compared with an independent implementation across 40 seeded random layouts.
 - PNG exports are decoded in the browser and sampled pixel by pixel through a custom `toBeNearColor` matcher.
@@ -326,11 +357,13 @@ How the suite is built:
 ## Project Structure
 
 ```
-index.html                    App shell, catalog, inspector, dialogs, context menu, inline SVG brand mark, and favicon
-styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, and dialogs
-scripts/planner-engine.js     State, selection model, history, persistence, sanitizer, drag and selection-box
-                              engine, alignment, collision checks, context menu, spec sheet, and the
-                              Canvas 2D PNG renderer
+index.html                    App shell, catalog, inspector, canvas rulers, dialogs, context menu, inline SVG
+                              brand mark, and favicon
+styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, dialogs,
+                              and the project gallery
+scripts/planner-engine.js     State, selection model, history, project storage, sanitizer, drag and
+                              selection-box engine, alignment, collision checks, context menu, spec sheet
+                              with CSV export, and the Canvas 2D PNG renderer
 tests/*.spec.js               Playwright end-to-end specs, one per feature area
 tests/support/                Fixtures, shared helpers, and the zero-dependency static server
 playwright.config.js          Chromium project, local web server, and CI reporters
