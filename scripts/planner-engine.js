@@ -79,6 +79,8 @@ const PRESS_TRAVEL_PX = 3; // below this a press on a group member is a click, n
 const MENU_EDGE_PX = 8;
 const LONG_RUN_CM = 250; // longer runs usually need an extension lead
 const POWER_IDLE_TEXT = 'Traces each lit item to its nearest socket';
+const TINY_ITEM_PX = 12 * SCALE; // up to 12 x 12 cm the resize grips sit outside the item
+const STUDIO_MODES = ['engineer', 'creator'];
 
 const RESIZE_HANDLES_HTML = ['e', 's', 'se']
     .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
@@ -187,6 +189,11 @@ const commandEmpty = document.getElementById('command-empty');
 const powerRoutingToggle = document.getElementById('power-routing-toggle');
 const powerRoutingSummary = document.getElementById('power-routing-summary');
 const powerRoutesLayer = document.getElementById('power-routes');
+const floorBackdropLayer = document.getElementById('floor-backdrop');
+const backdropButtons = document.querySelectorAll('[data-backdrop]');
+const appShell = document.querySelector('.app-shell');
+const modeEngineerBtn = document.getElementById('mode-engineer-btn');
+const modeCreatorBtn = document.getElementById('mode-creator-btn');
 
 const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open || commandPalette.open;
 
@@ -282,6 +289,9 @@ const LAYOUT_TEMPLATES = {
 };
 
 let isAmbientMode = true;
+// View states like the zoom: never saved, exported or undone, so every visit opens in Engineer Mode
+let studioMode = 'engineer';
+let floorBackdrop = 'none';
 // Kept in selection order; layer order comes from wallItems whenever it matters
 let selectedItemIds = [];
 let wallItems = [];
@@ -428,6 +438,7 @@ let clipboardState = { items: [], pasteCount: 0 };
 const isPointerBusy = () =>
     dragState.isDragging || resizeState.active || catalogDrag.active || marquee.active || guideDrag.active || panState.active;
 const isDefaultView = () => userZoom === 1 && panX === 0 && panY === 0;
+const isCreatorMode = () => studioMode === 'creator';
 
 const cloneDefaults = () => JSON.parse(JSON.stringify(defaultItems));
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
@@ -756,8 +767,9 @@ function rulerAxisAt(clientX, clientY) {
 
 function applyCrosshair() {
     crosshair.frameId = 0;
-    // The rulers never take the pointer themselves, so the canvas shows their cursor instead
-    const rulerAxis = crosshair.over && !isModalOpen() && !isPointerBusy()
+    // The rulers never take the pointer themselves, so the canvas shows their cursor instead,
+    // unless Creator Mode has hidden them
+    const rulerAxis = crosshair.over && !isCreatorMode() && !isModalOpen() && !isPointerBusy()
         ? rulerAxisAt(crosshair.clientX, crosshair.clientY)
         : null;
     const hover = rulerAxis ? `guide-${rulerAxis}` : '';
@@ -950,7 +962,8 @@ canvasArea.addEventListener('mousedown', (e) => {
     }
 
     if (e.button !== 0) return;
-    const axis = rulerAxisAt(e.clientX, e.clientY);
+    // Creator Mode hides the rulers, and the bands that pull out guides go with them
+    const axis = isCreatorMode() ? null : rulerAxisAt(e.clientX, e.clientY);
     if (!axis) return;
 
     e.preventDefault();
@@ -1742,10 +1755,13 @@ function updateDistanceGuides() {
 
 function getAlignTargets(excludedIds, axis) {
     const targets = axis === 'x' ? [{ value: wallWidthPx / 2, other: null }] : [];
-    // A reference guide is a full-height (or full-width) line, so it snaps like the wall center does
-    wallGuides.forEach(guide => {
-        if (guide.axis === axis) targets.push({ value: guide.cm * SCALE, other: null });
-    });
+    // A reference guide is a full-height (or full-width) line, so it snaps like the wall center does.
+    // Creator Mode hides the guides, and a line nobody can see should not tug at anything.
+    if (!isCreatorMode()) {
+        wallGuides.forEach(guide => {
+            if (guide.axis === axis) targets.push({ value: guide.cm * SCALE, other: null });
+        });
+    }
     wallItems.forEach(other => {
         if (excludedIds.has(other.id) || other.hidden) return;
         const start = axis === 'x' ? other.left : other.top;
@@ -2045,6 +2061,86 @@ function setPowerRouting(on) {
 
 powerRoutingToggle.addEventListener('click', () => setPowerRouting(!powerRoutingOn));
 
+// Floor references are front elevations in cm from the top-left corner of the piece, which stands on the
+// floor line. A view aid like the cable runs, so it never reaches the layout, the history or the PNG.
+const backdropRect = (x, y, w, h, r = 0, kind = 'shape') =>
+    `<rect class="backdrop-${kind}" x="${x * SCALE}" y="${y * SCALE}" width="${w * SCALE}" height="${h * SCALE}" rx="${r * SCALE}" />`;
+const backdropLine = (x1, y, x2) => `<path class="backdrop-detail" d="M ${x1 * SCALE} ${y * SCALE} H ${x2 * SCALE}" />`;
+
+const FLOOR_BACKDROPS = {
+    // A headboard behind a mattress topped at 55 cm, two pillows, a framed base and short legs
+    bed: {
+        name: 'Bed',
+        widthCm: 155,
+        heightCm: 85,
+        art: [
+            `<path class="backdrop-shape" d="M 0 ${30 * SCALE} V ${3 * SCALE} Q 0 0 ${3 * SCALE} 0 H ${152 * SCALE} Q ${155 * SCALE} 0 ${155 * SCALE} ${3 * SCALE} V ${30 * SCALE}" />`,
+            backdropRect(10, 15, 60, 15, 6),
+            backdropRect(85, 15, 60, 15, 6),
+            backdropRect(3, 30, 149, 20, 3),
+            backdropLine(3, 37, 152),
+            backdropRect(1, 50, 153, 24, 1.5),
+            backdropRect(5, 74, 6, 11),
+            backdropRect(144, 74, 6, 11)
+        ]
+    },
+    // A desk top at 75 cm on two legs with a drawer, and a 60 cm monitor on a short stand
+    desk: {
+        name: 'Desk',
+        widthCm: 140,
+        heightCm: 115,
+        art: [
+            backdropRect(40, 0, 60, 34, 1.5),
+            backdropRect(42, 2, 56, 30, 0.5, 'detail'),
+            backdropRect(67, 34, 6, 4.5),
+            backdropRect(59, 38.5, 22, 1.5, 0.5),
+            backdropRect(0, 40, 140, 3.5, 0.75),
+            backdropRect(4, 43.5, 4, 71.5),
+            backdropRect(132, 43.5, 4, 71.5),
+            backdropRect(98, 43.5, 32, 16, 0.5),
+            backdropLine(108, 51.5, 120)
+        ]
+    }
+};
+
+// The SVG lets the dimension line overflow its box, 12 px above the piece, with the tag sitting on it
+function floorBackdropMarkup({ name, widthCm, heightCm, art }) {
+    const width = widthCm * SCALE;
+    const height = heightCm * SCALE;
+    return `
+        <svg class="floor-backdrop-svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+            <path class="backdrop-dim" d="M 0 -12 H ${width} M 0 -17 V -7 M ${width} -17 V -7" />
+            ${art.join('')}
+        </svg>
+        <span class="floor-backdrop-tag">${name} ${widthCm} x ${heightCm} cm</span>`;
+}
+
+function setFloorBackdrop(kind) {
+    const backdrop = FLOOR_BACKDROPS[kind];
+    floorBackdrop = backdrop ? kind : 'none';
+    backdropButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.backdrop === floorBackdrop)));
+    floorBackdropLayer.dataset.kind = floorBackdrop;
+    floorBackdropLayer.innerHTML = backdrop ? floorBackdropMarkup(backdrop) : '';
+    floorBackdropLayer.hidden = !backdrop;
+}
+
+backdropButtons.forEach(button => button.addEventListener('click', () => setFloorBackdrop(button.dataset.backdrop)));
+
+// Creator Mode only hides the drafting tools through CSS, so Engineer Mode finds every guide, cable run,
+// layer and coordinate field exactly as it left them
+function setStudioMode(mode) {
+    if (!STUDIO_MODES.includes(mode) || isPointerBusy()) return;
+    studioMode = mode;
+    appShell.dataset.studioMode = mode;
+    modeEngineerBtn.setAttribute('aria-pressed', String(mode === 'engineer'));
+    modeCreatorBtn.setAttribute('aria-pressed', String(mode === 'creator'));
+    // A pointer resting on a ruler band stops, or starts, showing the guide cursor right away
+    applyCrosshair();
+}
+
+modeEngineerBtn.addEventListener('click', () => setStudioMode('engineer'));
+modeCreatorBtn.addEventListener('click', () => setStudioMode('creator'));
+
 function updateInspectorLive() {
     const posReadout = document.getElementById('inspector-pos-readout');
     const selected = getSelectedItems();
@@ -2079,10 +2175,12 @@ function placeItemLabel(item, el) {
 }
 
 // Grips normally straddle the item edge; flush against the wall they would be half clipped,
-// so these flags tuck them inside the item there
+// so these flags tuck them inside the item there. A piece of 12 x 12 cm or less would vanish under
+// its grips, so is-tiny moves them out past its edges and leaves the whole face to the drag.
 function flagWallEdges(item, el) {
     el.classList.toggle('flush-right', item.left + item.width >= wallWidthPx - EPSILON);
     el.classList.toggle('flush-bottom', item.top + item.height >= wallHeightPx - EPSILON);
+    el.classList.toggle('is-tiny', item.width <= TINY_ITEM_PX + EPSILON && item.height <= TINY_ITEM_PX + EPSILON);
 }
 
 // Position-only updates skip renderPlanner so dragging and nudging never rebuild the DOM.
@@ -3769,7 +3867,7 @@ function renderItemInspector(item) {
                     ${feature ? '<span class="feature-badge">Room Feature</span>' : `<span>$${item.price}</span>`}
                 </span>
             </div>
-            <span>Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
+            <span class="tech-readout">Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
             ${locked ? `<p class="lock-note" id="lock-note">${lockedParts} are locked. Press L or Unlock Item to edit.</p>` : ''}
             ${groupNote}
 
@@ -3933,8 +4031,8 @@ function renderBatchInspector(items) {
                     <span>${formatPrice(total)}</span>
                 </span>
             </div>
-            <span>Group: <strong id="inspector-pos-readout">${formatOffset(getBounds(items))}</strong></span>
-            <span>Footprint: <strong id="batch-footprint-readout">${formatFootprint(getBounds(items))}</strong></span>
+            <span class="tech-readout">Group: <strong id="inspector-pos-readout">${formatOffset(getBounds(items))}</strong></span>
+            <span class="tech-readout">Footprint: <strong id="batch-footprint-readout">${formatFootprint(getBounds(items))}</strong></span>
             ${groupId ? `<span class="group-count">${count} items grouped</span>` : ''}
             ${lockNote}
             ${arrangeFieldHtml()}
@@ -4299,6 +4397,14 @@ window.addEventListener('keydown', (e) => {
 
     // An open dialog is modal, so nothing behind it may react to shortcuts
     if (isModalOpen()) return;
+
+    // Alt+M flips the workspace mode. The physical key is read, since Option+M on a Mac types a character.
+    if (e.code === 'KeyM' && e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && !isFormField(e.target)) {
+        e.preventDefault();
+        suppressAltMenu = true;
+        if (!e.repeat) setStudioMode(isCreatorMode() ? 'engineer' : 'creator');
+        return;
+    }
 
     // Space keeps its usual job in fields and on a button reached with Tab. A button that only holds
     // focus because it was clicked gives Space up, so clicking a control and then panning just works.
@@ -5026,6 +5132,7 @@ function buildCommands() {
     const add = (group, label, run, hint = '') => commands.push({ group, label, run, hint });
     const onOff = (on) => (on ? 'On' : 'Off');
     const selected = getSelectedItems();
+    const creator = isCreatorMode();
 
     if (selected.length) {
         if (canCenterSelection()) {
@@ -5038,6 +5145,8 @@ function buildCommands() {
     }
 
     catalogItems.forEach(card => {
+        // Creator Mode keeps the room features out of the catalog, so the palette leaves them out too
+        if (creator && FEATURE_TYPES.includes(card.dataset.type)) return;
         const size = `${toCm(parseFloat(card.dataset.width))} x ${toCm(parseFloat(card.dataset.height))} cm`;
         add('Mount', `Mount: ${card.dataset.name}`, () => spawnFromCatalog(card), size);
     });
@@ -5045,9 +5154,15 @@ function buildCommands() {
     add('Wall & View', 'Toggle Ambient / Daylight Mode', toggleAmbientMode, isAmbientMode ? 'Ambient' : 'Daylight');
     add('Wall & View', 'Toggle Snap 5cm Grid', () => snapGridToggle.click(), onOff(snapGridToggle.checked));
     add('Wall & View', 'Toggle Attic Slope', () => atticSlopeToggle.click(), onOff(atticSlopeToggle.checked));
-    add('Wall & View', 'Toggle Power Routing Overlay', () => setPowerRouting(!powerRoutingOn), onOff(powerRoutingOn));
+    if (!creator) add('Wall & View', 'Toggle Power Routing Overlay', () => setPowerRouting(!powerRoutingOn), onOff(powerRoutingOn));
     add('Wall & View', 'Reset Zoom & Pan', resetView, 'Ctrl+0');
-    add('Wall & View', 'Clear Reference Guides', clearGuides, wallGuides.length ? `${wallGuides.length} placed` : 'None placed');
+    if (!creator) add('Wall & View', 'Clear Reference Guides', clearGuides, wallGuides.length ? `${wallGuides.length} placed` : 'None placed');
+    add('Wall & View', 'View: Switch to Creator Mode', () => setStudioMode('creator'), creator ? 'Current' : 'Alt+M');
+    add('Wall & View', 'View: Switch to Engineer Mode', () => setStudioMode('engineer'), creator ? 'Alt+M' : 'Current');
+    add('Wall & View', 'Backdrop: None', () => setFloorBackdrop('none'), floorBackdrop === 'none' ? 'Current' : '');
+    Object.entries(FLOOR_BACKDROPS).forEach(([kind, { name, widthCm }]) => {
+        add('Wall & View', `Backdrop: ${name} (${widthCm} cm)`, () => setFloorBackdrop(kind), floorBackdrop === kind ? 'Current' : '');
+    });
 
     presetButtons.forEach(button => add('Lighting & Paint', `Preset: ${button.textContent.trim()}`, () => button.click()));
     WALL_PAINTS.forEach(paint => {

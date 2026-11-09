@@ -976,6 +976,10 @@ button:focus-visible {
     --power-color: #facc15;
     --power-warn: #fb923c;
     --power-text: #1f1600;
+    --backdrop-line: rgba(125, 211, 252, 0.55);
+    --backdrop-fill: rgba(125, 211, 252, 0.05);
+    --backdrop-tag-bg: rgba(12, 20, 30, 0.85);
+    --backdrop-tag-text: #bae6fd;
 }
 
 .wall.daylight-mode {
@@ -1008,6 +1012,10 @@ button:focus-visible {
     --power-color: #ca8a04;
     --power-warn: #ea580c;
     --power-text: #ffffff;
+    --backdrop-line: rgba(37, 99, 235, 0.5);
+    --backdrop-fill: rgba(37, 99, 235, 0.04);
+    --backdrop-tag-bg: rgba(255, 255, 255, 0.92);
+    --backdrop-tag-text: #1e3a8a;
 }
 
 /* No z-index here on purpose, so items keep stacking against the glow and overlays */
@@ -1538,6 +1546,30 @@ button:focus-visible {
     bottom: 2px;
 }
 
+/* Up to 12 x 12 cm the grips would cover the whole face, so they move out past its edges with a tighter
+   hit area and leave the face to the drag. Against a wall edge they would be clipped, so they step aside
+   there and the Inspector size fields take over. */
+.wall-item.is-tiny .resize-handle::before {
+    inset: -3px;
+}
+
+.wall-item.is-tiny .handle-e,
+.wall-item.is-tiny .handle-se {
+    right: calc(-16px - var(--frame, 0px));
+}
+
+.wall-item.is-tiny .handle-s,
+.wall-item.is-tiny .handle-se {
+    bottom: calc(-16px - var(--frame, 0px));
+}
+
+.wall-item.is-tiny.flush-right .handle-e,
+.wall-item.is-tiny.flush-right .handle-se,
+.wall-item.is-tiny.flush-bottom .handle-s,
+.wall-item.is-tiny.flush-bottom .handle-se {
+    display: none;
+}
+
 .wall-item:not(.selected) .resize-handle,
 .wall-item.locked .resize-handle {
     display: none;
@@ -2002,6 +2034,57 @@ body.is-selecting * {
 .power-badge.is-long-run {
     background-color: var(--power-warn);
     color: #fff;
+}
+
+/* Floor reference: a to-scale bed or desk elevation standing on the floor line, drawn above the items in
+   thin blueprint lines that never take the pointer. Like the cable runs it stays out of the PNG. */
+.floor-backdrop {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    z-index: 3;
+    transform: translateX(-50%);
+    pointer-events: none;
+}
+
+.floor-backdrop-svg {
+    display: block;
+    overflow: visible;
+}
+
+.backdrop-shape {
+    fill: var(--backdrop-fill);
+    stroke: var(--backdrop-line);
+    stroke-width: 1.25;
+}
+
+.backdrop-detail,
+.backdrop-dim {
+    fill: none;
+    stroke: var(--backdrop-line);
+    stroke-width: 1;
+}
+
+.backdrop-detail {
+    stroke-opacity: 0.6;
+}
+
+/* Centered on the dimension line the SVG draws 12 px above the piece */
+.floor-backdrop-tag {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 12px);
+    transform: translate(-50%, 50%);
+    padding: 1px 7px;
+    border: 1px solid var(--backdrop-line);
+    border-radius: 999px;
+    background-color: var(--backdrop-tag-bg);
+    color: var(--backdrop-tag-text);
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 14px;
+    white-space: nowrap;
 }
 
 /* Floating zoom control, frosted like the rulers. It sits outside #wall and pans with nothing. */
@@ -3202,6 +3285,78 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     background-color: var(--bg-raised-hover);
 }
 
+/* Two- and three-way switches: an inset track whose pressed segment is raised, like the finish picker */
+.segmented {
+    display: grid;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background-color: var(--bg-inset);
+}
+
+.segmented-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    height: 26px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background-color: transparent;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color var(--motion), background-color var(--motion), border-color var(--motion);
+}
+
+.segmented-btn:hover {
+    color: var(--text-main);
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.segmented-btn[aria-pressed="true"] {
+    border-color: var(--hairline-strong);
+    background-color: var(--bg-raised-hover);
+    box-shadow: var(--highlight), var(--lift);
+    color: var(--text-main);
+    font-weight: 600;
+}
+
+.floor-reference .segmented-btn {
+    padding: 0 4px;
+    font-size: 11px;
+}
+
+/* The workspace switch heads the right sidebar outside the scrolling inspector, so it never scrolls away */
+.studio-mode {
+    flex-shrink: 0;
+}
+
+/* Each persona carries a status light, lit on the active one like the topbar toggles */
+.studio-mode-btn::before {
+    content: "";
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: currentColor;
+    opacity: 0.35;
+    transition: opacity var(--motion), box-shadow var(--motion);
+}
+
+.studio-mode-btn[aria-pressed="true"]::before {
+    background-color: var(--accent-led);
+    box-shadow: 0 0 6px var(--accent-led);
+    opacity: 1;
+}
+
 .budget-box {
     display: flex;
     flex-direction: column;
@@ -3885,6 +4040,21 @@ kbd {
 
 .shortcut-note p + p {
     margin-top: 6px;
+}
+
+/* Creator Mode keeps the studio to arranging and lighting. The rulers, reference guides, cable runs, layer
+   tree, room features and raw coordinate fields step aside, and everything they hold waits untouched for
+   Engineer Mode. */
+.app-shell[data-studio-mode="creator"] .canvas-rulers,
+.app-shell[data-studio-mode="creator"] .guide-hits,
+.app-shell[data-studio-mode="creator"] .guide-lines,
+.app-shell[data-studio-mode="creator"] .power-routes,
+.app-shell[data-studio-mode="creator"] .power-routing-group,
+.app-shell[data-studio-mode="creator"] .layers-panel,
+.app-shell[data-studio-mode="creator"] .catalog-features,
+.app-shell[data-studio-mode="creator"] .inspector-grid,
+.app-shell[data-studio-mode="creator"] .tech-readout {
+    display: none;
 }
 
 /* Accent tints follow the live preset where color-mix() exists. A fallback inside the base rules would not
