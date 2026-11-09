@@ -186,6 +186,67 @@ test.describe('PNG export', () => {
   });
 });
 
+test.describe('brand stamp', () => {
+  const stamp = (page) => page.evaluate(() => currentBrandStamp());
+  const today = (page) =>
+    page.evaluate(() => {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    });
+
+  test('signs the export with Lumen, the project name and the date in a free corner', async ({ page }) => {
+    const plan = await stamp(page);
+    const date = await today(page);
+    expect(plan).toMatchObject({
+      corner: 'bottom-right',
+      brand: 'Lumen',
+      project: 'Default Project',
+      date,
+      detail: `Default Project | ${date}`,
+    });
+    expect(plan.left + plan.width).toBe(740);
+    expect(plan.top + plan.height).toBe(615);
+
+    const png = await exportPng(page);
+    expect([png.width, png.height]).toEqual([1500, 1250]);
+    const brandRow = Array.from({ length: 40 }, (_, k) => [plan.left + 20 + k, plan.top + 16.5]);
+    const brightest = Math.max(...(await sampleExport(page, png, brandRow)).map((pixel) => Math.min(...pixel)));
+    expect(brightest).toBeGreaterThan(150);
+    const [card] = await sampleExport(page, png, [[plan.left + 4, plan.top + plan.height - 4]]);
+    expect(card).not.toBeNearColor(AMBIENT_BACKGROUND, 2);
+    expect(Math.max(...card)).toBeLessThan(Math.max(...AMBIENT_BACKGROUND));
+  });
+
+  test('steps aside for items in the corner and never paints over them', async ({ page }) => {
+    await loadLayout(page, { items: [wallItem('item-corner', 'storage', 562.5, 530, { finish: 'walnut' })] });
+    let plan = await stamp(page);
+    expect(plan).toMatchObject({ corner: 'top-left', left: 10, top: 10 });
+
+    const [storage] = await sampleExport(page, await exportPng(page), [[700, 600]]);
+    expect(storage).toBeNearColor(WALNUT, 6);
+
+    // With the slope on, top right is off limits, so a crowded wall falls back under the items
+    await loadLayout(page, {
+      atticSlope: true,
+      items: [wallItem('item-corner', 'storage', 562.5, 530), wallItem('item-top', 'shelf', 0, 0)],
+    });
+    plan = await stamp(page);
+    expect(plan.corner).toBe('bottom-right');
+  });
+
+  test('a long project name is shortened, but the date always shows', async ({ page }) => {
+    await page.click('#projects-btn');
+    await page.fill('#new-project-name', 'Upstairs living room feature wall with the reading nook and shelving');
+    await page.click('#save-project-btn');
+    await page.keyboard.press('Escape');
+
+    const plan = await stamp(page);
+    expect(plan.project).toMatch(/^Upstairs living room/);
+    expect(plan.detail).toMatch(new RegExp(`^Upstairs living room.*\\.\\.\\. \\| ${await today(page)}$`));
+    expect(plan.width).toBeLessThanOrEqual(240 + 24 + 1);
+  });
+});
+
 test.describe('corner glow', () => {
   test('fades out with no hard edge on screen and in the export', async ({ page }) => {
     const wall = await page.locator('#wall').boundingBox();

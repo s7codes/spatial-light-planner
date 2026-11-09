@@ -13,11 +13,14 @@ framework, no bundler, no build step, no runtime dependencies.
 ## Core Capabilities
 
 - **To-scale drag and resize** with magnetic alignment, live gap rulers, `Alt`-measure between items, exact
-  X / Y fields, rotation, mirroring, grouping, align and distribute, and 30-step undo.
+  X / Y fields, rotation, mirroring, grouping, align and distribute, layer moves to the front or back (room
+  features always stay below the furniture), and 30-step undo.
 - **Collision X-ray.** A piece dragged or resized into a conflict turns red, and every item it hits pulses
   with a red outline until the conflict clears or the piece is released.
 - **Catalog** of shelving, posters, spotlights, a corner floor lamp and a wall-mounted RGB lightbar, plus room
   features (socket, door, window, 55" TV screen) that act as no-build zones.
+- **Configurable attic slope.** Set the sloped ceiling's width and drop (30-150 cm, 90 x 90 cm by default) from
+  the topbar; collisions, Align and the PNG follow the exact edge.
 - **RGB lighting engine** built on CSS custom properties: per-item backlight colors, corner glow, spotlight
   cones and wall paints, rendered identically by the Canvas exporter.
 - **Engineer and Creator workspace modes.** Engineer keeps every drafting tool in view; Creator hides rulers,
@@ -27,8 +30,8 @@ framework, no bundler, no build step, no runtime dependencies.
 - **Ergonomic hints** for eye-level posters and clearance above a bed, desk or sofa drawn to scale on the floor.
 - **Power routing and spec sheet.** Orthogonal cable runs to the nearest socket, a BOM with drilling
   coordinates, an LED strip, power and wall anchor estimate, Markdown copy and CSV export.
-- **Lumen branded quotes.** A printable invoice-style quote with net subtotal, 27% Hungarian VAT and gross
-  total in USD, plus a Lumen splash screen on launch.
+- **Lumen branding.** A printable invoice-style quote with net subtotal, 27% Hungarian VAT and gross total in
+  USD, a Lumen splash screen on launch, and PNG exports signed with the project name and date in a free corner.
 - **Z-depth foundation.** Every item carries a wall-to-front depth in cm (read-only in the Inspector), saved
   in layout files and ready for a future 3D viewport.
 - **Multi-project storage and permalinks.** Named projects with autosave, JSON import / export with a strict
@@ -97,6 +100,7 @@ tests/
 | `Shift` + click, drag on empty wall | Add to the selection, or draw a selection box |
 | `Alt` while pointing / dragging | Measure to an item, or bypass magnetic alignment |
 | `R` / `L` | Rotate 90 degrees / lock or unlock |
+| `]` / `[` | Bring to front / send to back |
 | `Ctrl + G` / `Ctrl + Shift + G` | Group / ungroup |
 | `Ctrl + C`, `X`, `V`, `D` | Copy, cut, paste, duplicate |
 | `Alt + Shift + C` / `Alt + Shift + V` | Copy item style / paste it onto the selection |
@@ -120,7 +124,7 @@ npm install
 npm run serve
 ```
 
-Then open `http://localhost:4173`. To run the end-to-end suite (398 tests in 33 specs, Chromium):
+Then open `http://localhost:4173`. To run the end-to-end suite (432 tests in 36 specs, Chromium):
 
 ```bash
 npx playwright install chromium

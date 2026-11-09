@@ -1,13 +1,15 @@
 import {
-    ATTIC_SLOPE_PX, CORNER_GLOW_ALPHA, DAYLIGHT_GRID_PX, isLedOn, isNote, isQuarterTurn, PNG_FILENAME,
-    PNG_PIXEL_RATIO, SHADOW_SHIFT_PX, SPOTLIGHT_CONE_FADE, wallPaintById
+    CORNER_GLOW_ALPHA, DAYLIGHT_GRID_PX, isLedOn, isNote, isoDate, isQuarterTurn, PNG_FILENAME,
+    PNG_PIXEL_RATIO, SCALE, SHADOW_SHIFT_PX, SPOTLIGHT_CONE_FADE, wallPaintById
 } from '../core/constants.js';
 import {
-    atticSlopeToggle, atticZone, brightnessSlider, cornerColorPicker, getItemElement, ledColorOf, wallCanvas
+    accentColorPicker, atticSlopeToggle, atticZone, brightnessSlider, cornerColorPicker, getItemElement, ledColorOf,
+    wallCanvas
 } from '../core/dom.js';
 import { state } from '../core/state.js';
+import { isOverlapping } from '../core/geometry.js';
 import { labelShift } from '../ui/inspector-layers.js';
-import { downloadBlob, showIoStatus } from './projects-spec.js';
+import { activeProject, downloadBlob, showIoStatus } from './projects-spec.js';
 
 export function hexToRgb(hex) {
     const value = parseInt(hex.slice(1), 16);
@@ -283,26 +285,28 @@ export function paintWallBackground(ctx) {
 export function paintAtticZone(ctx, fontFamily) {
     const wallStyle = getComputedStyle(wallCanvas);
     const cssVar = (name) => wallStyle.getPropertyValue(name).trim();
-    const startX = state.wallWidthPx - ATTIC_SLOPE_PX;
+    const slopeW = state.atticWidthCm * SCALE;
+    const slopeH = state.atticHeightCm * SCALE;
+    const startX = state.wallWidthPx - slopeW;
 
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(startX, 0);
     ctx.lineTo(state.wallWidthPx, 0);
-    ctx.lineTo(state.wallWidthPx, ATTIC_SLOPE_PX);
+    ctx.lineTo(state.wallWidthPx, slopeH);
     ctx.closePath();
     ctx.clip();
 
     ctx.fillStyle = cssVar('--attic-fill');
-    ctx.fillRect(startX, 0, ATTIC_SLOPE_PX, ATTIC_SLOPE_PX);
+    ctx.fillRect(startX, 0, slopeW, slopeH);
 
-    // Hatch lines follow x + y = c, 8 px apart like the CSS repeating gradient
+    // Hatch lines follow x + y = c, 8 px apart like the CSS repeating gradient, whatever the slope's ratio
     ctx.strokeStyle = cssVar('--attic-hatch');
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let c = startX; c <= state.wallWidthPx + ATTIC_SLOPE_PX; c += 8 * Math.SQRT2) {
+    for (let c = startX; c <= state.wallWidthPx + slopeH; c += 8 * Math.SQRT2) {
         ctx.moveTo(c, 0);
-        ctx.lineTo(c - ATTIC_SLOPE_PX, ATTIC_SLOPE_PX);
+        ctx.lineTo(c - slopeH, slopeH);
     }
     ctx.stroke();
 
@@ -311,7 +315,7 @@ export function paintAtticZone(ctx, fontFamily) {
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.moveTo(startX, 0);
-    ctx.lineTo(state.wallWidthPx, ATTIC_SLOPE_PX);
+    ctx.lineTo(state.wallWidthPx, slopeH);
     ctx.stroke();
 
     ctx.fillStyle = cssVar('--attic-label');
@@ -529,6 +533,75 @@ export function paintCaption(ctx, fontFamily) {
     ctx.fillText(text, margin + 8, top + height / 2);
 }
 
+const STAMP = { margin: 10, padX: 12, padY: 9, brandPx: 15, detailPx: 10.5, gap: 5, dot: 3.5, maxDetailPx: 240 };
+
+// Trims the project name, never the date, until the detail line fits the stamp
+function fitStampDetail(ctx, name, date) {
+    const line = (text) => `${text} | ${date}`;
+    if (ctx.measureText(line(name)).width <= STAMP.maxDetailPx) return line(name);
+    let cut = name;
+    while (cut.length > 1 && ctx.measureText(line(`${cut}...`)).width > STAMP.maxDetailPx) cut = cut.slice(0, -1);
+    return line(`${cut.trimEnd()}...`);
+}
+
+// The Lumen stamp goes in the first wall corner no visible item touches: bottom right, then top left, then
+// top right while the slope is off. Bottom left belongs to the size caption. The stamp is painted under
+// the items, so even on a crowded wall it never hides a piece.
+export function planBrandStamp(ctx, fontFamily, now = new Date()) {
+    const project = activeProject()?.name || 'Untitled Project';
+    const date = isoDate(now);
+    ctx.font = `500 ${STAMP.detailPx}px ${fontFamily}`;
+    const detail = fitStampDetail(ctx, project, date);
+    const detailWidth = ctx.measureText(detail).width;
+    ctx.font = `700 ${STAMP.brandPx}px ${fontFamily}`;
+    const brandWidth = ctx.measureText('Lumen').width + STAMP.dot * 2 + 6;
+
+    const width = Math.ceil(Math.max(brandWidth, detailWidth) + STAMP.padX * 2);
+    const height = STAMP.padY * 2 + STAMP.brandPx + STAMP.gap + STAMP.detailPx;
+    const right = state.wallWidthPx - STAMP.margin - width;
+    const bottom = state.wallHeightPx - STAMP.margin - height;
+    const corners = [
+        { corner: 'bottom-right', left: right, top: bottom },
+        { corner: 'top-left', left: STAMP.margin, top: STAMP.margin },
+        ...(atticSlopeToggle.checked ? [] : [{ corner: 'top-right', left: right, top: STAMP.margin }])
+    ];
+    const visible = state.wallItems.filter(item => !item.hidden);
+    const spot = corners.find(({ left, top }) => !visible.some(item => isOverlapping(item, { left, top, width, height }))) || corners[0];
+    return { ...spot, width, height, brand: 'Lumen', project, date, detail };
+}
+
+export function paintBrandStamp(ctx, fontFamily, stamp = planBrandStamp(ctx, fontFamily)) {
+    const { left, top, width, height } = stamp;
+    ctx.save();
+    ctx.fillStyle = state.isAmbientMode ? 'rgba(15, 17, 21, 0.72)' : 'rgba(255, 255, 255, 0.82)';
+    traceShape(ctx, { x: left, y: top, w: width, h: height, radius: 6, ellipse: false }, 0);
+    ctx.fill();
+    ctx.strokeStyle = state.isAmbientMode ? 'rgba(255, 255, 255, 0.08)' : 'rgba(17, 24, 39, 0.1)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const brandY = top + STAMP.padY + STAMP.brandPx / 2;
+    ctx.fillStyle = accentColorPicker.value;
+    ctx.beginPath();
+    ctx.arc(left + STAMP.padX + STAMP.dot, brandY, STAMP.dot, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = state.isAmbientMode ? 'rgba(243, 244, 246, 0.95)' : 'rgba(17, 24, 39, 0.9)';
+    ctx.font = `700 ${STAMP.brandPx}px ${fontFamily}`;
+    ctx.fillText(stamp.brand, left + STAMP.padX + STAMP.dot * 2 + 6, brandY);
+
+    ctx.fillStyle = state.isAmbientMode ? 'rgba(243, 244, 246, 0.62)' : 'rgba(17, 24, 39, 0.6)';
+    ctx.font = `500 ${STAMP.detailPx}px ${fontFamily}`;
+    ctx.fillText(stamp.detail, left + STAMP.padX, top + STAMP.padY + STAMP.brandPx + STAMP.gap + STAMP.detailPx / 2);
+    ctx.restore();
+}
+
+// What the next export would stamp, for the console and the end-to-end suite
+export const currentBrandStamp = () =>
+    planBrandStamp(document.createElement('canvas').getContext('2d'), getComputedStyle(document.body).fontFamily);
+
 export async function exportPng() {
     // Prints are decoded before anything is painted, so the snapshot is drawn in one pass as before
     const visible = state.wallItems.filter(item => !item.hidden);
@@ -547,10 +620,12 @@ export async function exportPng() {
     const brightness = Number(brightnessSlider.value) / 100;
     ctx.scale(PNG_PIXEL_RATIO, PNG_PIXEL_RATIO);
 
-    // Same stacking as the live wall: background, attic zone, corner glow, then items in layer order
+    // Same stacking as the live wall: background, attic zone, corner glow, then items in layer order.
+    // The brand stamp sits just under the items, and the size caption stays on top as before.
     paintWallBackground(ctx);
     if (atticSlopeToggle.checked) paintAtticZone(ctx, fontFamily);
     if (state.isAmbientMode && brightness > 0) paintCornerGlow(ctx, brightness);
+    paintBrandStamp(ctx, fontFamily);
     // Hidden items stay in the plan but leave the picture, just as they leave the wall view
     visible.forEach(item => paintItem(ctx, item, brightness, arts));
     paintCaption(ctx, fontFamily);

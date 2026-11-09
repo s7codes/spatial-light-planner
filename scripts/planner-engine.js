@@ -1,10 +1,10 @@
 import {
-    CATALOG_DRAG_THRESHOLD_PX, clamp, CM_STEP_PX, csvField, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, escapeHtml,
+    ATTIC_SIZE_LIMITS_CM, CATALOG_DRAG_THRESHOLD_PX, clamp, CM_STEP_PX, csvField, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, escapeHtml,
     FEATURE_TYPES, getBounds, isFormField, isTextEntry, ITEM_DEPTH_CM, MARQUEE_THRESHOLD_PX, minSizeCm, NUDGE_KEYS, OBSTACLE_TYPES,
     PRESS_TRAVEL_PX, quantize, SCALE, SNAP_STEP_PX, toCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM
 } from './core/constants.js';
 import {
-    accentColorPicker, alignLayer, atticSlopeToggle, atticZone, brightnessSlider, canvasArea, catalogItems,
+    accentColorPicker, alignLayer, atticHeightInput, atticSlopeToggle, atticWidthInput, atticZone, brightnessSlider, canvasArea, catalogItems,
     commandPalette, cornerColorPicker, enterStudioBtn, exportPngBtn, splashScreen, getItemElement, ioStatus, isModalOpen, marqueeBox,
     newProjectName, redoBtn, resetWallBtn, rulers, rulerX, scaleNote, selectionBounds, shortcutsModal,
     snapGridToggle, specModal, undoBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallWidthInput
@@ -25,12 +25,13 @@ import {
 } from './ui/viewport-rulers.js';
 import {
     bindInspectorEvents, closeContextMenu, copySelectedStyle, copySelection, cutSelection, duplicateSelectedItem,
-    flashLockNote, groupSelection, handleContextMenuKey, isContextMenuOpen, pasteClipboard, pasteStyleToSelection,
+    flashLockNote, groupSelection, handleContextMenuKey, isContextMenuOpen, moveSelectedLayerToEdge, pasteClipboard,
+    pasteStyleToSelection,
     removeSelectedItems, renderPlanner,
     rotateSelection, selectAll, selectItem, selectWithGroups, setSelection, syncItemSize, syncPositions,
     toggleCommandPalette, toggleInSelection, toggleSelectedLock, ungroupSelection, updateInspectorPanel
 } from './ui/inspector-layers.js';
-import { exportPng } from './io/export-png.js';
+import { currentBrandStamp, exportPng } from './io/export-png.js';
 import {
     applyDefaultLayout, bindProjectSpecEvents, importLayoutText, layoutPayload, loadState, openShortcuts,
     openSpecSheet, saveState
@@ -495,6 +496,10 @@ const isPlainItemShortcut = (e, key) =>
     !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat &&
     state.selectedItemIds.length > 0 && !isPointerBusy() && !isTextEntry(e.target);
 
+const isLayerEdgeShortcut = (e) =>
+    (e.key === ']' || e.key === '[') && e.ctrlKey === e.altKey && !e.metaKey &&
+    state.selectedItemIds.length > 0 && !isPointerBusy() && !isTextEntry(e.target);
+
 function handleModifierShortcut(e) {
     if (isTextEntry(e.target)) return false;
 
@@ -649,6 +654,20 @@ function handleWallResize() {
     saveState();
 }
 
+function handleAtticResize() {
+    const widthCm = readWallInput(atticWidthInput, ATTIC_SIZE_LIMITS_CM, state.atticWidthCm);
+    const heightCm = readWallInput(atticHeightInput, ATTIC_SIZE_LIMITS_CM, state.atticHeightCm);
+    const changed = widthCm !== state.atticWidthCm || heightCm !== state.atticHeightCm;
+
+    state.atticWidthCm = widthCm;
+    state.atticHeightCm = heightCm;
+    // Also puts back the current size when the typed value was empty or clamped to what is already set
+    applyAtticSlope();
+    if (!changed) return;
+    pushHistory('attic-size');
+    saveState();
+}
+
 // v2.0 ran as a classic script, so DevTools and the end-to-end suite could read its top-level bindings
 // by name. The module build republishes that surface on window, with live getters for mutable state.
 function exposeConsoleBindings() {
@@ -673,9 +692,9 @@ function exposeConsoleBindings() {
     const fixed = {
         importLayoutText, layoutPayload, openSpecSheet, renderPlanner, updateInspectorPanel, setSelection, selectItem,
         getSelectedItem, getItemElement, csvField, hasOverlap, isOverlapping, intrudesAtticSlope, rulers, rulerBands,
-        wallCanvas, wallItemsLayer, alignLayer, atticZone, atticSlopeToggle, accentColorPicker, cornerColorPicker,
+        wallCanvas, wallItemsLayer, alignLayer, atticZone, atticSlopeToggle, atticWidthInput, atticHeightInput, accentColorPicker, cornerColorPicker,
         brightnessSlider, wallWidthInput, wallHeightInput, scaleNote, undoBtn, redoBtn, rulerX, ioStatus,
-        newProjectName, specModal, shortcutsModal, commandPalette
+        newProjectName, specModal, shortcutsModal, commandPalette, currentBrandStamp
     };
     Object.entries(live).forEach(([name, get]) => Object.defineProperty(window, name, { get, configurable: true }));
     Object.entries(fixed).forEach(([name, value]) => Object.defineProperty(window, name, { value, configurable: true }));
@@ -979,6 +998,14 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
+    // ] and [ send the selection to the top or bottom of the stack. AltGr layouts type the brackets
+    // with Ctrl and Alt both down, so that pair counts as no modifier.
+    if (isLayerEdgeShortcut(e)) {
+        e.preventDefault();
+        if (!e.repeat) moveSelectedLayerToEdge(e.key === ']');
+        return;
+    }
+
     const hasModifier = (e.ctrlKey || e.metaKey) && !e.altKey;
     if (hasModifier && handleModifierShortcut(e)) return;
     handleItemKeys(e);
@@ -1020,6 +1047,9 @@ atticSlopeToggle.addEventListener('change', () => {
 
 undoBtn.addEventListener('click', undo);
 redoBtn.addEventListener('click', redo);
+
+atticWidthInput.addEventListener('change', handleAtticResize);
+atticHeightInput.addEventListener('change', handleAtticResize);
 
 wallWidthInput.addEventListener('change', handleWallResize);
 wallHeightInput.addEventListener('change', handleWallResize);

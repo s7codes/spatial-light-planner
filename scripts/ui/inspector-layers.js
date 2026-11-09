@@ -426,6 +426,39 @@ function applyBlockOrder(blocks, groupId) {
     state.wallItems.splice(state.wallItems.findIndex(item => item.groupId === groupId), ordered.length, ...ordered);
 }
 
+// Room features (doors, windows, sockets, TVs) form the floor of the stack. Send to Back drops furniture
+// onto that floor, never under it, and only a selected feature sinks below the other features. A feature
+// brought to the front rises to the top of the floor, so furniture never ends up beneath one.
+const isFloorBlock = (block) => block.items.every(isObstacle);
+
+function layerEdgeOrder(toFront) {
+    const { blocks, groupId } = layerScope();
+    const rest = blocks.filter(block => !isBlockSelected(block));
+    const picked = blocks.filter(isBlockSelected);
+    const floorEnd = rest.findIndex(block => !isFloorBlock(block));
+    const floor = floorEnd < 0 ? rest : rest.slice(0, floorEnd);
+    const above = floorEnd < 0 ? [] : rest.slice(floorEnd);
+    const pickedFloor = picked.filter(isFloorBlock);
+    const pickedOther = picked.filter(block => !isFloorBlock(block));
+    const ordered = toFront
+        ? [...floor, ...pickedFloor, ...above, ...pickedOther]
+        : [...pickedFloor, ...floor, ...pickedOther, ...above];
+    const changed = picked.length > 0 && ordered.some((block, index) => block !== blocks[index]);
+    return { ordered, groupId, changed };
+}
+
+export const canMoveLayerToEdge = (toFront) => layerEdgeOrder(toFront).changed;
+
+export function moveSelectedLayerToEdge(toFront) {
+    const { ordered, groupId, changed } = layerEdgeOrder(toFront);
+    if (!changed) return;
+
+    applyBlockOrder(ordered, groupId);
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
 // wallItems is also the paint order in #wall-items. Walking from the leading end lets every selected
 // block hop over its unselected neighbor once, so a selection shifts one layer and keeps its inner order.
 export function moveSelectedLayer(step) {
@@ -1245,8 +1278,10 @@ const CONTEXT_ACTIONS = {
     duplicate: duplicateSelectedItem,
     group: groupSelection,
     ungroup: ungroupSelection,
+    front: () => moveSelectedLayerToEdge(true),
     forward: () => moveSelectedLayer(1),
     backward: () => moveSelectedLayer(-1),
+    back: () => moveSelectedLayerToEdge(false),
     rotate: rotateSelection,
     lock: toggleSelectedLock,
     delete: removeSelectedItems
@@ -1260,8 +1295,10 @@ function syncContextMenu() {
         duplicate: { disabled: false },
         group: { disabled: !canGroup() },
         ungroup: { disabled: !canUngroup() },
+        front: { disabled: !canMoveLayerToEdge(true) },
         forward: { disabled: !canMoveLayer(1) },
         backward: { disabled: !canMoveLayer(-1) },
+        back: { disabled: !canMoveLayerToEdge(false) },
         rotate: { disabled: !canRotateSelection() },
         lock: { disabled: false, label: items.length > 1 ? `${lockLabel} All` : lockLabel },
         delete: { disabled: allLocked }
@@ -1353,6 +1390,8 @@ function buildCommands() {
         if (selected.some(item => !item.locked)) add('Selection', 'Remove Selection', removeSelectedItems, 'Del');
         if (canCopyStyle()) add('Selection', 'Copy Item Style', copySelectedStyle, 'Alt+Shift+C');
         if (canPasteStyle()) add('Selection', 'Paste Item Style', pasteStyleToSelection, 'Alt+Shift+V');
+        if (canMoveLayerToEdge(true)) add('Selection', 'Bring to Front', () => moveSelectedLayerToEdge(true), ']');
+        if (canMoveLayerToEdge(false)) add('Selection', 'Send to Back', () => moveSelectedLayerToEdge(false), '[');
     }
 
     catalogItems.forEach(card => {

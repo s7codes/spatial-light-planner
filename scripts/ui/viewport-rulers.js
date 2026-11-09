@@ -5,7 +5,8 @@ import {
     wallPaintById, ZOOM_BUTTON_STEP, ZOOM_LIMITS, ZOOM_WHEEL_STEP
 } from '../core/constants.js';
 import {
-    accentColorPicker, accentHexCode, appShell, atticSlopeToggle, atticZone, backdropAlignButtons, backdropAlignRow,
+    accentColorPicker, accentHexCode, appShell, atticHeightInput, atticSizeFields, atticSlopeToggle, atticWidthInput,
+    atticZone, atticZoneSize, backdropAlignButtons, backdropAlignRow,
     backdropButtons, brightnessSlider, brightnessValue, canvasArea, commandPaletteBtn, cornerColorPicker, cornerHexCode,
     floorBackdropLayer, guideHitLayer, guideLineLayer, isModalOpen, measureLayer, modeCreatorBtn, modeEngineerBtn,
     paintSwatches, powerRoutesLayer, powerRoutingSummary, powerRoutingToggle, presetButtons, rulerCorner, rulers, rulerX,
@@ -720,7 +721,16 @@ export function setStudioMode(mode) {
 }
 
 export function applyAtticSlope() {
-    atticZone.hidden = !atticSlopeToggle.checked;
+    const on = atticSlopeToggle.checked;
+    atticZone.hidden = !on;
+    atticSizeFields.hidden = !on;
+    atticWidthInput.disabled = !on;
+    atticHeightInput.disabled = !on;
+    atticWidthInput.value = state.atticWidthCm;
+    atticHeightInput.value = state.atticHeightCm;
+    atticZone.style.setProperty('--attic-w', `${state.atticWidthCm * SCALE}px`);
+    atticZone.style.setProperty('--attic-h', `${state.atticHeightCm * SCALE}px`);
+    atticZoneSize.textContent = `${state.atticWidthCm} x ${state.atticHeightCm} cm`;
     updateCollisionStates();
     updateInspectorLive();
 }

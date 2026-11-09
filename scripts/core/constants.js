@@ -2,7 +2,10 @@ export const SCALE = 2.5; // 1 cm = 2.5 px
 export const CM_STEP_PX = SCALE;
 export const SNAP_STEP_PX = 5 * SCALE; // 5 cm grid step (12.5 px)
 export const ALIGN_THRESHOLD_PX = SCALE; // 1 cm magnet range
-export const ATTIC_SLOPE_PX = 90 * SCALE; // 90 x 90 cm roof cut-out (225 px)
+export const DEFAULT_ATTIC_WIDTH_CM = 90;
+export const DEFAULT_ATTIC_HEIGHT_CM = 90;
+// Both stay within the smallest wall (150 x 150 cm), so a wall resize never pushes the slope off it
+export const ATTIC_SIZE_LIMITS_CM = [30, 150];
 export const DUPLICATE_OFFSET_PX = 4 * SCALE; // 4 cm (10 px)
 export const MIN_WIDTH_CM = 8;
 export const MIN_HEIGHT_CM = 4;
@@ -197,6 +200,8 @@ export const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 export const quantize = (px, step) => Math.round(px / step) * step;
 export const toCm = (px) => Math.round(px / SCALE);
 export const isWholeCm = (px) => Math.abs(px / SCALE - Math.round(px / SCALE)) < EPSILON;
+export const isoDate = (date) =>
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 export const formatOffset = (item) => `${toCm(item.left)} cm (X), ${toCm(item.top)} cm (Y)`;
 export const formatFootprint = (box) => `${toCm(box.width)} x ${toCm(box.height)} cm`;
 export const wallPaintById = (id) => WALL_PAINTS.find(paint => paint.id === id) || WALL_PAINTS[0];

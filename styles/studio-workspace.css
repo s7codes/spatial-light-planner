@@ -258,6 +258,24 @@ button:focus-visible {
     background-color: var(--bg-inset);
 }
 
+.attic-size-fields {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    height: 100%;
+    padding: 0 4px 0 2px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-raised);
+    box-shadow: var(--highlight), 0 0 0 1px var(--hairline);
+}
+
+.attic-dim-input {
+    width: 32px;
+    height: 20px;
+    padding: 0 2px;
+    font-size: 11.5px;
+}
+
 .topbar-toggle {
     display: flex;
     align-items: center;
@@ -1763,17 +1781,17 @@ body.is-placing * {
 
 /* Attic slope zone */
 .attic-zone {
-    /* 90 x 90 cm at 2.5px per cm */
+    /* Sized from the layout; 90 x 90 cm at 2.5px per cm until a script sets the variables */
     position: absolute;
     top: 0;
     right: 0;
-    width: 225px;
-    height: 225px;
+    width: var(--attic-w, 225px);
+    height: var(--attic-h, 225px);
     z-index: 1;
     pointer-events: none;
     clip-path: polygon(0 0, 100% 0, 100% 100%);
-    /* A "to bottom left" gradient puts its 50% line exactly on the diagonal, so the
-       first layer draws a 2px edge just inside the clipped triangle */
+    /* A "to bottom left" gradient puts its 50% line exactly on the diagonal at any aspect ratio,
+       so the first layer draws a 2px edge just inside the clipped triangle */
     background:
         linear-gradient(to bottom left,
             transparent calc(50% - 2px),

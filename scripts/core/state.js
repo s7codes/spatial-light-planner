@@ -1,5 +1,5 @@
 import {
-    clamp, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
+    ATTIC_SIZE_LIMITS_CM, clamp, DEFAULT_ATTIC_HEIGHT_CM, DEFAULT_ATTIC_WIDTH_CM, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
     FEATURE_TYPES, FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isFeature, isHexColor, isLedOn,
     ITEM_TYPES, MAX_DEPTH_CM, MAX_GUIDES,
     MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, POSTER_ART_IDS, ROTATIONS,
@@ -118,6 +118,9 @@ export const state = {
     wallHeightCm: DEFAULT_WALL_HEIGHT_CM,
     wallWidthPx: DEFAULT_WALL_WIDTH_CM * SCALE,
     wallHeightPx: DEFAULT_WALL_HEIGHT_CM * SCALE,
+    // The slope cut-out in the top-right corner, kept with the layout even while the slope is off
+    atticWidthCm: DEFAULT_ATTIC_WIDTH_CM,
+    atticHeightCm: DEFAULT_ATTIC_HEIGHT_CM,
     viewScale: 1,
     // The view sits on top of the fit: viewScale = fitScale * userZoom, and the pan moves the wall's center
     userZoom: 1,
@@ -333,6 +336,9 @@ export function normalizeLayout(data) {
         wallWidthCm: widthCm,
         wallHeightCm: heightCm,
         atticSlope: typeof data.atticSlope === 'boolean' ? data.atticSlope : null,
+        // Files from before v2.6 only carry the flag, and their slope was always 90 x 90 cm
+        atticWidthCm: toWallCm(data.atticWidthCm, ATTIC_SIZE_LIMITS_CM, DEFAULT_ATTIC_WIDTH_CM),
+        atticHeightCm: toWallCm(data.atticHeightCm, ATTIC_SIZE_LIMITS_CM, DEFAULT_ATTIC_HEIGHT_CM),
         accentColor: isHexColor(data.accentColor) ? data.accentColor.toLowerCase() : null,
         cornerColor: isHexColor(data.cornerColor) ? data.cornerColor.toLowerCase() : null,
         brightness: brightness === null ? null : clamp(Math.round(brightness), 0, 100),
@@ -345,6 +351,8 @@ export function normalizeLayout(data) {
 export const serializeHistoryState = () => JSON.stringify({
     items: state.wallItems,
     atticSlope: atticSlopeToggle.checked,
+    atticWidthCm: state.atticWidthCm,
+    atticHeightCm: state.atticHeightCm,
     wallWidthCm: state.wallWidthCm,
     wallHeightCm: state.wallHeightCm,
     wallGuides: state.wallGuides,
@@ -397,6 +405,8 @@ export function restoreHistoryStep(step) {
     setWallDimensions(snapshot.wallWidthCm, snapshot.wallHeightCm);
     state.wallItems = snapshot.items;
     atticSlopeToggle.checked = snapshot.atticSlope;
+    state.atticWidthCm = snapshot.atticWidthCm;
+    state.atticHeightCm = snapshot.atticHeightCm;
     state.wallGuides = snapshot.wallGuides;
     applyWallPaint(snapshot.wallPaint);
     renderGuides();

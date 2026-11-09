@@ -1,5 +1,5 @@
 import {
-    ALIGN_THRESHOLD_PX, ATTIC_SLOPE_PX, clamp, CM_STEP_PX, EPSILON, escapeHtml, FLOOR_BACKDROPS, getBounds,
+    ALIGN_THRESHOLD_PX, clamp, CM_STEP_PX, EPSILON, escapeHtml, FLOOR_BACKDROPS, getBounds,
     isFeature, isLedOn, isObstacle, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
 } from './constants.js';
 import { alignLayer, atticSlopeToggle, wallItemsLayer } from './dom.js';
@@ -43,15 +43,17 @@ export const overlapsFurniture = (item) =>
 export const blocksRoomFeature = (item) =>
     isSolid(item) && overlapsAny(item, other => isSolid(other) && isObstacle(item) !== isObstacle(other));
 
-// The slope edge follows y = x - (wallWidthPx - S). For an axis-aligned box the top-right
-// corner is the point that reaches furthest past that line, so testing it alone is exact.
+// The slope edge runs from (wallWidthPx - W, 0) down to (wallWidthPx, H). For an axis-aligned box the
+// top-right corner is the point that reaches furthest past that line, so testing it alone is exact.
+// The comparison is cross-multiplied, which stays exact on the half-pixel grid for any W:H ratio.
 // Doors and windows are cut into the wall itself, so the slope never flags them.
 export function intrudesAtticSlope(item) {
     if (!atticSlopeToggle.checked || isFeature(item) || item.hidden) return false;
 
-    const slopeStartX = state.wallWidthPx - ATTIC_SLOPE_PX;
-    const itemRight = item.left + item.width;
-    return itemRight > slopeStartX && item.top < itemRight - slopeStartX;
+    const slopeW = state.atticWidthCm * SCALE;
+    const slopeH = state.atticHeightCm * SCALE;
+    const reach = Math.min(item.left + item.width - (state.wallWidthPx - slopeW), slopeW);
+    return reach > 0 && item.top * slopeW < reach * slopeH;
 }
 
 export function isColliding(item) {

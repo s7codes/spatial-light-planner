@@ -28,7 +28,7 @@
             <h2 id="splash-title" class="splash-wordmark">Lumen</h2>
             <p class="splash-tagline">Professional Spatial Lighting &amp; Shelving Planner</p>
             <button type="button" id="enter-studio-btn" class="splash-enter-btn">Enter Studio</button>
-            <span class="splash-footnote">Spatial Studio v2.5</span>
+            <span class="splash-footnote">Spatial Studio v2.6</span>
         </div>
     </div>
 
@@ -47,7 +47,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v2.5</span></h1>
+            <h1>Spatial Studio <span class="badge">v2.6</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -67,10 +67,15 @@
                     <input type="checkbox" id="snap-grid-toggle">
                     <span>Snap 5cm</span>
                 </label>
-                <label class="topbar-toggle" title="Show the 90 x 90 cm sloped ceiling and check items against it">
+                <label class="topbar-toggle" title="Show the sloped ceiling (90 x 90 cm unless resized) and check items against it">
                     <input type="checkbox" id="attic-slope-toggle">
                     <span>Attic Slope</span>
                 </label>
+                <span id="attic-size-fields" class="attic-size-fields" hidden>
+                    <input type="number" id="attic-width-input" class="wall-dim-input attic-dim-input" min="30" max="150" step="1" value="90" aria-label="Attic slope width in cm" title="Slope width along the ceiling (30-150 cm)" disabled>
+                    <span class="wall-dim-sep">x</span>
+                    <input type="number" id="attic-height-input" class="wall-dim-input attic-dim-input" min="30" max="150" step="1" value="90" aria-label="Attic slope height in cm" title="Slope drop down the wall (30-150 cm)" disabled>
+                </span>
             </div>
             <div class="btn-group" role="group" aria-label="History">
                 <button id="undo-btn" class="btn-secondary btn-icon" aria-label="Undo" title="Undo (Ctrl+Z)" disabled>
@@ -205,7 +210,7 @@
                 <div id="attic-zone" class="attic-zone" hidden>
                     <div class="attic-zone-label">
                         <span>Sloped ceiling</span>
-                        <span>90 x 90 cm</span>
+                        <span id="attic-zone-size">90 x 90 cm</span>
                     </div>
                 </div>
                 <div id="guide-hits" class="guide-hits"></div>
@@ -583,6 +588,10 @@
                         locks, duplicates and removals apply to the whole group. Right-click an item for its menu.
                     </p>
                     <p>
+                        <kbd>]</kbd> brings the selection to the front and <kbd>[</kbd> sends it to the back. Doors,
+                        windows, sockets and TVs always stay below the furniture.
+                    </p>
+                    <p>
                         <kbd>R</kbd> turns the selection 90 degrees clockwise. Hold <kbd>Alt</kbd> / <kbd>Option</kbd> with
                         something selected and point at another item, or at bare wall, to measure the distance to it.
                     </p>
@@ -682,11 +691,19 @@
             <kbd aria-hidden="true">Ctrl+Shift+G</kbd>
         </button>
         <div class="context-menu-separator" role="separator"></div>
+        <button type="button" class="context-menu-item" role="menuitem" data-action="front" aria-keyshortcuts="]">
+            <span class="context-menu-label">Bring to Front</span>
+            <kbd aria-hidden="true">]</kbd>
+        </button>
         <button type="button" class="context-menu-item" role="menuitem" data-action="forward">
             <span class="context-menu-label">Bring Forward</span>
         </button>
         <button type="button" class="context-menu-item" role="menuitem" data-action="backward">
             <span class="context-menu-label">Send Backward</span>
+        </button>
+        <button type="button" class="context-menu-item" role="menuitem" data-action="back" aria-keyshortcuts="[">
+            <span class="context-menu-label">Send to Back</span>
+            <kbd aria-hidden="true">[</kbd>
         </button>
         <div class="context-menu-separator" role="separator"></div>
         <button type="button" class="context-menu-item" role="menuitem" data-action="rotate" aria-keyshortcuts="R">

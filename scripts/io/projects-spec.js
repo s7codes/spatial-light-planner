@@ -1,5 +1,5 @@
 import {
-    COPY_LABEL, CSV_FILENAME, CSV_LABEL, csvRow, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
+    COPY_LABEL, CSV_FILENAME, CSV_LABEL, csvRow, DEFAULT_ATTIC_HEIGHT_CM, DEFAULT_ATTIC_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
     defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, formatMoney, fromBase64Url, isFeature, isLedOn,
     isQuarterTurn, LAYOUT_TEMPLATES, LEGACY_STORAGE_KEY, markdownCell, MAX_IMPORT_BYTES, MAX_PROJECTS,
     MAX_SHARE_CHARS, MOUNTING_NOTE, PROJECT_ID_PATTERN, PROJECT_INDEX_KEY, PROJECT_LAYOUT_PREFIX,
@@ -41,11 +41,13 @@ const currentLayoutData = () => ({
     cornerColor: cornerColorPicker.value,
     brightness: brightnessSlider.value,
     atticSlope: atticSlopeToggle.checked,
+    atticWidthCm: state.atticWidthCm,
+    atticHeightCm: state.atticHeightCm,
     wallPaint: state.wallPaint,
     wallGuides: state.wallGuides
 });
 
-const activeProject = () => state.projects.find(project => project.id === activeProjectId);
+export const activeProject = () => state.projects.find(project => project.id === activeProjectId);
 
 const cleanProjectName = (raw, fallback) => (typeof raw === 'string' && raw.trim()
     ? raw.trim().replace(/\s+/g, ' ').slice(0, PROJECT_NAME_LENGTH)
@@ -164,6 +166,8 @@ export function applyLayoutSettings(layout) {
     setWallDimensions(layout.wallWidthCm, layout.wallHeightCm);
     state.wallItems = layout.items;
     if (layout.atticSlope !== null) atticSlopeToggle.checked = layout.atticSlope;
+    state.atticWidthCm = layout.atticWidthCm;
+    state.atticHeightCm = layout.atticHeightCm;
     if (layout.accentColor) updateAccentColor(layout.accentColor, false);
     if (layout.cornerColor) updateCornerColor(layout.cornerColor, false);
     if (layout.brightness !== null) setBrightness(layout.brightness);
@@ -176,6 +180,8 @@ export function applyDefaultLayout() {
     setWallDimensions(DEFAULT_WALL_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM);
     state.wallItems = cloneDefaults();
     atticSlopeToggle.checked = false;
+    state.atticWidthCm = DEFAULT_ATTIC_WIDTH_CM;
+    state.atticHeightCm = DEFAULT_ATTIC_HEIGHT_CM;
     updateAccentColor('#ff9d42', false);
     updateCornerColor('#8b5cf6', false);
     setBrightness(100);
@@ -239,6 +245,8 @@ export const layoutPayload = () => ({
     wallHeightCm: state.wallHeightCm,
     wallItems: state.wallItems,
     atticSlope: atticSlopeToggle.checked,
+    atticWidthCm: state.atticWidthCm,
+    atticHeightCm: state.atticHeightCm,
     wallPaint: state.wallPaint,
     wallGuides: state.wallGuides,
     accentColor: accentColorPicker.value,
