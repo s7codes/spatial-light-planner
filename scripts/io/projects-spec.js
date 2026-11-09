@@ -7,7 +7,7 @@ import {
     wallPaintById
 } from '../core/constants.js';
 import {
-    accentColorPicker, atticSlopeToggle, bomBody, bomFoot, brightnessSlider, closeProjectsBtn, closeShortcutsBtn,
+    accentColorPicker, atticSlopeToggle, bomBody, bomFoot, brightnessSlider, canvasArea, closeProjectsBtn, closeShortcutsBtn,
     closeQuoteBtn, closeSpecBtn, commandPalette, copyMarkdownBtn, copyShareLinkBtn, cornerColorPicker, exportCsvBtn,
     exportJsonBtn, generateQuoteBtn, importFileInput, importJsonBtn, ioStatus, isModalOpen, kitLedStrip, kitPowerDraw,
     kitWallAnchors, mountingBody, newProjectForm, newProjectName, printQuoteBtn, quoteBody, quoteDate, quoteGross,
@@ -312,6 +312,64 @@ function importLayoutFile(file) {
     reader.readAsText(file);
 }
 
+// Enter and leave fire for every child the pointer crosses, so a depth counter keeps the overlay steady.
+// A catalog drag is a mouse drag with no files, and an open dialog or busy pointer refuses the drop.
+let fileDragDepth = 0;
+
+const isFileDrag = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+const canTakeFileDrop = () => !document.body.classList.contains('is-placing') && !isPointerBusy() && !isModalOpen();
+const isJsonFile = (file) => /\.json$/i.test(file.name) || file.type === 'application/json';
+
+function endFileDrag() {
+    fileDragDepth = 0;
+    canvasArea.classList.remove('is-file-dragging');
+}
+
+function bindFileDrop() {
+    canvasArea.addEventListener('dragenter', (e) => {
+        if (!isFileDrag(e) || !canTakeFileDrop()) return;
+        e.preventDefault();
+        fileDragDepth++;
+        canvasArea.classList.add('is-file-dragging');
+    });
+
+    canvasArea.addEventListener('dragover', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = fileDragDepth > 0 ? 'copy' : 'none';
+    });
+
+    canvasArea.addEventListener('dragleave', (e) => {
+        if (!isFileDrag(e) || fileDragDepth === 0) return;
+        fileDragDepth--;
+        if (fileDragDepth === 0) canvasArea.classList.remove('is-file-dragging');
+    });
+
+    canvasArea.addEventListener('drop', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        const accepted = fileDragDepth > 0 && canTakeFileDrop();
+        endFileDrag();
+        if (!accepted) return;
+
+        const file = [...e.dataTransfer.files].find(isJsonFile);
+        if (file) importLayoutFile(file);
+        else showIoStatus('Import failed: drop a .json layout file.', 'error');
+    });
+
+    // A file let go outside the canvas would otherwise replace the planner tab with the file itself
+    window.addEventListener('dragover', (e) => {
+        if (!isFileDrag(e) || canvasArea.contains(e.target)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'none';
+    });
+    window.addEventListener('drop', (e) => {
+        if (!isFileDrag(e)) return;
+        e.preventDefault();
+        endFileDrag();
+    });
+}
+
 const totalPrice = () => state.wallItems.reduce((sum, item) => sum + item.price, 0);
 
 // Room features are not bought or mounted, so the spec sheet leaves them out
@@ -353,8 +411,8 @@ function buildMountingRows() {
         });
 }
 
-const KIT_ANCHORS = { shelf: 4, storage: 4, cube: 2, poster: 2, spotlight: 2, 'corner-lamp': 1 };
-const FIXED_STRIP_CM = { 'corner-lamp': 140, spotlight: 20 };
+const KIT_ANCHORS = { shelf: 4, storage: 4, cube: 2, poster: 2, spotlight: 2, 'corner-lamp': 1, lightbar: 2 };
+const FIXED_STRIP_CM = { 'corner-lamp': 140, lightbar: 60, spotlight: 20 };
 
 // A quarter-turned shelf still carries its strip along its long catalog side, so lengths use that side
 function ledStripCm(item) {
@@ -591,7 +649,7 @@ const PROJECT_DATE_FORMAT = new Intl.DateTimeFormat('en-GB', {
 
 const THUMB_COLORS = {
     walnut: '#8b5a2b', oak: '#c89d66', black: '#525a66', white: '#e5e7eb',
-    socket: '#d3d8e0', door: 'rgba(148, 163, 184, 0.4)', window: 'rgba(96, 165, 250, 0.45)', note: '#fde68a'
+    socket: '#d3d8e0', door: 'rgba(148, 163, 184, 0.4)', window: 'rgba(96, 165, 250, 0.45)', tv: '#11141a', note: '#fde68a'
 };
 
 // The open project is read from the live wall; the others from storage, through the usual sanitizer
@@ -829,6 +887,7 @@ export function bindProjectSpecEvents() {
         // Clearing the value lets the same file be picked again after editing it
         importFileInput.value = '';
     });
+    bindFileDrop();
 
     viewSpecBtn.addEventListener('click', openSpecSheet);
     closeSpecBtn.addEventListener('click', () => specModal.close());

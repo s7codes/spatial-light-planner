@@ -20,8 +20,21 @@ const overlapsAny = (item, accept) =>
     state.wallItems.some(other => other.id !== item.id && accept(other) && isOverlapping(item, other));
 
 // Two room features may share space (a socket beside a door frame); every other solid overlap is a conflict
+const clashesWith = (item, other) => isSolid(other) && !(isObstacle(item) && isObstacle(other));
+
 export function hasOverlap(item) {
-    return isSolid(item) && overlapsAny(item, other => isSolid(other) && !(isObstacle(item) && isObstacle(other)));
+    return isSolid(item) && overlapsAny(item, other => clashesWith(item, other));
+}
+
+export const collisionTargets = (item) => (isSolid(item)
+    ? state.wallItems.filter(other => other.id !== item.id && clashesWith(item, other) && isOverlapping(item, other))
+    : []);
+
+// Only the pieces under the pointer reveal what they hit; resting overlaps stay plain red
+function movingItemIds() {
+    if (state.dragState.isDragging && !state.dragState.blocked) return state.dragState.excludedIds;
+    if (state.resizeState.active) return new Set([state.resizeState.itemId]);
+    return null;
 }
 
 export const overlapsFurniture = (item) =>
@@ -46,12 +59,19 @@ export function isColliding(item) {
 }
 
 export function updateCollisionStates() {
-    wallItemsLayer.querySelectorAll('.wall-item').forEach(el => {
+    const moving = movingItemIds();
+    const xrayIds = new Set();
+    const elements = [...wallItemsLayer.querySelectorAll('.wall-item')];
+    elements.forEach(el => {
         const item = state.wallItems.find(i => i.id === el.dataset.id);
-        if (item) {
-            el.classList.toggle('colliding', isColliding(item));
+        if (!item) return;
+        const colliding = isColliding(item);
+        el.classList.toggle('colliding', colliding);
+        if (colliding && moving?.has(item.id)) {
+            collisionTargets(item).forEach(other => { if (!moving.has(other.id)) xrayIds.add(other.id); });
         }
     });
+    elements.forEach(el => el.classList.toggle('is-xray-target', xrayIds.has(el.dataset.id)));
 }
 
 // The excluded ids are the selection itself, so a group measures only to items outside it

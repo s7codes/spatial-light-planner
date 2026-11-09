@@ -1,4 +1,4 @@
-import { isHexColor, ITEM_DEPTH_CM } from './constants.js';
+import { isHexColor, ITEM_DEPTH_CM, RGB_BAR_TYPES } from './constants.js';
 
 export const wallCanvas = document.getElementById('wall');
 export const canvasArea = document.querySelector('.canvas-area');
@@ -150,4 +150,4 @@ export const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-it
 
 export const ledColorOf = (item) => (isHexColor(item.itemLedColor)
     ? item.itemLedColor
-    : (item.type === 'corner-lamp' ? cornerColorPicker : accentColorPicker).value);
+    : (RGB_BAR_TYPES.includes(item.type) ? cornerColorPicker : accentColorPicker).value);

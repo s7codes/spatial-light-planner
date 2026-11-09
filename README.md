@@ -14,6 +14,10 @@ framework, no bundler, no build step, no runtime dependencies.
 
 - **To-scale drag and resize** with magnetic alignment, live gap rulers, `Alt`-measure between items, exact
   X / Y fields, rotation, mirroring, grouping, align and distribute, and 30-step undo.
+- **Collision X-ray.** A piece dragged or resized into a conflict turns red, and every item it hits pulses
+  with a red outline until the conflict clears or the piece is released.
+- **Catalog** of shelving, posters, spotlights, a corner floor lamp and a wall-mounted RGB lightbar, plus room
+  features (socket, door, window, 55" TV screen) that act as no-build zones.
 - **RGB lighting engine** built on CSS custom properties: per-item backlight colors, corner glow, spotlight
   cones and wall paints, rendered identically by the Canvas exporter.
 - **Engineer and Creator workspace modes.** Engineer keeps every drafting tool in view; Creator hides rulers,
@@ -28,7 +32,8 @@ framework, no bundler, no build step, no runtime dependencies.
 - **Z-depth foundation.** Every item carries a wall-to-front depth in cm (read-only in the Inspector), saved
   in layout files and ready for a future 3D viewport.
 - **Multi-project storage and permalinks.** Named projects with autosave, JSON import / export with a strict
-  sanitizer, and share links that carry a whole wall in the URL hash.
+  sanitizer (or drop a `.json` layout straight onto the canvas), and share links that carry a whole wall in
+  the URL hash.
 
 ## Architecture & Engineering Notes
 

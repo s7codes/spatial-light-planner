@@ -507,7 +507,7 @@ export function paintItem(ctx, item, brightness, arts) {
     shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, border, shadow, 1));
 
     if (item.type === 'storage') paintStorageHandles(ctx, item, el, border);
-    if (['poster', 'corner-lamp', 'socket'].includes(item.type)) paintAfterLayer(ctx, item, el, border, arts);
+    if (['poster', 'corner-lamp', 'lightbar', 'socket'].includes(item.type)) paintAfterLayer(ctx, item, el, border, arts);
     paintItemLabel(ctx, item, el);
 }
 

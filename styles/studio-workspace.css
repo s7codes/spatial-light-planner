@@ -514,8 +514,8 @@ button:focus-visible {
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 6px 10px 6px 6px;
-    margin-bottom: 6px;
+    padding: 3px 10px 3px 4px;
+    margin-bottom: 4px;
     text-align: left;
     border: 1px solid var(--hairline);
     border-radius: var(--radius-md);
@@ -546,8 +546,8 @@ button:focus-visible {
 .catalog-item::before {
     content: "";
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border-radius: var(--radius-sm);
     background-color: var(--bg-inset);
     background-repeat: no-repeat;
@@ -587,11 +587,17 @@ button:focus-visible {
     background-size: 5px 20px;
 }
 
-/* Room features sit four to a row so the catalog still fits the 820 px studio height */
+.catalog-item[data-type="lightbar"]::before {
+    --thumb-glow: var(--corner-led);
+    background-image: linear-gradient(#334155, #1e293b);
+    background-size: 22px 4px;
+}
+
+/* Room features sit five to a row so the catalog still fits the 820 px studio height */
 .feature-tiles {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 5px;
 }
 
 .catalog-item.feature-tile {
@@ -644,6 +650,14 @@ button:focus-visible {
         linear-gradient(transparent 44%, #7b8597 44% 56%, transparent 56%),
         linear-gradient(rgba(96, 165, 250, 0.35), rgba(96, 165, 250, 0.35));
     background-size: 12px 12px;
+}
+
+.catalog-item[data-type="tv"]::before {
+    background-image:
+        linear-gradient(135deg, rgba(148, 163, 184, 0.35), transparent 55%),
+        linear-gradient(#0b0d12, #0b0d12),
+        linear-gradient(#9aa3b2, #9aa3b2);
+    background-size: 14px 8px, 14px 8px, 16px 10px;
 }
 
 .item-meta {
@@ -764,6 +778,28 @@ button:focus-visible {
         linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
     background-size: 100% 100%, 16px 16px, 160px 160px, 160px 160px;
     background-position: center;
+}
+
+/* Shown while a file is dragged in from the desktop. It never takes pointer events, so the drag keeps
+   reporting the items underneath and the enter / leave counter in JS decides when it goes away. */
+.canvas-area.is-file-dragging::after {
+    content: "Drop layout file to load";
+    position: absolute;
+    inset: 14px;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px dashed rgba(255, 157, 66, 0.85);
+    border-radius: 14px;
+    background-color: rgba(13, 15, 19, 0.55);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: var(--text-main);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    pointer-events: none;
 }
 
 /* CAD edge rulers. They sit in the canvas padding outside #wall and are positioned from JS at every fit,
@@ -1077,6 +1113,17 @@ button:focus-visible {
     outline-offset: 2px;
 }
 
+/* X-ray: what a dragged piece is hitting glows red around its edges, even underneath the dragged piece */
+#wall .wall-item.is-xray-target {
+    box-shadow: 0 0 0 2px #ef4444, 0 0 15px rgba(239, 68, 68, 0.5);
+    animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+    0%, 100% { box-shadow: 0 0 0 2px #ef4444, 0 0 15px rgba(239, 68, 68, 0.5); }
+    50% { box-shadow: 0 0 0 3px #ef4444, 0 0 24px rgba(239, 68, 68, 0.75); }
+}
+
 /* Spans the border box, so a framed item's glow starts outside the frame instead of tinting it */
 .wall-item::before {
     content: "";
@@ -1315,6 +1362,42 @@ button:focus-visible {
     height: 6px;
 }
 
+/* Wall-mounted sibling of the corner lamp: a slim aluminium bar with one long diffuser along its face */
+.wall-item.lightbar {
+    --led-color: var(--item-color, var(--corner-led));
+    --frame: 1px;
+    --item-drop: 0 6px 12px rgba(0, 0, 0, 0.55);
+    background-color: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 3px;
+}
+.wall-item.lightbar::before {
+    box-shadow: 0 0 32px var(--led-color);
+}
+.wall-item.lightbar::after {
+    content: "";
+    position: absolute;
+    top: calc(50% - 2px);
+    left: 6px;
+    right: 6px;
+    height: 4px;
+    border-radius: 2px;
+    background-color: var(--led-color);
+    box-shadow: 0 0 6px var(--led-color), 0 0 14px var(--led-color);
+    opacity: var(--led-opacity);
+    pointer-events: none;
+}
+
+.wall-item.lightbar.rot-90::after,
+.wall-item.lightbar.rot-270::after {
+    top: 6px;
+    bottom: 6px;
+    left: calc(50% - 2px);
+    right: auto;
+    width: 4px;
+    height: auto;
+}
+
 .wall.daylight-mode .wall-item.spotlight::after,
 .wall-item.spotlight.led-off::after {
     opacity: 0;
@@ -1322,7 +1405,9 @@ button:focus-visible {
 
 /* An unlit diffuser still reads as a strip of frosted plastic */
 .wall.daylight-mode .wall-item.corner-lamp::after,
-.wall-item.corner-lamp.led-off::after {
+.wall-item.corner-lamp.led-off::after,
+.wall.daylight-mode .wall-item.lightbar::after,
+.wall-item.lightbar.led-off::after {
     background-color: #3b4656;
     box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.12);
     opacity: 1;
@@ -1425,6 +1510,15 @@ button:focus-visible {
             var(--feature-line) calc(50% - 1px),
             var(--feature-line) calc(50% + 1px),
             transparent calc(50% + 1px));
+}
+
+/* Dark glass panel in a hairline bezel, with a soft diagonal reflection across the screen */
+.wall-item.tv {
+    border: 3px solid #1a1d23;
+    border-radius: 3px;
+    background-color: #07090d;
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02) 40%, transparent 41%);
+    box-shadow: inset 0 0 0 1px rgba(203, 213, 225, 0.28), 0 0 0 1px #9aa3b2;
 }
 
 /* Faceplate with a pair of pin holes: one hole is the box, the other its zero-blur shadow */
@@ -2826,6 +2920,7 @@ body.is-dragging-guide-x * {
 .layer-icon[data-swatch="white"] { background-color: #f3f4f6; }
 .layer-icon[data-swatch="note"] { background-color: #fde68a; }
 .layer-icon[data-swatch="socket"] { background-color: #d3d8e0; }
+.layer-icon[data-swatch="tv"] { background-color: #0b0d12; box-shadow: inset 0 0 0 1.5px #9aa3b2; }
 
 .layer-icon[data-swatch="door"],
 .layer-icon[data-swatch="window"] {

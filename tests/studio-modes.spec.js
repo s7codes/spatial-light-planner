@@ -91,7 +91,7 @@ test.describe('studio modes', () => {
     for (const selector of ['#ruler-x', '#ruler-y', '#layers-panel', '#power-routing-toggle']) {
       await expect(page.locator(selector)).toBeVisible();
     }
-    await expect(page.locator('.catalog-features .catalog-item')).toHaveCount(4);
+    await expect(page.locator('.catalog-features .catalog-item')).toHaveCount(5);
   });
 
   test('Creator hides the technical tools, keeps the friendly ones and Engineer brings it all back untouched', async ({
@@ -115,7 +115,7 @@ test.describe('studio modes', () => {
     await expectMode(page, 'creator');
     for (const selector of TECHNICAL_UI) await expect(page.locator(selector)).toBeHidden();
     for (const selector of FRIENDLY_UI) await expect(page.locator(selector)).toBeVisible();
-    await expect(page.locator('.catalog-item:visible')).toHaveCount(6);
+    await expect(page.locator('.catalog-item:visible')).toHaveCount(7);
     // Room features already on the wall stay in view: only the catalog group is tucked away
     await expect(itemLocator(page, 'item-s')).toBeVisible();
 
@@ -186,6 +186,7 @@ test.describe('studio modes', () => {
       'Mount: Poster Frame',
       'Mount: Mini Spotlight',
       'Mount: Corner Floor Lamp',
+      'Mount: Lumen Lightbar 60cm',
     ]);
     expect(labels).not.toContain('Toggle Power Routing Overlay');
     expect(labels).not.toContain('Clear Reference Guides');

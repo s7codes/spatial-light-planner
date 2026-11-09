@@ -16,7 +16,7 @@ import {
 } from './core/state.js';
 import {
     collectAlignLines, getAlignTargets, hasOverlap, intrudesAtticSlope, isOverlapping, nudgeSelection,
-    renderAlignGuides, snapAxis
+    renderAlignGuides, snapAxis, updateCollisionStates
 } from './core/geometry.js';
 import {
     applyAtticSlope, applyPanFrame, bindViewportEvents, cancelGuideDrag, cancelPan, endPan, finishGuideDrag, measure,
@@ -136,6 +136,7 @@ function endResize() {
     state.resizeState.element.querySelector('.resize-handle.is-active')?.classList.remove('is-active');
     document.body.classList.remove(`is-resizing-${state.resizeState.handle}`);
     state.resizeState = createIdleResizeState();
+    updateCollisionStates();
 }
 
 function finishResize() {
@@ -765,6 +766,7 @@ window.addEventListener('mouseup', () => {
     members.forEach(({ element }) => element?.classList.remove('dragging'));
     state.dragState = createIdleDragState();
     renderAlignGuides([]);
+    updateCollisionStates();
 
     if (moved) commitLayoutChange();
     // A plain click on one member of a multi-selection narrows it to that member and its group

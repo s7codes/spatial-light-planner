@@ -301,7 +301,7 @@ test.describe('command palette', () => {
       'Project & Export',
     ]);
     const labels = await optionLabels(page);
-    expect(labels.filter((label) => label.startsWith('Mount: '))).toHaveLength(10);
+    expect(labels.filter((label) => label.startsWith('Mount: '))).toHaveLength(12);
     expect(labels).toEqual(
       expect.arrayContaining([
         'Mount: Floating Shelf',

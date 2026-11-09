@@ -88,17 +88,21 @@ export const RESIZE_HANDLES_HTML = ['e', 's', 'se']
     .map(dir => `<span class="resize-handle handle-${dir}" data-handle="${dir}" aria-hidden="true"></span>`)
     .join('');
 
-// Room features are free, unfinished and unlit. Doors, windows and sockets are also no-build zones,
-// while a text note is a plain annotation that never collides with anything.
-export const OBSTACLE_TYPES = ['socket', 'door', 'window'];
+// Room features are free, unfinished and unlit. Doors, windows, sockets and TV screens are also no-build
+// zones, while a text note is a plain annotation that never collides with anything.
+export const OBSTACLE_TYPES = ['socket', 'door', 'window', 'tv'];
 export const FEATURE_TYPES = [...OBSTACLE_TYPES, 'note'];
-export const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp', ...FEATURE_TYPES];
+export const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp', 'lightbar', ...FEATURE_TYPES];
 export const ROTATIONS = [0, 90, 180, 270];
 
-// Wall-to-front extrusion in cm, kept for the future 3D viewport. Room features sit flush in the wall.
+// Both RGB bars follow the corner color unless they carry their own
+export const RGB_BAR_TYPES = ['corner-lamp', 'lightbar'];
+
+// Wall-to-front extrusion in cm, kept for the future 3D viewport. Room features sit flush in the wall,
+// except the TV panel that hangs in front of it.
 export const ITEM_DEPTH_CM = {
-    shelf: 25, cube: 35, storage: 38, poster: 3, spotlight: 5, 'corner-lamp': 15,
-    socket: 0, door: 0, window: 0, note: 0
+    shelf: 25, cube: 35, storage: 38, poster: 3, spotlight: 5, 'corner-lamp': 15, lightbar: 5,
+    socket: 0, door: 0, window: 0, tv: 8, note: 0
 };
 export const MAX_DEPTH_CM = 100;
 
