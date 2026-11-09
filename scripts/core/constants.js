@@ -357,9 +357,32 @@ export const ARRANGE_ACTIONS = [
     { id: 'distribute-v', label: 'Distribute Vertically', hint: 'equal gaps from top to bottom', distribute: true }
 ];
 
-export const formatPrice = (value) => `$${Math.round(value * 100) / 100}`;
+// Prices are stored in USD. Rates are per 1 USD and decimals is the smallest unit each currency shows.
+export const CURRENCY_STORAGE_KEY = 'spatial_studio_currency_v1';
+export const DEFAULT_CURRENCY = 'USD';
+export const CURRENCIES = {
+    USD: { rate: 1, decimals: 2 },
+    EUR: { rate: 0.92, decimals: 2 },
+    HUF: { rate: 360, decimals: 0 }
+};
+export const isCurrencyCode = (code) => Object.hasOwn(CURRENCIES, code);
+const currencyOf = (code) => CURRENCIES[isCurrencyCode(code) ? code : DEFAULT_CURRENCY];
+export const currencyFactor = (code) => 10 ** currencyOf(code).decimals;
+export const convertMoney = (usd, code) => Math.round(usd * currencyOf(code).rate * currencyFactor(code)) / currencyFactor(code);
+export const fixedAmount = (amount, code) => amount.toFixed(currencyOf(code).decimals);
 
-export const formatMoney = (value) => `$${value.toFixed(2)}`;
+// Forints group thousands with spaces and carry no decimals: 16 200 Ft
+export function formatAmount(amount, code = DEFAULT_CURRENCY) {
+    if (code === 'HUF') return `${fixedAmount(amount, code).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} Ft`;
+    return `${code === 'EUR' ? '\u20AC' : '$'}${fixedAmount(amount, code)}`;
+}
+
+export const formatCurrency = (usd, code = DEFAULT_CURRENCY) => formatAmount(convertMoney(usd, code), code);
+
+// Dollars keep the short form ($45, $12.5); other currencies use their full format
+export const formatPrice = (value, code = DEFAULT_CURRENCY) => (code === DEFAULT_CURRENCY
+    ? `$${Math.round(value * 100) / 100}`
+    : formatCurrency(value, code));
 export const finishLabel = (id) => (FINISHES.find(f => f.id === id) || { label: id }).label;
 export const markdownCell = (value) => String(value).replace(/\s+/g, ' ').replace(/\|/g, '\\|');
 

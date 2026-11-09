@@ -101,6 +101,13 @@ export const quoteGross = document.getElementById('quote-gross');
 export const printQuoteBtn = document.getElementById('print-quote-btn');
 export const closeQuoteBtn = document.getElementById('close-quote-btn');
 
+export const tapeMeasureBtn = document.getElementById('tape-measure-btn');
+export const tapeMeasureLayer = document.getElementById('tape-measure-layer');
+export const tapeMeasureLine = tapeMeasureLayer.querySelector('.tape-measure-line');
+export const tapeMeasureReadout = tapeMeasureLayer.querySelector('.tape-measure-readout');
+export const currencySelector = document.getElementById('currency-selector');
+export const illumStatus = document.getElementById('illum-status');
+
 // A fading splash already lets pointer events through, so only a fully shown one blocks the studio
 export const isSplashShown = () => Boolean(splashScreen) && !splashScreen.hidden && !splashScreen.classList.contains('fade-out');
 

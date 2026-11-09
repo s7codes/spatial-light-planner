@@ -1,6 +1,7 @@
 import {
     COPY_LABEL, CSV_FILENAME, CSV_LABEL, csvRow, DEFAULT_ATTIC_HEIGHT_CM, DEFAULT_ATTIC_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
-    defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, formatMoney, fromBase64Url, isFeature, isLedOn,
+    convertMoney, currencyFactor, defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, fixedAmount,
+    formatAmount, fromBase64Url, isFeature, isLedOn,
     isQuarterTurn, LAYOUT_TEMPLATES, LEGACY_STORAGE_KEY, markdownCell, MAX_IMPORT_BYTES, MAX_PROJECTS,
     MAX_SHARE_CHARS, MOUNTING_NOTE, PROJECT_ID_PATTERN, PROJECT_INDEX_KEY, PROJECT_LAYOUT_PREFIX,
     PROJECT_NAME_LENGTH, QUOTE_VAT_RATE, SCALE, SHARE_HASH_PREFIX, SHARE_LABEL, toBase64Url, toCm, toFiniteNumber,
@@ -16,7 +17,7 @@ import {
     shortcutsModal, specModal, specNote, specSubtitle, templateButtons, viewSpecBtn
 } from '../core/dom.js';
 import {
-    commitLayoutChange, createProjectId, isPointerBusy, normalizeLayout, pushHistory, state, storageGet,
+    commitLayoutChange, createProjectId, formatMoney, isPointerBusy, normalizeLayout, pushHistory, state, storageGet,
     storageRemove, storageSet
 } from '../core/state.js';
 import {
@@ -579,11 +580,13 @@ export function openSpecSheet() {
     specModal.showModal();
 }
 
-// Money is summed in whole cents so the VAT line and the gross total always add up to the cent
-export function quoteTotals(net = totalPrice()) {
-    const netCents = Math.round(net * 100);
-    const vatCents = Math.round(netCents * QUOTE_VAT_RATE);
-    return { net: netCents / 100, vat: vatCents / 100, gross: (netCents + vatCents) / 100 };
+// Money is summed in the currency's smallest unit (cents, or whole forints) so the VAT line and the
+// gross total always add up. The totals come back in that currency, already converted from USD.
+export function quoteTotals(net = totalPrice(), currency = state.currency) {
+    const factor = currencyFactor(currency);
+    const netUnits = Math.round(convertMoney(net, currency) * factor);
+    const vatUnits = Math.round(netUnits * QUOTE_VAT_RATE);
+    return { net: netUnits / factor, vat: vatUnits / factor, gross: (netUnits + vatUnits) / factor };
 }
 
 export function renderQuote(now = new Date()) {
@@ -605,9 +608,9 @@ export function renderQuote(now = new Date()) {
             </tr>`).join('')
         : '<tr><td colspan="5" class="quote-empty">No billable items on the wall yet.</td></tr>';
 
-    quoteNet.textContent = formatMoney(net);
-    quoteVat.textContent = formatMoney(vat);
-    quoteGross.textContent = formatMoney(gross);
+    quoteNet.textContent = formatAmount(net, state.currency);
+    quoteVat.textContent = formatAmount(vat, state.currency);
+    quoteGross.textContent = formatAmount(gross, state.currency);
 }
 
 export function openQuote() {
@@ -618,17 +621,19 @@ export function openQuote() {
 
 function buildSpecCsv() {
     const count = furnitureItems().length;
+    const { currency } = state;
+    const amount = (usd) => fixedAmount(convertMoney(usd, currency), currency);
     const lines = [
         csvRow(['Spatial Studio Spec Sheet']),
         csvRow(['Wall (cm)', `${state.wallWidthCm} x ${state.wallHeightCm}`]),
         '',
         csvRow(['Bill of Materials']),
-        csvRow(['Item', 'Width (cm)', 'Height (cm)', 'Finish', 'Qty', 'Unit Price (USD)', 'Subtotal (USD)']),
+        csvRow(['Item', 'Width (cm)', 'Height (cm)', 'Finish', 'Qty', `Unit Price (${currency})`, `Subtotal (${currency})`]),
         ...buildBomRows().map(row => csvRow([
             row.name, row.widthCm, row.heightCm, finishLabel(row.finish), row.qty,
-            row.price.toFixed(2), (row.price * row.qty).toFixed(2)
+            amount(row.price), amount(row.price * row.qty)
         ])),
-        csvRow(['Total', '', '', '', count, '', totalPrice().toFixed(2)]),
+        csvRow(['Total', '', '', '', count, '', amount(totalPrice())]),
         '',
         csvRow(['Mounting & Drilling Coordinates']),
         csvRow(['Item', 'Width (cm)', 'Height (cm)', 'From Left (cm)', 'From Ceiling (cm)', 'From Floor (cm)']),

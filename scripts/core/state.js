@@ -1,6 +1,6 @@
 import {
     ATTIC_SIZE_LIMITS_CM, clamp, DEFAULT_ATTIC_HEIGHT_CM, DEFAULT_ATTIC_WIDTH_CM, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
-    FEATURE_TYPES, FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isFeature, isHexColor, isLedOn,
+    FEATURE_TYPES, FINISH_IDS, formatCurrency, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isFeature, isHexColor, isLedOn,
     ITEM_TYPES, MAX_DEPTH_CM, MAX_GUIDES,
     MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, POSTER_ART_IDS, ROTATIONS,
     SAFE_ID_PATTERN, SCALE, toCmGrid, toFiniteNumber, toWallCm, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS, WALL_WIDTH_LIMITS_CM
@@ -144,8 +144,14 @@ export const state = {
     styleClipboard: null,
 
     // Power routing is a drafting aid like the rulers: kept out of the layout, the history and the PNG
-    powerRoutingOn: false
+    powerRoutingOn: false,
+
+    // A display preference kept in its own storage key, never in the layout, the history or the JSON
+    currency: 'USD'
 };
+
+// Prices are stored in USD and shown in the picked currency
+export const formatMoney = (value) => formatCurrency(value, state.currency);
 
 let idCounter = 0;
 let lastHistoryPush = { mergeKey: null, time: 0 };

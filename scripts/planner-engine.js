@@ -21,13 +21,13 @@ import {
 import {
     applyAtticSlope, applyPanFrame, bindViewportEvents, cancelGuideDrag, cancelPan, endPan, finishGuideDrag, measure,
     measureLabelMetrics, pruneGuides, refreshMeasure, renderGuides, resetView, rulerBands, scheduleGuideFrame,
-    setRuler, setSpaceHeld, setStudioMode, setWallDimensions, stepZoom
+    isTapeMeasuring, setRuler, setSpaceHeld, setStudioMode, setTapeMeasure, setWallDimensions, stepZoom, toggleTapeMeasure
 } from './ui/viewport-rulers.js';
 import {
     bindInspectorEvents, closeContextMenu, copySelectedStyle, copySelection, cutSelection, duplicateSelectedItem,
     flashLockNote, groupSelection, handleContextMenuKey, isContextMenuOpen, moveSelectedLayerToEdge, pasteClipboard,
     pasteStyleToSelection,
-    removeSelectedItems, renderPlanner,
+    removeSelectedItems, renderPlanner, restoreCurrency,
     rotateSelection, selectAll, selectItem, selectWithGroups, setSelection, syncItemSize, syncPositions,
     toggleCommandPalette, toggleInSelection, toggleSelectedLock, ungroupSelection, updateInspectorPanel
 } from './ui/inspector-layers.js';
@@ -961,6 +961,18 @@ window.addEventListener('keydown', (e) => {
         return;
     }
 
+    // T takes the tape measure out or puts it away. The physical key is read so any layout matches it.
+    if (e.code === 'KeyT' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !isFormField(e.target)) {
+        e.preventDefault();
+        if (!e.repeat) toggleTapeMeasure();
+        return;
+    }
+
+    if (e.key === 'Escape' && isTapeMeasuring() && !isTextEntry(e.target)) {
+        setTapeMeasure(false);
+        return;
+    }
+
     if (e.key === 'Escape') {
         handleEscape(e);
         return;
@@ -1068,6 +1080,7 @@ exportPngBtn.addEventListener('click', exportPng);
 exposeConsoleBindings();
 measureLabelMetrics();
 loadState();
+restoreCurrency();
 renderPlanner();
 applyAtticSlope();
 pushHistory();

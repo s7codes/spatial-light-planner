@@ -10,7 +10,8 @@ import {
     backdropButtons, brightnessSlider, brightnessValue, canvasArea, commandPaletteBtn, cornerColorPicker, cornerHexCode,
     floorBackdropLayer, guideHitLayer, guideLineLayer, isModalOpen, measureLayer, modeCreatorBtn, modeEngineerBtn,
     paintSwatches, powerRoutesLayer, powerRoutingSummary, powerRoutingToggle, presetButtons, rulerCorner, rulers, rulerX,
-    rulerY, scaleNote, snapGridToggle, themeToggleBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallPaintName,
+    rulerY, scaleNote, snapGridToggle, tapeMeasureBtn, tapeMeasureLayer, tapeMeasureLine, tapeMeasureReadout,
+    themeToggleBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallPaintName,
     wallWidthInput, zoomInBtn, zoomOutBtn, zoomResetBtn
 } from '../core/dom.js';
 import {
@@ -21,7 +22,9 @@ import {
     findNeighborGaps, measureSegments, pickOuterEdge, planPowerRoutes, powerRouteMarkup, powerSummary,
     updateCollisionStates
 } from '../core/geometry.js';
-import { isContextMenuOpen, syncItemLedField, syncLedToggle, updateInspectorLive } from './inspector-layers.js';
+import {
+    isContextMenuOpen, renderIllumination, syncItemLedField, syncLedToggle, updateInspectorLive
+} from './inspector-layers.js';
 import { saveState, showIoStatus } from '../io/projects-spec.js';
 import { guardNextWallClick } from '../planner-engine.js';
 
@@ -770,11 +773,76 @@ export function setBrightness(percent) {
     brightnessSlider.value = percent;
     document.documentElement.style.setProperty('--led-opacity', percent / 100);
     brightnessValue.textContent = `${percent}%`;
+    renderIllumination();
 }
+
+// Tape measure: a free line between two wall points. The finished line stays until the next press
+// on the wall or until the tool is put away. Points are in wall px, the same space as the items.
+const tape = { active: false, dragging: false, originX: 0, originY: 0, pointerX: 0, pointerY: 0, wallRect: null, scale: 1, frameId: 0 };
+
+export const isTapeMeasuring = () => tape.active;
+
+function tapePoint(clientX, clientY) {
+    return {
+        x: clamp((clientX - tape.wallRect.left) / tape.scale - WALL_BORDER_PX, 0, state.wallWidthPx),
+        y: clamp((clientY - tape.wallRect.top) / tape.scale - WALL_BORDER_PX, 0, state.wallHeightPx)
+    };
+}
+
+function applyTapeFrame() {
+    tape.frameId = 0;
+    const end = tapePoint(tape.pointerX, tape.pointerY);
+    const dx = end.x - tape.originX;
+    const dy = end.y - tape.originY;
+    const lengthPx = Math.hypot(dx, dy);
+    tapeMeasureLine.style.left = `${tape.originX}px`;
+    tapeMeasureLine.style.top = `${tape.originY}px`;
+    tapeMeasureLine.style.width = `${lengthPx}px`;
+    tapeMeasureLine.style.transform = `rotate(${Math.atan2(dy, dx)}rad)`;
+    tapeMeasureReadout.style.left = `${tape.originX + dx / 2}px`;
+    tapeMeasureReadout.style.top = `${tape.originY + dy / 2}px`;
+    tapeMeasureReadout.textContent = `${Math.round(lengthPx / SCALE)} cm`;
+    if (lengthPx > 0) tapeMeasureLayer.hidden = false;
+}
+
+function startTapeDrag(e) {
+    tape.wallRect = wallCanvas.getBoundingClientRect();
+    tape.scale = state.viewScale;
+    const origin = tapePoint(e.clientX, e.clientY);
+    tape.originX = origin.x;
+    tape.originY = origin.y;
+    tape.pointerX = e.clientX;
+    tape.pointerY = e.clientY;
+    tape.dragging = true;
+    tapeMeasureLayer.hidden = true;
+}
+
+function endTapeDrag() {
+    if (!tape.dragging) return;
+    if (tape.frameId) {
+        cancelAnimationFrame(tape.frameId);
+        applyTapeFrame();
+    }
+    tape.dragging = false;
+}
+
+export function setTapeMeasure(on) {
+    if (on === tape.active) return;
+    tape.active = on;
+    if (!on) {
+        endTapeDrag();
+        tapeMeasureLayer.hidden = true;
+    }
+    canvasArea.classList.toggle('is-measuring', on);
+    tapeMeasureBtn.setAttribute('aria-pressed', String(on));
+}
+
+export const toggleTapeMeasure = () => setTapeMeasure(!tape.active);
 
 export function bindViewportEvents() {
     // A click on the HUD leaves focus where it was, so Space still pans straight afterwards
-    [zoomOutBtn, zoomResetBtn, zoomInBtn, commandPaletteBtn].forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
+    [zoomOutBtn, zoomResetBtn, zoomInBtn, tapeMeasureBtn, commandPaletteBtn].forEach(button => button.addEventListener('mousedown', e => e.preventDefault()));
+    tapeMeasureBtn.addEventListener('click', toggleTapeMeasure);
     zoomOutBtn.addEventListener('click', () => stepZoom(-1));
     zoomInBtn.addEventListener('click', () => stepZoom(1));
     zoomResetBtn.addEventListener('click', resetView);
@@ -821,7 +889,8 @@ export function bindViewportEvents() {
             return;
         }
 
-        if (e.button !== 0) return;
+        // The tape takes every left press on the wall, ruler bands included
+        if (e.button !== 0 || tape.active) return;
         // Creator Mode hides the rulers, and the bands that pull out guides go with them
         const axis = isCreatorMode() ? null : rulerAxisAt(e.clientX, e.clientY);
         if (!axis) return;
@@ -837,6 +906,32 @@ export function bindViewportEvents() {
         renderGuides();
         startGuideDrag(guide, true, e);
     }, true);
+
+    // While the tape is out, a left press anywhere on the wall starts a new line instead of reaching the
+    // items, guides or the selection box. Capture phase, so it runs before any of them.
+    wallCanvas.addEventListener('mousedown', (e) => {
+        if (!tape.active || e.button !== 0) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (isPointerBusy() || isModalOpen()) return;
+        if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+        guardNextWallClick();
+        startTapeDrag(e);
+    }, true);
+
+    wallCanvas.addEventListener('dblclick', (e) => {
+        if (tape.active) e.stopImmediatePropagation();
+    }, true);
+
+    window.addEventListener('mousemove', (e) => {
+        if (!tape.dragging) return;
+        tape.pointerX = e.clientX;
+        tape.pointerY = e.clientY;
+        if (!tape.frameId) tape.frameId = requestAnimationFrame(applyTapeFrame);
+    });
+
+    window.addEventListener('mouseup', endTapeDrag);
+    window.addEventListener('blur', endTapeDrag);
 
     [guideHitLayer, guideLineLayer].forEach(layer => {
         layer.addEventListener('mousedown', (e) => {

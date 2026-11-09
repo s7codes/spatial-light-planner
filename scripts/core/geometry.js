@@ -1,6 +1,6 @@
 import {
     ALIGN_THRESHOLD_PX, clamp, CM_STEP_PX, EPSILON, escapeHtml, FLOOR_BACKDROPS, getBounds,
-    isFeature, isLedOn, isObstacle, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
+    isFeature, isLedOn, isObstacle, isQuarterTurn, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
 } from './constants.js';
 import { alignLayer, atticSlopeToggle, wallItemsLayer } from './dom.js';
 import { getSelectedItems, groupMembers, isCreatorMode, isSelected, state } from './state.js';
@@ -284,6 +284,31 @@ export function planPowerRoutes() {
         return { item, socket: best.socket, from, to: best.to, lengthCm: Math.round(best.run / SCALE) };
     }) : [];
     return { powered, sockets, routes };
+}
+
+const LED_WATTS_PER_M = 14.4;
+const FIXED_LIGHT_WATTS = { spotlight: 5, lightbar: 9, 'corner-lamp': 20 };
+
+// Shelves and storage carry a strip along their long catalog side, cubes and posters one around the frame
+export function lightWatts(item) {
+    if (item.type in FIXED_LIGHT_WATTS) return FIXED_LIGHT_WATTS[item.type];
+    const [widthCm, heightCm] = [item.width, item.height].map(toCm);
+    const stripCm = item.type === 'cube' || item.type === 'poster'
+        ? (widthCm + heightCm) * 2
+        : (isQuarterTurn(item) ? heightCm : widthCm);
+    return (stripCm / 100) * LED_WATTS_PER_M;
+}
+
+// Lit, visible items only, scaled by the master brightness. Exactly 4 or 12 W/m2 counts as Cozy.
+export function estimateIllumination(brightnessPercent) {
+    const fullWatts = state.wallItems
+        .filter(item => !item.hidden && isLedOn(item))
+        .reduce((sum, item) => sum + lightWatts(item), 0);
+    const watts = fullWatts * clamp(Number(brightnessPercent) || 0, 0, 100) / 100;
+    const areaM2 = (state.wallWidthCm * state.wallHeightCm) / 10000;
+    const density = watts / areaM2;
+    const label = density < 4 ? 'Dim / Accent' : density <= 12 ? 'Cozy / Balanced' : 'Bright / Task';
+    return { watts, areaM2, density, label, text: `${label} (${density.toFixed(1)} W/m\u00B2)` };
 }
 
 export function powerSummary({ powered, sockets, routes }) {

@@ -1,25 +1,25 @@
 import {
-    ARRANGE_ACTIONS, BACKDROP_ALIGNS, clamp, CM_STEP_PX, countLabel, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART,
+    ARRANGE_ACTIONS, BACKDROP_ALIGNS, clamp, CM_STEP_PX, countLabel, CURRENCY_STORAGE_KEY, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART,
     DUPLICATE_OFFSET_PX, EPSILON, escapeHtml, FEATURE_TYPES, FINISHES, FLOOR_BACKDROPS, formatFootprint, formatOffset,
-    formatPrice, getBounds, isFeature, isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX, LOCK_ICON_HTML,
+    formatPrice, getBounds, isCurrencyCode, isFeature, isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX, LOCK_ICON_HTML,
     MENU_EDGE_PX, minSizeCm, NOTE_MAX_LENGTH, POSTER_ARTS, quantize, RESIZE_HANDLES_HTML, SCALE, TINY_ITEM_PX, toCm,
     WALL_PAINTS
 } from '../core/constants.js';
 import {
-    atticSlopeToggle, catalogItems, commandEmpty, commandList, commandPalette, commandPaletteBtn, commandSearchInput,
+    atticSlopeToggle, brightnessSlider, catalogItems, commandEmpty, currencySelector, illumStatus, commandList, commandPalette, commandPaletteBtn, commandSearchInput,
     contextMenu, contextMenuButtons, contextMenuTitle, getItemElement, inspectorBox, isModalOpen, layerList,
     layersCount, layersPanel, layersToggle, ledColorOf, presetButtons, selectionBounds, snapGridToggle,
     totalPriceDisplay, wallItemsLayer
 } from '../core/dom.js';
 import {
     applyItemStyle, canCopyStyle, canGroup, canPasteStyle, canUngroup, captureItemStyle, commitLayoutChange,
-    createGroupId, createItemId, expandGroups, getSelectedItem, getSelectedItems, getUnits, groupLabels, groupMembers,
+    createGroupId, createItemId, expandGroups, formatMoney, getSelectedItem, getSelectedItems, getUnits, groupLabels, groupMembers,
     isCreatorMode, isPointerBusy, isSelected, normalizeGroups, sanitizeNoteText, selectedGroupId, state,
-    styleSourceItem, styleTargets
+    storageGet, storageSet, styleSourceItem, styleTargets
 } from '../core/state.js';
 import {
     ALIGN_EDGES, arrangeUnits, axisKeys, blocksRoomFeature, canAlignSelection, canCenterSelection,
-    canDistributeSelection, canFlipSelection, canRotateSelection, canRotateUnit, describeErgonomics,
+    canDistributeSelection, canFlipSelection, canRotateSelection, canRotateUnit, describeErgonomics, estimateIllumination,
     intrudesAtticSlope, mirrorUnits,
     overlapsFurniture, rotateGroup, rotateItem, rotationUnits, slopeClearOffset, slopeSafeOffset,
     updateCollisionStates
@@ -83,12 +83,32 @@ export function renderPlanner() {
     updateCollisionStates();
     updateDistanceGuides();
 
-    const totalPrice = state.wallItems.reduce((sum, item) => sum + item.price, 0);
-    totalPriceDisplay.textContent = `$${totalPrice.toFixed(2)}`;
+    renderTotalPrice();
     renderLayers();
     refreshMeasure();
     refreshPowerRoutes();
+    renderIllumination();
 }
+
+export function renderTotalPrice() {
+    totalPriceDisplay.textContent = formatMoney(state.wallItems.reduce((sum, item) => sum + item.price, 0));
+}
+
+// Runs on renders, LED toggles, resize frames and brightness moves; it only writes when the text changed
+export function renderIllumination() {
+    const { text } = estimateIllumination(brightnessSlider.value);
+    if (illumStatus.textContent !== text) illumStatus.textContent = text;
+}
+
+export function setCurrency(code, persist = true) {
+    state.currency = isCurrencyCode(code) ? code : 'USD';
+    currencySelector.value = state.currency;
+    if (persist) storageSet(CURRENCY_STORAGE_KEY, state.currency);
+    renderTotalPrice();
+    updateInspectorPanel();
+}
+
+export const restoreCurrency = () => setCurrency(storageGet(CURRENCY_STORAGE_KEY), false);
 
 export function updateInspectorLive() {
     const posReadout = document.getElementById('inspector-pos-readout');
@@ -216,6 +236,7 @@ export function syncItemSize(item, el) {
     syncInspectorSize(item);
     syncRulerSpans();
     refreshPowerRoutes();
+    renderIllumination();
 }
 
 export function setSelection(ids) {
@@ -1022,7 +1043,7 @@ function renderItemInspector(item) {
                 <span class="selected-item-title">${escapeHtml(item.name)}</span>
                 <span class="selected-item-meta">
                     ${locked ? `<span class="lock-badge">${LOCK_ICON_HTML}Locked</span>` : ''}
-                    ${feature ? '<span class="feature-badge">Room Feature</span>' : `<span>$${item.price}</span>`}
+                    ${feature ? '<span class="feature-badge">Room Feature</span>' : `<span>${formatPrice(item.price, state.currency)}</span>`}
                 </span>
             </div>
             <span class="tech-readout">Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
@@ -1150,6 +1171,7 @@ function renderItemInspector(item) {
         if (el) el.classList.toggle('led-off', !item.ledEnabled);
         syncLedToggle(ledToggleBtn, item.ledEnabled);
         refreshPowerRoutes();
+        renderIllumination();
         commitLayoutChange();
     });
 
@@ -1193,7 +1215,7 @@ function renderBatchInspector(items) {
                 <span class="selected-item-title" id="batch-count">${title}</span>
                 <span class="selected-item-meta">
                     ${lockedCount ? `<span class="lock-badge">${LOCK_ICON_HTML}${lockedCount} Locked</span>` : ''}
-                    <span>${formatPrice(total)}</span>
+                    <span>${formatPrice(total, state.currency)}</span>
                 </span>
             </div>
             <span class="tech-readout">Group: <strong id="inspector-pos-readout">${formatOffset(getBounds(items))}</strong></span>
@@ -1525,6 +1547,8 @@ export function toggleCommandPalette() {
 }
 
 export function bindInspectorEvents() {
+    currencySelector.addEventListener('change', () => setCurrency(currencySelector.value));
+
     wallItemsLayer.addEventListener('dblclick', (e) => {
         const el = e.target.closest('.wall-item');
         const item = el && state.wallItems.find(i => i.id === el.dataset.id);

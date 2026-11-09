@@ -2298,6 +2298,67 @@ body.is-selecting * {
     letter-spacing: 0.02em;
 }
 
+.tape-measure-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tape-measure-btn[aria-pressed="true"] {
+    border-color: var(--hairline-strong);
+    background-color: rgba(250, 204, 21, 0.16);
+    color: #facc15;
+}
+
+/* A small ruler: a bar with three ticks drawn as gradient stripes */
+.tape-icon {
+    width: 14px;
+    height: 7px;
+    border: 1.5px solid currentColor;
+    border-radius: 1.5px;
+    background:
+        linear-gradient(currentColor, currentColor) 3px 0 / 1.5px 3px no-repeat,
+        linear-gradient(currentColor, currentColor) 6.5px 0 / 1.5px 2px no-repeat,
+        linear-gradient(currentColor, currentColor) 9.5px 0 / 1.5px 3px no-repeat;
+}
+
+/* Tape measure: the canvas turns into a crosshair and items stop reacting to hover cursors */
+.canvas-area.is-measuring:not(.is-pan-ready) .wall,
+.canvas-area.is-measuring:not(.is-pan-ready) .wall * {
+    cursor: crosshair !important;
+}
+
+.tape-measure-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 8;
+    pointer-events: none;
+}
+
+.tape-measure-line {
+    position: absolute;
+    height: 0;
+    border-top: 2px dashed #facc15;
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+    transform-origin: 0 50%;
+    translate: 0 -1px;
+}
+
+.tape-measure-readout {
+    position: absolute;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background-color: #facc15;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    color: #111827;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.4;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    transform: translate(-50%, -50%);
+}
+
 /* Space held: the whole canvas becomes a grab handle, and a pan in progress shows the closed hand */
 .canvas-area.is-pan-ready,
 .canvas-area.is-pan-ready * {
@@ -2620,6 +2681,20 @@ body.is-dragging-guide-x * {
 .power-toggle.is-on .led-toggle-track {
     background-color: #facc15;
     box-shadow: 0 0 10px rgba(250, 204, 21, 0.35);
+}
+
+.illumination-estimator {
+    display: block;
+    margin-top: 8px;
+    font-size: 11px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.illumination-estimator strong {
+    color: var(--text-main);
+    font-weight: 600;
 }
 
 .power-summary {
@@ -3572,12 +3647,40 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     margin-bottom: 4px;
 }
 
+.budget-total-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
 .total-price {
+    min-width: 0;
     font-size: 24px;
     font-weight: 700;
     letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
     color: var(--accent-led);
+}
+
+.currency-selector {
+    flex-shrink: 0;
+    height: 24px;
+    padding: 0 4px;
+    border: 1px solid var(--hairline-strong);
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-raised);
+    color: var(--text-main);
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.currency-selector:focus-visible {
+    outline: 2px solid var(--accent-led);
+    outline-offset: 1px;
 }
 
 .btn-spec {
@@ -4289,7 +4392,7 @@ kbd {
 .app-shell[data-studio-mode="creator"] .layers-panel,
 .app-shell[data-studio-mode="creator"] .catalog-features,
 .app-shell[data-studio-mode="creator"] .inspector-grid,
-.app-shell[data-studio-mode="creator"] .tech-readout {
+.app-shell[data-studio-mode="creator"] .tech-readout:not(.illumination-estimator) {
     display: none;
 }
 
