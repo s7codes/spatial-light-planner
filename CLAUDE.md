@@ -2,6 +2,7 @@
 
 Context for Claude Code sessions on Spatial & Ambient Light Planner, a vanilla HTML/CSS/JS (ES2020) wall layout
 and ambient lighting planner. No framework, no bundler, no build step. Playwright is the only dev dependency.
+Current milestone: v2.3 (388 Playwright tests in 32 spec files).
 
 ## Scale and geometry
 
@@ -18,12 +19,12 @@ and ambient lighting planner. No framework, no bundler, no build step. Playwrigh
 | --- | --- |
 | `scripts/core/constants.js` | Scale, limits, storage keys, catalog tables, templates, floor backdrops, poster prints, pure helpers (`isTextEntry`, `clamp`, CSV). Imports nothing. |
 | `scripts/core/dom.js` | Static element references, `isModalOpen`, `getItemElement`, catalog fallbacks. |
-| `scripts/core/state.js` | The shared `state` object, idle factories, ids, selection and groups, `sanitizeItem` / `normalizeLayout`, storage, undo / redo. |
-| `scripts/core/geometry.js` | Collisions, attic slope, magnet and gap solvers, measuring, power routing, rotate / arrange / mirror math. |
+| `scripts/core/state.js` | The shared `state` object, idle factories, ids, selection and groups, `styleClipboard` and style capture / apply, `sanitizeItem` / `normalizeLayout`, storage, undo / redo. |
+| `scripts/core/geometry.js` | Collisions, attic slope, magnet and gap solvers, measuring, power routing, rotate / arrange / mirror math, `describeErgonomics` and floor backdrop spans. |
 | `scripts/ui/viewport-rulers.js` | Wall fit, zoom and pan, rulers, guides, overlays, floor backdrops, studio modes, paint and lighting. |
 | `scripts/ui/inspector-layers.js` | `renderPlanner`, selection actions, Inspector, Layers panel, context menu, command palette. |
 | `scripts/io/export-png.js` | 2x Canvas 2D PNG renderer that reads computed styles. |
-| `scripts/io/projects-spec.js` | Projects and autosave, share links, JSON import / export, templates, spec sheet, shortcuts dialog. |
+| `scripts/io/projects-spec.js` | Projects and autosave, share links, JSON import / export, templates, spec sheet with the hardware and LED kit estimate, shortcuts dialog. |
 | `scripts/planner-engine.js` | Entry: pointer interactions, keyboard shortcuts, console bridge on `window`, startup. |
 
 Rules: no writes to imported bindings (shared mutable state lives on `state`), no top-level reads of imported
@@ -45,6 +46,13 @@ values, and edit only the modules a task needs.
 - Guide grab strips use `.guide-hit`. Items up to `12 x 12 cm` use `.is-tiny` with external resize handles.
 - Noir posters (`posterArt: 'noir'`) must render and export exactly as before; prints only add `data-art` rules.
 - Floor backdrops and their alignment are view state: never saved, undone, shared or exported.
+- `#command-palette` "Wall & View" commands are pinned by `tests/studio-mode-backdrop.spec.js`; selection commands
+  (including `Copy Item Style` / `Paste Item Style`) go in "Selection", after the first five pinned entries.
+- In `#spec-modal`, `#bom-body`, `#bom-foot`, `#mounting-body`, the Markdown copy and the CSV export are pinned.
+  `#hardware-kit-section` (`#kit-led-strip`, `#kit-power-draw`, `#kit-wall-anchors`) sits below them and stays out of
+  both exports.
+- `#ergonomic-hint` shows for every non-feature single selection in both studio modes and is synced in
+  `updateInspectorLive()`; the backdrop setters call it too.
 
 ## Fast test protocol
 

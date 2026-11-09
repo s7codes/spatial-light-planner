@@ -12,13 +12,15 @@ import {
     totalPriceDisplay, wallItemsLayer
 } from '../core/dom.js';
 import {
-    canGroup, canUngroup, commitLayoutChange, createGroupId, createItemId, expandGroups, getSelectedItem,
-    getSelectedItems, getUnits, groupLabels, groupMembers, isCreatorMode, isPointerBusy, isSelected, normalizeGroups,
-    sanitizeNoteText, selectedGroupId, state
+    applyItemStyle, canCopyStyle, canGroup, canPasteStyle, canUngroup, captureItemStyle, commitLayoutChange,
+    createGroupId, createItemId, expandGroups, getSelectedItem, getSelectedItems, getUnits, groupLabels, groupMembers,
+    isCreatorMode, isPointerBusy, isSelected, normalizeGroups, sanitizeNoteText, selectedGroupId, state,
+    styleSourceItem, styleTargets
 } from '../core/state.js';
 import {
     ALIGN_EDGES, arrangeUnits, axisKeys, blocksRoomFeature, canAlignSelection, canCenterSelection,
-    canDistributeSelection, canFlipSelection, canRotateSelection, canRotateUnit, intrudesAtticSlope, mirrorUnits,
+    canDistributeSelection, canFlipSelection, canRotateSelection, canRotateUnit, describeErgonomics,
+    intrudesAtticSlope, mirrorUnits,
     overlapsFurniture, rotateGroup, rotateItem, rotationUnits, slopeClearOffset, slopeSafeOffset,
     updateCollisionStates
 } from '../core/geometry.js';
@@ -101,6 +103,15 @@ export function updateInspectorLive() {
     document.getElementById('warning-overlap').hidden = !selected.some(overlapsFurniture);
     document.getElementById('warning-feature').hidden = !selected.some(blocksRoomFeature);
     document.getElementById('warning-attic').hidden = !selected.some(intrudesAtticSlope);
+    syncErgonomicHint(selected.length === 1 ? selected[0] : null);
+}
+
+function syncErgonomicHint(item) {
+    const hint = document.getElementById('ergonomic-hint');
+    if (!hint || !item) return;
+    const { text, warning } = describeErgonomics(item);
+    if (hint.textContent !== text) hint.textContent = text;
+    hint.classList.toggle('is-warning', warning);
 }
 
 // Lamps and spotlights carry labels wider than themselves, so near a wall edge the label
@@ -345,6 +356,30 @@ export function pasteClipboard() {
     if (!state.clipboardState.items.length || isPointerBusy()) return;
     state.clipboardState.pasteCount += 1;
     placeCopies(state.clipboardState.items, DUPLICATE_OFFSET_PX * state.clipboardState.pasteCount);
+}
+
+export function copySelectedStyle() {
+    const source = styleSourceItem();
+    if (!source) return;
+    state.styleClipboard = captureItemStyle(source);
+    showIoStatus(`Copied style from ${source.name}.`, 'success');
+    // Only the Paste Style button depends on the clipboard, so the panel is not rebuilt
+    const pasteBtn = document.getElementById('paste-style-btn');
+    if (pasteBtn) pasteBtn.disabled = !canPasteStyle();
+}
+
+// Locked items and room features are skipped; the whole paste is one undo step
+export function pasteStyleToSelection() {
+    if (!canPasteStyle() || isPointerBusy()) {
+        if (state.styleClipboard && getSelectedItems().some(item => item.locked && !isFeature(item))) flashLockNote();
+        return;
+    }
+    const changed = styleTargets().filter(item => applyItemStyle(item, state.styleClipboard)).length;
+    if (!changed) return;
+    renderPlanner();
+    updateInspectorPanel();
+    commitLayoutChange();
+    showIoStatus(`Pasted style onto ${countLabel(changed)}.`, 'success');
 }
 
 // A mixed selection locks everything first; only a fully locked selection unlocks
@@ -872,6 +907,15 @@ export function syncItemLedField() {
     document.getElementById('item-led-reset').disabled = !custom || item.locked;
 }
 
+const styleFieldHtml = (finishLocked) => `
+    <div class="inspector-field">
+        <label id="item-style-label">Item Style</label>
+        <div class="style-copy-row" role="group" aria-labelledby="item-style-label">
+            <button type="button" class="btn-secondary" id="copy-style-btn" title="Copy finish, backlight, LED color and poster print (Alt+Shift+C)">Copy Style</button>
+            <button type="button" class="btn-secondary" id="paste-style-btn" title="Paste the copied style onto the unlocked selection (Alt+Shift+V)" ${!state.styleClipboard || finishLocked ? 'disabled' : ''}>Paste Style</button>
+        </div>
+    </div>`;
+
 const symmetryFieldHtml = (items) => {
     const button = items.length > 1
         ? (canFlipSelection()
@@ -949,6 +993,7 @@ function renderItemInspector(item) {
                 </span>
             </div>
             <span class="tech-readout">Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
+            ${feature ? '' : '<p id="ergonomic-hint" class="ergonomic-hint" aria-live="polite"></p>'}
             ${locked ? `<p class="lock-note" id="lock-note">${lockedParts} are locked. Press L or Unlock Item to edit.</p>` : ''}
             ${groupNote}
 
@@ -973,6 +1018,7 @@ function renderItemInspector(item) {
             ${centerWallFieldHtml()}
             ${feature ? featureNote : furnitureFields}
             ${item.type === 'poster' ? posterArtFieldHtml([item], locked) : ''}
+            ${feature ? '' : styleFieldHtml(locked)}
 
             ${rotationFieldHtml(`${item.rotation} deg`, [item])}
             ${symmetryFieldHtml([item])}
@@ -1130,6 +1176,7 @@ function renderBatchInspector(items) {
                 <div class="finish-swatches">${finishButtonsHtml(sharedFinish, finishLocked)}</div>
             </div>
             ${posterArtFieldHtml(items.filter(item => item.type === 'poster' && !item.locked))}
+            ${finishable.length ? styleFieldHtml(finishLocked) : ''}
 
             ${rotationFieldHtml('', items)}
             ${symmetryFieldHtml(items)}
@@ -1173,6 +1220,8 @@ export function updateInspectorPanel() {
     document.getElementById('center-wall-v-btn')?.addEventListener('click', () => centerSelectionOnWall('y'));
     document.getElementById('flip-horizontal-btn')?.addEventListener('click', flipSelection);
     document.getElementById('mirror-wall-btn')?.addEventListener('click', mirrorItemAcrossWall);
+    document.getElementById('copy-style-btn')?.addEventListener('click', copySelectedStyle);
+    document.getElementById('paste-style-btn')?.addEventListener('click', pasteStyleToSelection);
     document.getElementById('group-toggle-btn')?.addEventListener('click', () => (canGroup() ? groupSelection() : ungroupSelection()));
     document.getElementById('send-backward-btn').addEventListener('click', () => moveSelectedLayer(-1));
     document.getElementById('bring-forward-btn').addEventListener('click', () => moveSelectedLayer(1));
@@ -1298,6 +1347,8 @@ function buildCommands() {
         add('Selection', 'Duplicate Selection', duplicateSelectedItem, 'Ctrl+D');
         add('Selection', 'Lock / Unlock Selection', toggleSelectedLock, 'L');
         if (selected.some(item => !item.locked)) add('Selection', 'Remove Selection', removeSelectedItems, 'Del');
+        if (canCopyStyle()) add('Selection', 'Copy Item Style', copySelectedStyle, 'Alt+Shift+C');
+        if (canPasteStyle()) add('Selection', 'Paste Item Style', pasteStyleToSelection, 'Alt+Shift+V');
     }
 
     catalogItems.forEach(card => {

@@ -1,6 +1,6 @@
 import {
     COPY_LABEL, CSV_FILENAME, CSV_LABEL, csvRow, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
-    defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, formatMoney, fromBase64Url, isFeature,
+    defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, formatMoney, fromBase64Url, isFeature, isLedOn,
     isQuarterTurn, LAYOUT_TEMPLATES, LEGACY_STORAGE_KEY, markdownCell, MAX_IMPORT_BYTES, MAX_PROJECTS,
     MAX_SHARE_CHARS, MOUNTING_NOTE, PROJECT_ID_PATTERN, PROJECT_INDEX_KEY, PROJECT_LAYOUT_PREFIX,
     PROJECT_NAME_LENGTH, SCALE, SHARE_HASH_PREFIX, SHARE_LABEL, toBase64Url, toCm, toFiniteNumber, wallPaintById
@@ -8,7 +8,8 @@ import {
 import {
     accentColorPicker, atticSlopeToggle, bomBody, bomFoot, brightnessSlider, closeProjectsBtn, closeShortcutsBtn,
     closeSpecBtn, commandPalette, copyMarkdownBtn, copyShareLinkBtn, cornerColorPicker, exportCsvBtn, exportJsonBtn,
-    importFileInput, importJsonBtn, ioStatus, isModalOpen, mountingBody, newProjectForm, newProjectName,
+    importFileInput, importJsonBtn, ioStatus, isModalOpen, kitLedStrip, kitPowerDraw, kitWallAnchors, mountingBody,
+    newProjectForm, newProjectName,
     projectLimitNote, projectList, projectsBtn, projectsModal, projectsSubtitle, saveProjectBtn, shortcutsBtn,
     shortcutsModal, specModal, specNote, specSubtitle, templateButtons, viewSpecBtn
 } from '../core/dom.js';
@@ -350,7 +351,39 @@ function buildMountingRows() {
         });
 }
 
+const KIT_ANCHORS = { shelf: 4, storage: 4, cube: 2, poster: 2, spotlight: 2, 'corner-lamp': 1 };
+const FIXED_STRIP_CM = { 'corner-lamp': 140, spotlight: 20 };
+
+// A quarter-turned shelf still carries its strip along its long catalog side, so lengths use that side
+function ledStripCm(item) {
+    if (item.type in FIXED_STRIP_CM) return FIXED_STRIP_CM[item.type];
+    const [widthCm, heightCm] = [item.width, item.height].map(toCm);
+    const runCm = isQuarterTurn(item) ? heightCm : widthCm;
+    return item.type === 'cube' || item.type === 'poster' ? (widthCm + heightCm) * 2 : runCm;
+}
+
+// Lengths stay in whole cm, so cm * 144 / 1000 is exact and Math.ceil never rounds 36.000...01 up to 37
+export function estimateHardwareKit() {
+    const items = furnitureItems();
+    const lit = items.filter(isLedOn);
+    const stripCm = lit.reduce((sum, item) => sum + ledStripCm(item), 0);
+    const spotlights = lit.filter(item => item.type === 'spotlight').length;
+    return {
+        ledMeters: stripCm / 100,
+        watts: Math.ceil((stripCm * 144) / 1000 + spotlights * 5),
+        anchors: items.reduce((sum, item) => sum + (KIT_ANCHORS[item.type] || 0), 0)
+    };
+}
+
+function renderHardwareKit() {
+    const { ledMeters, watts, anchors } = estimateHardwareKit();
+    kitLedStrip.textContent = `${ledMeters.toFixed(1)} m`;
+    kitPowerDraw.textContent = watts ? `${watts} W (24V PSU)` : '0 W';
+    kitWallAnchors.textContent = `${anchors} ${anchors === 1 ? 'anchor' : 'anchors'}`;
+}
+
 export function renderSpecSheet() {
+    renderHardwareKit();
     const bomRows = buildBomRows();
     const mountingRows = buildMountingRows();
     const count = furnitureItems().length;

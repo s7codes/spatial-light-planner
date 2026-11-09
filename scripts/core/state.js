@@ -1,6 +1,7 @@
 import {
     clamp, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
-    FEATURE_TYPES, FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isHexColor, ITEM_TYPES, MAX_GUIDES,
+    FEATURE_TYPES, FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isFeature, isHexColor, isLedOn,
+    ITEM_TYPES, MAX_GUIDES,
     MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, POSTER_ART_IDS, ROTATIONS,
     SAFE_ID_PATTERN, SCALE, toCmGrid, toFiniteNumber, toWallCm, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS, WALL_WIDTH_LIMITS_CM
 } from './constants.js';
@@ -136,6 +137,8 @@ export const state = {
 
     // Kept in memory only: copies made here paste back here with their groups and stacking order
     clipboardState: { items: [], pasteCount: 0 },
+    // Finish, backlight and print of one item, in memory only like the item clipboard
+    styleClipboard: null,
 
     // Power routing is a drafting aid like the rulers: kept out of the layout, the history and the PNG
     powerRoutingOn: false
@@ -440,6 +443,35 @@ export function selectedGroupId() {
     const groupId = items[0]?.groupId;
     const whole = groupId && items.every(item => item.groupId === groupId) && groupMembers(groupId).length === items.length;
     return whole ? groupId : null;
+}
+
+// The style source is the first non-feature item in selection order, so Shift-click order picks it
+export const styleSourceItem = () => state.selectedItemIds
+    .map(id => state.wallItems.find(item => item.id === id))
+    .find(item => item && !isFeature(item));
+
+export const styleTargets = () => getSelectedItems().filter(item => !item.locked && !isFeature(item));
+export const canCopyStyle = () => Boolean(styleSourceItem());
+export const canPasteStyle = () => state.styleClipboard !== null && styleTargets().length > 0;
+
+export const captureItemStyle = (item) => ({
+    finish: item.finish,
+    ledEnabled: isLedOn(item),
+    itemLedColor: item.itemLedColor,
+    posterArt: item.posterArt || DEFAULT_POSTER_ART
+});
+
+// Returns whether anything changed; the print only reaches posters
+export function applyItemStyle(item, style) {
+    const next = {
+        finish: style.finish,
+        ledEnabled: style.ledEnabled,
+        itemLedColor: style.itemLedColor,
+        ...(item.type === 'poster' && { posterArt: style.posterArt })
+    };
+    const changed = Object.keys(next).filter(key => item[key] !== next[key]);
+    changed.forEach(key => { item[key] = next[key]; });
+    return changed.length > 0;
 }
 
 export const canGroup = () => state.selectedItemIds.length > 1 && !selectedGroupId();

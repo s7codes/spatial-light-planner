@@ -38,6 +38,9 @@ export const specNote = document.getElementById('spec-mounting-note');
 export const bomBody = document.getElementById('bom-body');
 export const bomFoot = document.getElementById('bom-foot');
 export const mountingBody = document.getElementById('mounting-body');
+export const kitLedStrip = document.getElementById('kit-led-strip');
+export const kitPowerDraw = document.getElementById('kit-power-draw');
+export const kitWallAnchors = document.getElementById('kit-wall-anchors');
 export const copyMarkdownBtn = document.getElementById('copy-markdown-btn');
 export const closeSpecBtn = document.getElementById('close-spec-btn');
 

@@ -3051,6 +3051,35 @@ body.is-dragging-guide-x * {
     font-size: 11px;
 }
 
+.ergonomic-hint {
+    padding: 5px 9px;
+    border: 1px solid rgba(52, 211, 153, 0.24);
+    border-radius: var(--radius-sm);
+    background-color: rgba(52, 211, 153, 0.07);
+    color: #6ee7b7;
+    font-size: 11px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
+}
+
+.ergonomic-hint.is-warning {
+    border-color: rgba(251, 191, 36, 0.32);
+    background-color: rgba(251, 191, 36, 0.09);
+    color: #fbbf24;
+}
+
+.style-copy-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+}
+
+.style-copy-row .btn-secondary {
+    height: 26px;
+    padding: 0 4px;
+    font-size: 11px;
+}
+
 .collision-warning {
     color: #f87171;
     background-color: rgba(239, 68, 68, 0.1);
@@ -3941,6 +3970,43 @@ input[type="range"]:focus-visible::-moz-range-thumb {
 .spec-table .spec-empty {
     padding: 18px 10px;
     text-align: center;
+    color: var(--text-muted);
+}
+
+.kit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.kit-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 14px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.kit-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+}
+
+.kit-value {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent-led);
+}
+
+.kit-detail {
+    font-size: 11px;
+    line-height: 1.4;
     color: var(--text-muted);
 }
 

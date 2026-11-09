@@ -695,6 +695,7 @@ export function setFloorBackdrop(kind) {
     floorBackdropLayer.innerHTML = backdrop ? floorBackdropMarkup(backdrop) : '';
     floorBackdropLayer.hidden = !backdrop;
     backdropAlignRow.hidden = !backdrop;
+    updateInspectorLive();
 }
 
 // Left and right stand the piece 16 px in from the wall edge; center keeps the original centered spot
@@ -703,6 +704,7 @@ export function setFloorBackdropAlign(align) {
     state.floorBackdropAlign = align;
     floorBackdropLayer.dataset.align = align;
     backdropAlignButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.backdropAlign === align)));
+    updateInspectorLive();
 }
 
 // Creator Mode only hides the drafting tools through CSS, so Engineer Mode finds every guide, cable run,

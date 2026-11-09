@@ -24,8 +24,9 @@ import {
     setRuler, setSpaceHeld, setStudioMode, setWallDimensions, stepZoom
 } from './ui/viewport-rulers.js';
 import {
-    bindInspectorEvents, closeContextMenu, copySelection, cutSelection, duplicateSelectedItem, flashLockNote,
-    groupSelection, handleContextMenuKey, isContextMenuOpen, pasteClipboard, removeSelectedItems, renderPlanner,
+    bindInspectorEvents, closeContextMenu, copySelectedStyle, copySelection, cutSelection, duplicateSelectedItem,
+    flashLockNote, groupSelection, handleContextMenuKey, isContextMenuOpen, pasteClipboard, pasteStyleToSelection,
+    removeSelectedItems, renderPlanner,
     rotateSelection, selectAll, selectItem, selectWithGroups, setSelection, syncItemSize, syncPositions,
     toggleCommandPalette, toggleInSelection, toggleSelectedLock, ungroupSelection, updateInspectorPanel
 } from './ui/inspector-layers.js';
@@ -908,6 +909,15 @@ window.addEventListener('keydown', (e) => {
         e.preventDefault();
         suppressAltMenu = true;
         if (!e.repeat) setStudioMode(isCreatorMode() ? 'engineer' : 'creator');
+        return;
+    }
+
+    // Alt+Shift+C / V copy and paste the item style, read by physical key for the same reason
+    const styleKey = e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyC' || e.code === 'KeyV');
+    if (styleKey && !isTextEntry(e.target)) {
+        e.preventDefault();
+        suppressAltMenu = true;
+        if (!e.repeat) (e.code === 'KeyC' ? copySelectedStyle : pasteStyleToSelection)();
         return;
     }
 

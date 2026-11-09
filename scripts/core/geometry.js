@@ -1,6 +1,6 @@
 import {
-    ALIGN_THRESHOLD_PX, ATTIC_SLOPE_PX, clamp, CM_STEP_PX, EPSILON, escapeHtml, getBounds, isFeature, isLedOn,
-    isObstacle, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
+    ALIGN_THRESHOLD_PX, ATTIC_SLOPE_PX, clamp, CM_STEP_PX, EPSILON, escapeHtml, FLOOR_BACKDROPS, getBounds,
+    isFeature, isLedOn, isObstacle, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
 } from './constants.js';
 import { alignLayer, atticSlopeToggle, wallItemsLayer } from './dom.js';
 import { getSelectedItems, groupMembers, isCreatorMode, isSelected, state } from './state.js';
@@ -457,4 +457,38 @@ export function nudgeSelection(items, dx, dy) {
         item.top += stepY;
     });
     return true;
+}
+
+// Mirrors .floor-backdrop[data-align]: left and right stand the piece 16 px in from the wall edge
+const BACKDROP_EDGE_INSET_PX = 16;
+
+export function floorBackdropSpan() {
+    const backdrop = FLOOR_BACKDROPS[state.floorBackdrop];
+    if (!backdrop) return null;
+    const width = backdrop.widthCm * SCALE;
+    const left = state.floorBackdropAlign === 'left'
+        ? BACKDROP_EDGE_INSET_PX
+        : state.floorBackdropAlign === 'right'
+            ? state.wallWidthPx - BACKDROP_EDGE_INSET_PX - width
+            : (state.wallWidthPx - width) / 2;
+    return { backdrop, left, right: left + width };
+}
+
+export function describeErgonomics(item) {
+    const bottomFromFloorCm = state.wallHeightCm - toCm(item.top + item.height);
+    const centerFromFloorCm = Math.round(state.wallHeightCm - (item.top + item.height / 2) / SCALE);
+    const span = floorBackdropSpan();
+
+    if (span && item.left < span.right && item.left + item.width > span.left) {
+        const { name, heightCm } = span.backdrop;
+        const clearanceCm = bottomFromFloorCm - heightCm;
+        if (clearanceCm < 0) return { text: `Overlaps ${name} backdrop by ${Math.abs(clearanceCm)} cm`, warning: true };
+        return { text: `${clearanceCm} cm clear above ${name} (center ${centerFromFloorCm} cm from floor)`, warning: false };
+    }
+    if (item.type === 'poster') {
+        return centerFromFloorCm >= 140 && centerFromFloorCm <= 160
+            ? { text: `Eye-level gallery zone (center ${centerFromFloorCm} cm from floor)`, warning: false }
+            : { text: `Center ${centerFromFloorCm} cm from floor (ideal eye level: 140-160 cm)`, warning: false };
+    }
+    return { text: `Bottom ${bottomFromFloorCm} cm from floor (center ${centerFromFloorCm} cm)`, warning: false };
 }

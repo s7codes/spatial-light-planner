@@ -11,6 +11,9 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020), split into native ES modu
 ## Highlights
 
 - **Engineer and Creator modes:** A segmented switch at the head of the right sidebar, `Alt + M`, or the command palette flips the studio between Engineer Mode, with rulers, reference guides, cable runs, layers, room features, and exact coordinates, and a decluttered Creator Mode for arranging and lighting. The layout never changes, so switching back finds every tool as it was left.
+- **Ergonomic clearance advisor:** The Inspector reads every piece of furniture against the floor: a poster's center against the `140-160 cm` eye-level gallery zone, other pieces by their bottom and center height, and, while a floor reference stands under the piece, its clearance above the bed, desk, or sofa, with a warning when they overlap.
+- **Item style copy and paste:** Copy Style (`Alt + Shift + C`) takes the finish, backlight switch, LED color, and poster print of the selected piece, and Paste Style (`Alt + Shift + V`) applies it to every unlocked piece of furniture in the selection as one undo step.
+- **Hardware and LED kit estimate:** The spec sheet totals the LED strip in meters, the power draw with a `24V` adapter recommendation, and the wall anchors needed for everything on the wall.
 - **Floor reference silhouettes:** Sketch a `155 x 85 cm` bed, a `140 cm` desk with a monitor, `115 cm` tall overall, or a `200 x 82 cm` three-seat sofa in blueprint lines on the floor line, centered or stood near the left or right wall, to judge mounting heights against real furniture. It is a view aid only: never saved, undone, or exported.
 - **Curated poster prints:** Every poster frame carries one of four prints, picked in the Inspector: the original Noir recess, a Bauhaus circle and bar, a Botanical stem, or a warm Horizon sun. The print is saved, undone, copied, and reproduced in the PNG export.
 - **Small-item grips:** Up to `12 x 12 cm`, the resize grips of a selected piece sit outside its edges, so pressing anywhere on a wall socket drags it instead of resizing it.
@@ -44,7 +47,7 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020), split into native ES modu
 - **Project gallery:** Keep up to 24 walls as named projects. The My Projects dialog shows each one with a schematic thumbnail, its last edited date, and Load, Rename, and Delete, and the open project saves itself after every change.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown or downloadable as one CSV file), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 375 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 388 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
 
@@ -233,6 +236,26 @@ The `Floor Reference` control in the Lighting panel stands a front elevation of 
 - **Out of the way:** the overlay has `pointer-events: none`, so every press reaches the items and the wall behind it, and the sketch never blocks a drag, a click, or a selection box.
 - **A view aid:** like the zoom and the cable runs, the floor reference is not part of the layout. It is not saved, undone, shared, or exported, and the PNG renderer leaves it out. The palette offers `Backdrop: None`, `Backdrop: Bed (155 cm)`, `Backdrop: Desk (140 cm)`, and `Backdrop: Sofa (200 cm)`, plus `Backdrop Align: Left`, `Center`, and `Right` while a piece is shown.
 
+### Ergonomic Clearance Advisor
+Every non-feature item gets a live `#ergonomic-hint` line under its offset readout, in both studio modes. `describeErgonomics(item)` in `scripts/core/geometry.js` works in whole centimeters from the floor:
+
+```
+bottomFromFloorCm = wallHeightCm - toCm(top + height)
+centerFromFloorCm = round(wallHeightCm - (top + height / 2) / 2.5)
+```
+
+- **Over a floor reference:** when the active bed, desk, or sofa horizontally overlaps the item at its current `Left` / `Center` / `Right` alignment, the hint reads `N cm clear above Bed (center C cm from floor)`, or `Overlaps Bed backdrop by N cm` in amber when the piece reaches down into it.
+- **Posters:** a center between `140` and `160 cm` reads `Eye-level gallery zone`; anything else names the center and the ideal range.
+- **Other furniture:** `Bottom B cm from floor (center C cm)`.
+- **Live:** the hint follows drags, nudges, typed coordinates, resizes, and every change of floor reference or alignment without rebuilding the Inspector.
+
+### Item Style Copy & Paste
+`styleClipboard` lives in memory on the shared `state`, like the item clipboard. The Inspector shows a `Copy Style` / `Paste Style` row for a single piece of furniture, and for a batch that holds any.
+
+- **Copy:** `Alt + Shift + C`, the button, or `Copy Item Style` in the palette's Selection group captures `finish`, `ledEnabled`, `itemLedColor`, and `posterArt` from the first piece of furniture in selection order. Room features never take part.
+- **Paste:** `Alt + Shift + V`, the button, or `Paste Item Style` applies the style to every unlocked piece of furniture in the selection; the print only reaches posters. Locked items are skipped, a paste that changes nothing records nothing, and anything else is one undo step. `Paste Style` is disabled until something is copied and while every piece of furniture in the selection is locked.
+- **Shortcuts:** both keys are read by physical key, like `Alt + M`, and are ignored while typing in a field. The in-app guide documents them below its ten pinned rows.
+
 ### Symmetry
 `Flip Horizontally` appears in the batch Inspector whenever two or more items are selected and one unit can move, a single complete group included. `Mirror Across Wall` appears for a single item and is disabled while it is locked.
 
@@ -352,6 +375,12 @@ The same rows feed the modal tables and the `Copy as Markdown` export, which use
 - **Formula guard:** text that starts with `=`, `+`, `-`, `@`, a tab, or a carriage return gets a leading apostrophe, so a spreadsheet shows it instead of evaluating it. Numbers are left untouched.
 - **Encoding:** a UTF-8 byte order mark lets Excel read item names correctly.
 
+Below the two tables, `Hardware & LED Kit Estimate` shows three cards, refreshed each time the sheet opens. They are not part of the Markdown or CSV output.
+
+- **LED strip:** every lit piece adds its strip: the width of a shelf or storage unit (its long catalog side when turned), the perimeter `(width + height) * 2` of a cube or poster, `1.4 m` per corner lamp, and `0.2 m` per spotlight, shown to one decimal.
+- **Power draw:** `ceil(meters * 14.4 + litSpotlights * 5)` watts with a `24V PSU` recommendation, or `0 W` when nothing is lit. Lengths stay in whole centimeters, so an exact `36 W` never rounds up to `37 W`.
+- **Wall anchors:** `4` per shelf or storage unit, `2` per cube, poster, or spotlight, and `1` wall clip per corner lamp, lit or not.
+
 ### HiDPI Canvas 2D PNG Renderer
 `Export PNG` draws the wall on an offscreen canvas at `wallWidthPx * 2` by `wallHeightPx * 2` with the native Canvas 2D API. It paints in the same stacking order as the live DOM: the wall paint (or its daylight tone with the grid), attic slope, corner glow, then items in layer order, and finally a dimensions caption. Reference guides, cable runs, the floor reference, and the other drafting overlays are left out.
 
@@ -415,6 +444,7 @@ Item fills, borders, corner radii, drop shadows, glow layers, and pseudo-element
 | `Delete` / `Backspace` | Remove the selected unlocked items |
 | `Ctrl + K` / `Cmd + K` | Open or close the command palette |
 | `Alt + M` / `Option + M` | Switch between Engineer Mode and Creator Mode |
+| `Alt + Shift + C` / `Alt + Shift + V` | Copy the selected item's style, or paste it onto the unlocked selection |
 | `?` | Toggle the keyboard shortcuts guide |
 | `Escape` | Close the open menu or modal, or clear the selection |
 
@@ -444,7 +474,7 @@ Then open `http://localhost:8000`. Any static server works (VS Code Live Server,
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 375 tests in 31 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 388 tests in 32 spec files, one per feature area.
 
 ```bash
 npm install
@@ -485,6 +515,7 @@ npm test
 | `commands-coords-power` | Left X and Top Y fields with wall limits, typed moves with readout, rulers and ruler band, clamping, rounding, empty and unchanged values, single-step undo and redo, live sync through drags, nudges and grip resizes without a rebuild or lost focus, locked items; Center H and Center V for single items with half-centimeter rounding, rigid multi-selection blocks with locked units held, the attic slope stop; the palette from `Ctrl + K`, `Cmd + K` and the HUD, closing paths, no stacking on other dialogs, grouped commands and selection-only entries, word filtering across labels and groups, the empty state, wrap-around arrows with `aria-activedescendant`, hover, click and `Enter`, mounting like a catalog click, commands driving view toggles, paint, guides, selection edits, exports and dialogs, and focus released after a command; the routing switch, the no-socket warning, exact orthogonal paths and Manhattan lengths, live updates through socket drags, nudges, LED switches, rotations and hidden sockets, nearest-socket choice, long-run flags, and a PNG export identical with the overlay on |
 | `studio-mode-backdrop` | Engineer Mode on startup with the segmented switch outside the Inspector; Creator Mode hiding rulers, guides, cable runs, layers, room features and coordinate fields while finishes, LED controls, centering and rotation keep working, with the layout and history untouched and a full restore in Engineer Mode; palette and `Alt + M` switching with field and dialog guards; hidden rulers and guides that no longer pull or snap; bed and desk silhouettes standing on the floor line at true size on any wall, presses passing through, no history, payload or PNG change, palette commands and a reset on reload; small-item grips outside the face, center drags that move a socket without resizing it, Inspector and outside-grip resizes, straddling grips on larger pieces, and grips stepping aside at a wall edge |
 | `backdrop-poster-art` | `Escape` in the palette followed at once by `Ctrl + Z` undoing reliably over repeated rounds, a shortcut fired at the search field in the same task as the close, `isTextEntry` and closed dialogs, focus released by every close path; the sofa standing on the floor at true size, left, center and right alignment, the row hiding with no piece, palette commands, no history, payload or PNG change, reset on reload; the four poster prints from the Inspector with undo and redo, locked posters and batches, copies, persistence, sanitizing, and PNG pixels matched against the live wall |
+| `ergonomics-style-kit` | The ergonomic hint for posters in and out of the eye-level zone, furniture heights, no hint on room features or batches, live updates through typed moves, nudges and drags, bed and sofa clearance and overlap with left, center and right alignment, Creator Mode visibility; Copy Style and Paste Style by button, `Alt + Shift + C` / `V` and the palette, mixed selections skipping locked items and features, single-step undo and redo, disabled states; LED strip, power draw and anchor cards following backlight switches, removals, turned shelves and exact whole-watt results, with the spec tables left in place |
 | `modular-architecture` | The single `type="module"` entry and the version badge, all nine modules fetched once as JavaScript with an error-free boot, internals kept off `window` while the console bridge reads live state, dynamic imports returning the entry's own instances, cross-module writes; catalog mounting, snapped drags with rulers, zoom with ruler and band sync, Inspector edits, spec sheet Markdown and CSV, PNG export, entry shortcuts reaching every module, and autosave across a reload |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
