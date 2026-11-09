@@ -1,8 +1,8 @@
 import {
-    clamp, DEFAULT_NOTE_TEXT, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM, FEATURE_TYPES,
-    FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isHexColor, ITEM_TYPES, MAX_GUIDES,
-    MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, ROTATIONS, SAFE_ID_PATTERN,
-    SCALE, toCmGrid, toFiniteNumber, toWallCm, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS, WALL_WIDTH_LIMITS_CM
+    clamp, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
+    FEATURE_TYPES, FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isHexColor, ITEM_TYPES, MAX_GUIDES,
+    MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, POSTER_ART_IDS, ROTATIONS,
+    SAFE_ID_PATTERN, SCALE, toCmGrid, toFiniteNumber, toWallCm, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS, WALL_WIDTH_LIMITS_CM
 } from './constants.js';
 import { atticSlopeToggle, CATALOG_DEFAULTS, redoBtn, undoBtn } from './dom.js';
 import { applyAtticSlope, applyWallPaint, renderGuides, setWallDimensions } from '../ui/viewport-rulers.js';
@@ -102,6 +102,7 @@ export const state = {
     // View states like the zoom: never saved, exported or undone, so every visit opens in Engineer Mode
     studioMode: 'engineer',
     floorBackdrop: 'none',
+    floorBackdropAlign: 'center',
     // Kept in selection order; layer order comes from wallItems whenever it matters
     selectedItemIds: [],
     wallItems: [],
@@ -246,7 +247,9 @@ export function sanitizeItem(raw, usedIds, bounds) {
         // Group ids only survive if at least two items share them; normalizeGroups checks that afterwards
         groupId: typeof raw.groupId === 'string' && GROUP_ID_PATTERN.test(raw.groupId) ? raw.groupId : null,
         hidden: raw.hidden === true,
-        ...(raw.type === 'note' && { text: sanitizeNoteText(raw.text) })
+        ...(raw.type === 'note' && { text: sanitizeNoteText(raw.text) }),
+        // Files from before v2.2 carry no artwork, so their posters keep the original noir print
+        ...(raw.type === 'poster' && { posterArt: POSTER_ART_IDS.includes(raw.posterArt) ? raw.posterArt : DEFAULT_POSTER_ART })
     };
 }
 

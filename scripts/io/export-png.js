@@ -160,8 +160,50 @@ export function paintSheen(ctx, shape, border, style) {
     ctx.fill();
 }
 
+// Each curated print is decoded once and reused by every later export
+const artImages = new Map();
+
+export function cssImageUrl(value) {
+    const match = /^url\("(.+)"\)$/.exec(value || '');
+    return match ? match[1] : null;
+}
+
+function loadArtImage(url) {
+    if (!artImages.has(url)) {
+        const image = new Image();
+        image.src = url;
+        artImages.set(url, image.decode().then(() => image, () => null));
+    }
+    return artImages.get(url);
+}
+
+// Prints are read from each poster's computed ::after background, the same image the wall shows
+export async function loadPosterArt(items) {
+    const urls = new Set(items
+        .filter(item => item.type === 'poster')
+        .map(item => getItemElement(item.id))
+        .filter(Boolean)
+        .map(el => cssImageUrl(getComputedStyle(el, '::after').backgroundImage))
+        .filter(Boolean));
+    const entries = await Promise.all([...urls].map(async url => [url, await loadArtImage(url)]));
+    return new Map(entries.filter(([, image]) => image));
+}
+
+// Mirrors background-size: cover with a centered position, clipped to the artwork box
+export function paintCoverImage(ctx, shape, image) {
+    const scale = Math.max(shape.w / image.naturalWidth, shape.h / image.naturalHeight);
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+
+    ctx.save();
+    traceShape(ctx, shape, 0);
+    ctx.clip();
+    ctx.drawImage(image, shape.x + (shape.w - width) / 2, shape.y + (shape.h - height) / 2, width, height);
+    ctx.restore();
+}
+
 // The poster artwork and the lamp diffuser are ::after boxes, positioned against the padding box
-export function paintAfterLayer(ctx, item, el, border) {
+export function paintAfterLayer(ctx, item, el, border, arts = new Map()) {
     const layer = getComputedStyle(el, '::after');
     const alpha = parseFloat(layer.opacity);
     if (layer.content === 'none' || !(alpha > 0)) return;
@@ -182,6 +224,8 @@ export function paintAfterLayer(ctx, item, el, border) {
     ctx.fillStyle = layer.backgroundColor;
     traceShape(ctx, shape, 0);
     ctx.fill();
+    const art = arts.get(cssImageUrl(layer.backgroundImage));
+    if (art) paintCoverImage(ctx, shape, art);
     ctx.restore();
     shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, 0, shadow, alpha));
 }
@@ -423,7 +467,7 @@ export function paintItemLabel(ctx, item, el) {
 }
 
 // Item visuals come from the live computed styles, so the snapshot always matches the CSS on screen
-export function paintItem(ctx, item, brightness) {
+export function paintItem(ctx, item, brightness, arts) {
     const el = getItemElement(item.id);
     if (!el) return;
 
@@ -461,7 +505,7 @@ export function paintItem(ctx, item, brightness) {
     shadows.filter(shadow => shadow.inset).forEach(shadow => paintInsetShadow(ctx, shape, border, shadow, 1));
 
     if (item.type === 'storage') paintStorageHandles(ctx, item, el, border);
-    if (['poster', 'corner-lamp', 'socket'].includes(item.type)) paintAfterLayer(ctx, item, el, border);
+    if (['poster', 'corner-lamp', 'socket'].includes(item.type)) paintAfterLayer(ctx, item, el, border, arts);
     paintItemLabel(ctx, item, el);
 }
 
@@ -483,7 +527,11 @@ export function paintCaption(ctx, fontFamily) {
     ctx.fillText(text, margin + 8, top + height / 2);
 }
 
-export function exportPng() {
+export async function exportPng() {
+    // Prints are decoded before anything is painted, so the snapshot is drawn in one pass as before
+    const visible = state.wallItems.filter(item => !item.hidden);
+    const arts = await loadPosterArt(visible);
+
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(state.wallWidthPx * PNG_PIXEL_RATIO);
     canvas.height = Math.round(state.wallHeightPx * PNG_PIXEL_RATIO);
@@ -502,7 +550,7 @@ export function exportPng() {
     if (atticSlopeToggle.checked) paintAtticZone(ctx, fontFamily);
     if (state.isAmbientMode && brightness > 0) paintCornerGlow(ctx, brightness);
     // Hidden items stay in the plan but leave the picture, just as they leave the wall view
-    state.wallItems.filter(item => !item.hidden).forEach(item => paintItem(ctx, item, brightness));
+    visible.forEach(item => paintItem(ctx, item, brightness, arts));
     paintCaption(ctx, fontFamily);
 
     canvas.toBlob(blob => {

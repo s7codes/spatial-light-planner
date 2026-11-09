@@ -327,7 +327,15 @@ test.describe('floor reference silhouettes', () => {
 
     await openPalette(page);
     await page.keyboard.type('backdrop');
-    expect(await optionLabels(page)).toEqual(['Backdrop: None', 'Backdrop: Bed (155 cm)', 'Backdrop: Desk (140 cm)']);
+    expect(await optionLabels(page)).toEqual([
+      'Backdrop: None',
+      'Backdrop: Bed (155 cm)',
+      'Backdrop: Desk (140 cm)',
+      'Backdrop: Sofa (200 cm)',
+      'Backdrop Align: Left',
+      'Backdrop Align: Center',
+      'Backdrop Align: Right',
+    ]);
     await expect(hintFor(page, 'Backdrop: Bed (155 cm)')).toHaveText('Current');
     await page.keyboard.press('Escape');
 

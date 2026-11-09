@@ -26,7 +26,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v2.1</span></h1>
+            <h1>Spatial Studio <span class="badge">v2.2</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -179,7 +179,7 @@
                 </div>
                 <div id="guide-hits" class="guide-hits"></div>
                 <div id="power-routes" class="power-routes" aria-hidden="true" hidden></div>
-                <div id="floor-backdrop" class="floor-backdrop" aria-hidden="true" data-kind="none" hidden></div>
+                <div id="floor-backdrop" class="floor-backdrop" aria-hidden="true" data-kind="none" data-align="center" hidden></div>
 
                 <div id="guide-lines" class="guide-lines"></div>
                 <div id="align-guides" class="align-guides"></div>
@@ -306,10 +306,16 @@
 
                 <div class="control-group">
                     <label id="floor-reference-label">Floor Reference</label>
-                    <div class="segmented floor-reference" role="group" aria-labelledby="floor-reference-label">
+                    <div class="segmented segmented-grid floor-reference" role="group" aria-labelledby="floor-reference-label">
                         <button type="button" id="backdrop-none-btn" class="segmented-btn" data-backdrop="none" aria-pressed="true" title="No floor reference">None</button>
                         <button type="button" id="backdrop-bed-btn" class="segmented-btn" data-backdrop="bed" aria-pressed="false" title="Sketch a 155 x 85 cm bed on the floor line to judge mounting heights">Bed 155cm</button>
                         <button type="button" id="backdrop-desk-btn" class="segmented-btn" data-backdrop="desk" aria-pressed="false" title="Sketch a 140 cm desk with a monitor, 115 cm tall overall, on the floor line">Desk 140cm</button>
+                        <button type="button" id="backdrop-sofa-btn" class="segmented-btn" data-backdrop="sofa" aria-pressed="false" title="Sketch a 200 x 82 cm three-seat sofa on the floor line">Sofa 200cm</button>
+                    </div>
+                    <div id="backdrop-align-row" class="segmented backdrop-align" role="group" aria-label="Floor reference position" hidden>
+                        <button type="button" id="backdrop-align-left-btn" class="segmented-btn" data-backdrop-align="left" aria-pressed="false" title="Stand the floor reference near the left wall edge">Left</button>
+                        <button type="button" id="backdrop-align-center-btn" class="segmented-btn" data-backdrop-align="center" aria-pressed="true" title="Center the floor reference on the wall">Center</button>
+                        <button type="button" id="backdrop-align-right-btn" class="segmented-btn" data-backdrop-align="right" aria-pressed="false" title="Stand the floor reference near the right wall edge">Right</button>
                     </div>
                 </div>
             </div>

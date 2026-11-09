@@ -1,15 +1,15 @@
 import {
-    CANVAS_PADDING_PX, clamp, EPSILON, FLOOR_BACKDROPS, getBounds, GUIDE_TAG_ROOM_PX, LABEL_GAP_PX,
+    BACKDROP_ALIGNS, CANVAS_PADDING_PX, clamp, EPSILON, FLOOR_BACKDROPS, getBounds, GUIDE_TAG_ROOM_PX, LABEL_GAP_PX,
     LABEL_SLIDE_STEP_PX, MAX_GUIDES, PAN_KEEP_PX, POWER_IDLE_TEXT, RULER_GAP_PX, RULER_LABEL_CM, RULER_LABEL_ROOM_PX,
     RULER_PIN_PX, RULER_SIZE_PX, RULER_TICK_CM, SCALE, SNAP_STEP_PX, STUDIO_MODES, toCm, WALL_BORDER_PX,
     wallPaintById, ZOOM_BUTTON_STEP, ZOOM_LIMITS, ZOOM_WHEEL_STEP
 } from '../core/constants.js';
 import {
-    accentColorPicker, accentHexCode, appShell, atticSlopeToggle, atticZone, backdropButtons, brightnessSlider,
-    brightnessValue, canvasArea, commandPaletteBtn, cornerColorPicker, cornerHexCode, floorBackdropLayer,
-    guideHitLayer, guideLineLayer, isModalOpen, measureLayer, modeCreatorBtn, modeEngineerBtn, paintSwatches,
-    powerRoutesLayer, powerRoutingSummary, powerRoutingToggle, presetButtons, rulerCorner, rulers, rulerX, rulerY,
-    scaleNote, snapGridToggle, themeToggleBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallPaintName,
+    accentColorPicker, accentHexCode, appShell, atticSlopeToggle, atticZone, backdropAlignButtons, backdropAlignRow,
+    backdropButtons, brightnessSlider, brightnessValue, canvasArea, commandPaletteBtn, cornerColorPicker, cornerHexCode,
+    floorBackdropLayer, guideHitLayer, guideLineLayer, isModalOpen, measureLayer, modeCreatorBtn, modeEngineerBtn,
+    paintSwatches, powerRoutesLayer, powerRoutingSummary, powerRoutingToggle, presetButtons, rulerCorner, rulers, rulerX,
+    rulerY, scaleNote, snapGridToggle, themeToggleBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallPaintName,
     wallWidthInput, zoomInBtn, zoomOutBtn, zoomResetBtn
 } from '../core/dom.js';
 import {
@@ -694,6 +694,15 @@ export function setFloorBackdrop(kind) {
     floorBackdropLayer.dataset.kind = state.floorBackdrop;
     floorBackdropLayer.innerHTML = backdrop ? floorBackdropMarkup(backdrop) : '';
     floorBackdropLayer.hidden = !backdrop;
+    backdropAlignRow.hidden = !backdrop;
+}
+
+// Left and right stand the piece 16 px in from the wall edge; center keeps the original centered spot
+export function setFloorBackdropAlign(align) {
+    if (!BACKDROP_ALIGNS.some(option => option.id === align)) return;
+    state.floorBackdropAlign = align;
+    floorBackdropLayer.dataset.align = align;
+    backdropAlignButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.backdropAlign === align)));
 }
 
 // Creator Mode only hides the drafting tools through CSS, so Engineer Mode finds every guide, cable run,
@@ -855,6 +864,7 @@ export function bindViewportEvents() {
     powerRoutingToggle.addEventListener('click', () => setPowerRouting(!state.powerRoutingOn));
 
     backdropButtons.forEach(button => button.addEventListener('click', () => setFloorBackdrop(button.dataset.backdrop)));
+    backdropAlignButtons.forEach(button => button.addEventListener('click', () => setFloorBackdropAlign(button.dataset.backdropAlign)));
 
     modeEngineerBtn.addEventListener('click', () => setStudioMode('engineer'));
     modeCreatorBtn.addEventListener('click', () => setStudioMode('creator'));

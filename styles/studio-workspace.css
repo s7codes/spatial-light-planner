@@ -1223,6 +1223,32 @@ button:focus-visible {
     pointer-events: none;
 }
 
+/* Curated prints fill the recessed artwork box with a 100 x 150 SVG scaled to cover it. The PNG export
+   draws that same computed background into the same box, so the wall and the snapshot cannot drift
+   apart. Noir has no rule here at all, so it stays exactly the original plain recess. */
+.wall-item.poster[data-art="bauhaus"]::after,
+.wall-item.poster[data-art="botanical"]::after,
+.wall-item.poster[data-art="horizon"]::after {
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+}
+
+.wall-item.poster[data-art="bauhaus"]::after {
+    background-color: #e8e1cf;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='150' viewBox='0 0 100 150'%3E %3Crect width='100' height='150' fill='%23e8e1cf'/%3E %3Ccircle cx='50' cy='54' r='25' fill='%23d1452d'/%3E %3Crect x='18' y='94' width='64' height='9' fill='%231d2840'/%3E %3Crect x='18' y='110' width='14' height='14' fill='%23e2ad3a'/%3E %3C/svg%3E");
+}
+
+.wall-item.poster[data-art="botanical"]::after {
+    background-color: #dde3d3;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='150' viewBox='0 0 100 150'%3E %3Crect width='100' height='150' fill='%23dde3d3'/%3E %3Cpath d='M50 128 C50 100 48 70 52 30' fill='none' stroke='%233e5a44' stroke-width='2.2' stroke-linecap='round'/%3E %3Cpath d='M50 102 C38 100 30 92 28 82 C40 82 48 90 50 102 Z' fill='%235f7f63'/%3E %3Cpath d='M50 86 C62 84 70 76 72 66 C60 66 52 74 50 86 Z' fill='%236f8f6f'/%3E %3Cpath d='M50 66 C39 64 32 56 31 48 C41 48 48 56 50 66 Z' fill='%235f7f63'/%3E %3Cpath d='M52 46 C60 44 64 38 64 31 C57 32 53 38 52 46 Z' fill='%236f8f6f'/%3E %3Crect x='34' y='127' width='32' height='2' fill='%233e5a44'/%3E %3C/svg%3E");
+}
+
+.wall-item.poster[data-art="horizon"]::after {
+    background-color: #f3c58f;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='150' viewBox='0 0 100 150'%3E %3Crect width='100' height='150' fill='%23f3c58f'/%3E %3Crect width='100' height='44' fill='%23f6d6a8'/%3E %3Ccircle cx='50' cy='88' r='24' fill='%23e46a3c'/%3E %3Crect y='88' width='100' height='62' fill='%237a2f2b'/%3E %3Crect y='104' width='100' height='6' fill='%23a3443a'/%3E %3Crect y='120' width='100' height='3' fill='%23a3443a'/%3E %3C/svg%3E");
+}
+
 .wall-item.spotlight {
     --frame: 2px;
     --item-drop: 0 5px 15px rgba(0, 0, 0, 0.5);
@@ -2045,6 +2071,18 @@ body.is-selecting * {
     z-index: 3;
     transform: translateX(-50%);
     pointer-events: none;
+}
+
+/* Left and right stand the piece 16 px in from the wall edge instead of centering it */
+.floor-backdrop[data-align="left"] {
+    left: 16px;
+    transform: none;
+}
+
+.floor-backdrop[data-align="right"] {
+    right: 16px;
+    left: auto;
+    transform: none;
 }
 
 .floor-backdrop-svg {
@@ -3329,9 +3367,28 @@ input[type="range"]:focus-visible::-moz-range-thumb {
     font-weight: 600;
 }
 
+/* Four choices are too wide for one row of the sidebar, so they sit two by two */
+.segmented.segmented-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
+}
+
 .floor-reference .segmented-btn {
     padding: 0 4px;
     font-size: 11px;
+}
+
+.backdrop-align {
+    margin-top: -3px;
+}
+
+.backdrop-align .segmented-btn {
+    height: 22px;
+    font-size: 10.5px;
+}
+
+.poster-art {
+    margin-top: 2px;
 }
 
 /* The workspace switch heads the right sidebar outside the scrolling inspector, so it never scrolls away */

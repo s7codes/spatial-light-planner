@@ -110,6 +110,17 @@ export const FINISHES = [
 
 export const FINISH_IDS = FINISHES.map(f => f.id);
 
+// Noir is the original recessed artwork, so posters from older files look exactly as they did
+export const POSTER_ARTS = [
+    { id: 'noir', label: 'Noir' },
+    { id: 'bauhaus', label: 'Bauhaus' },
+    { id: 'botanical', label: 'Botanical' },
+    { id: 'horizon', label: 'Horizon' }
+];
+
+export const POSTER_ART_IDS = POSTER_ARTS.map(art => art.id);
+export const DEFAULT_POSTER_ART = 'noir';
+
 export const NUDGE_KEYS = {
     ArrowLeft: [-1, 0],
     ArrowRight: [1, 0],
@@ -122,7 +133,7 @@ export const NON_TEXT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color', 'but
 
 export const defaultItems = [
     { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false }
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false, posterArt: 'noir' }
 ];
 
 export const templateItem = (type, leftCm, topCm, finish) => ({ type, left: leftCm * SCALE, top: topCm * SCALE, finish });
@@ -207,10 +218,13 @@ export const escapeHtml = (value) => String(value).replace(/[&<>"']/g, ch => ({
 // A typed "?" belongs to any form control that has focus, so the guide shortcut stays out of all of them
 export const isFormField = (el) => ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName) || el.isContentEditable;
 
+// A field left inside a closed dialog can keep focus for a moment after the dialog shuts. Nobody is
+// typing there any more, so it must not swallow global shortcuts such as Ctrl+Z.
 export const isTextEntry = (el) =>
-    el.isContentEditable ||
-    el.tagName === 'TEXTAREA' ||
-    (el.tagName === 'INPUT' && !NON_TEXT_INPUT_TYPES.includes(el.type));
+    !el.closest?.('dialog:not([open])') && (
+        el.isContentEditable ||
+        el.tagName === 'TEXTAREA' ||
+        (el.tagName === 'INPUT' && !NON_TEXT_INPUT_TYPES.includes(el.type)));
 
 // Base64URL over UTF-8 bytes, so names and notes in any script survive the trip through a URL
 export function toBase64Url(text) {
@@ -249,6 +263,13 @@ export const backdropRect = (x, y, w, h, r = 0, kind = 'shape') =>
     `<rect class="backdrop-${kind}" x="${x * SCALE}" y="${y * SCALE}" width="${w * SCALE}" height="${h * SCALE}" rx="${r * SCALE}" />`;
 
 export const backdropLine = (x1, y, x2) => `<path class="backdrop-detail" d="M ${x1 * SCALE} ${y * SCALE} H ${x2 * SCALE}" />`;
+export const backdropSeam = (x, y1, y2) => `<path class="backdrop-detail" d="M ${x * SCALE} ${y1 * SCALE} V ${y2 * SCALE}" />`;
+
+export const BACKDROP_ALIGNS = [
+    { id: 'left', label: 'Left' },
+    { id: 'center', label: 'Center' },
+    { id: 'right', label: 'Right' }
+];
 
 export const FLOOR_BACKDROPS = {
     // A headboard behind a mattress topped at 55 cm, two pillows, a framed base and short legs
@@ -282,6 +303,25 @@ export const FLOOR_BACKDROPS = {
             backdropRect(132, 43.5, 4, 71.5),
             backdropRect(98, 43.5, 32, 16, 0.5),
             backdropLine(108, 51.5, 120)
+        ]
+    },
+    // A low backrest between two armrests, three seat cushions topped at 42 cm, a plinth and short legs
+    sofa: {
+        name: 'Sofa',
+        widthCm: 200,
+        heightCm: 82,
+        art: [
+            backdropRect(10, 0, 180, 42, 5),
+            backdropSeam(71.5, 6, 40),
+            backdropSeam(128.5, 6, 40),
+            backdropRect(0, 22, 14, 52, 4),
+            backdropRect(186, 22, 14, 52, 4),
+            backdropRect(15, 40, 56, 13, 3),
+            backdropRect(72, 40, 56, 13, 3),
+            backdropRect(129, 40, 56, 13, 3),
+            backdropRect(14, 53, 172, 21, 1.5),
+            backdropRect(5, 74, 5, 8),
+            backdropRect(190, 74, 5, 8)
         ]
     }
 };

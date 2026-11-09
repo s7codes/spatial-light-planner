@@ -1,8 +1,9 @@
 import {
-    ARRANGE_ACTIONS, clamp, CM_STEP_PX, countLabel, DEFAULT_NOTE_TEXT, DUPLICATE_OFFSET_PX, EPSILON, escapeHtml,
-    FEATURE_TYPES, FINISHES, FLOOR_BACKDROPS, formatFootprint, formatOffset, formatPrice, getBounds, isFeature,
-    isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX, LOCK_ICON_HTML, MENU_EDGE_PX, minSizeCm,
-    NOTE_MAX_LENGTH, quantize, RESIZE_HANDLES_HTML, SCALE, TINY_ITEM_PX, toCm, WALL_PAINTS
+    ARRANGE_ACTIONS, BACKDROP_ALIGNS, clamp, CM_STEP_PX, countLabel, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART,
+    DUPLICATE_OFFSET_PX, EPSILON, escapeHtml, FEATURE_TYPES, FINISHES, FLOOR_BACKDROPS, formatFootprint, formatOffset,
+    formatPrice, getBounds, isFeature, isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX, LOCK_ICON_HTML,
+    MENU_EDGE_PX, minSizeCm, NOTE_MAX_LENGTH, POSTER_ARTS, quantize, RESIZE_HANDLES_HTML, SCALE, TINY_ITEM_PX, toCm,
+    WALL_PAINTS
 } from '../core/constants.js';
 import {
     atticSlopeToggle, catalogItems, commandEmpty, commandList, commandPalette, commandPaletteBtn, commandSearchInput,
@@ -22,8 +23,8 @@ import {
     updateCollisionStates
 } from '../core/geometry.js';
 import {
-    clearGuides, refreshMeasure, refreshPowerRoutes, resetView, setFloorBackdrop, setPowerRouting, setStudioMode,
-    setWallPaint, syncRulerSpans, toggleAmbientMode, updateDistanceGuides
+    clearGuides, refreshMeasure, refreshPowerRoutes, resetView, setFloorBackdrop, setFloorBackdropAlign, setPowerRouting,
+    setStudioMode, setWallPaint, syncRulerSpans, toggleAmbientMode, updateDistanceGuides
 } from './viewport-rulers.js';
 import { exportPng } from '../io/export-png.js';
 import { exportLayout, exportSpecCsv, openProjects, openSpecSheet, showIoStatus } from '../io/projects-spec.js';
@@ -48,9 +49,10 @@ export function renderPlanner() {
         const label = isNote(item)
             ? `<span class="item-label note-text">${escapeHtml(item.text)}</span>`
             : `<span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>`;
+        const art = item.type === 'poster' ? ` data-art="${escapeHtml(item.posterArt || DEFAULT_POSTER_ART)}"` : '';
         return `
             <div class="${classes}"
-                 data-id="${escapeHtml(item.id)}"
+                 data-id="${escapeHtml(item.id)}"${art}
                  style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;${ledColor}">
                 ${label}
             </div>
@@ -808,6 +810,32 @@ const WARNINGS_HTML = `
     <div id="warning-feature" class="collision-warning" hidden>Furniture overlaps a door, window or socket zone</div>
     <div id="warning-attic" class="collision-warning" hidden>Intrudes into sloped ceiling zone</div>`;
 
+// Single posters always show the picker (disabled while locked); a batch shows it for its unlocked posters
+function posterArtFieldHtml(posters, disabled = false) {
+    if (!posters.length) return '';
+    const shared = posters.every(item => item.posterArt === posters[0].posterArt) ? posters[0].posterArt : null;
+    const buttons = POSTER_ARTS.map(({ id, label }) => `
+        <button type="button" class="segmented-btn btn-poster-art" id="poster-art-${id}-btn" data-poster-art="${id}" aria-pressed="${shared === id}" title="${label} artwork" ${disabled ? 'disabled' : ''}>${label}</button>`).join('');
+    return `
+            <div class="inspector-field">
+                <label id="poster-art-label">Poster Artwork</label>
+                <div class="segmented segmented-grid poster-art" role="group" aria-labelledby="poster-art-label">${buttons}</div>
+            </div>`;
+}
+
+// The print only changes the data-art hook, so the item element is updated in place rather than rebuilt
+function applyPosterArt(art) {
+    const targets = getSelectedItems().filter(item => item.type === 'poster' && !item.locked && item.posterArt !== art);
+    if (!targets.length) return;
+
+    targets.forEach(item => {
+        item.posterArt = art;
+        getItemElement(item.id)?.setAttribute('data-art', art);
+    });
+    updateInspectorPanel();
+    commitLayoutChange();
+}
+
 function applyFinish(finish) {
     const targets = getSelectedItems().filter(item => !item.locked && !isFeature(item) && item.finish !== finish);
     if (!targets.length) return;
@@ -944,6 +972,7 @@ function renderItemInspector(item) {
             </div>
             ${centerWallFieldHtml()}
             ${feature ? featureNote : furnitureFields}
+            ${item.type === 'poster' ? posterArtFieldHtml([item], locked) : ''}
 
             ${rotationFieldHtml(`${item.rotation} deg`, [item])}
             ${symmetryFieldHtml([item])}
@@ -1100,6 +1129,7 @@ function renderBatchInspector(items) {
                 <label>Surface Finish</label>
                 <div class="finish-swatches">${finishButtonsHtml(sharedFinish, finishLocked)}</div>
             </div>
+            ${posterArtFieldHtml(items.filter(item => item.type === 'poster' && !item.locked))}
 
             ${rotationFieldHtml('', items)}
             ${symmetryFieldHtml(items)}
@@ -1131,6 +1161,9 @@ export function updateInspectorPanel() {
 
     inspectorBox.querySelectorAll('.btn-finish').forEach(btn => {
         btn.addEventListener('click', () => applyFinish(btn.dataset.finish));
+    });
+    inspectorBox.querySelectorAll('.btn-poster-art').forEach(btn => {
+        btn.addEventListener('click', () => applyPosterArt(btn.dataset.posterArt));
     });
     inspectorBox.querySelectorAll('[data-arrange]').forEach(btn => {
         btn.addEventListener('click', () => runArrange(btn.dataset.arrange));
@@ -1286,6 +1319,12 @@ function buildCommands() {
     Object.entries(FLOOR_BACKDROPS).forEach(([kind, { name, widthCm }]) => {
         add('Wall & View', `Backdrop: ${name} (${widthCm} cm)`, () => setFloorBackdrop(kind), state.floorBackdrop === kind ? 'Current' : '');
     });
+    // Like the Inspector row, the alignment entries only appear while a floor reference is shown
+    if (state.floorBackdrop !== 'none') {
+        BACKDROP_ALIGNS.forEach(({ id, label }) => {
+            add('Wall & View', `Backdrop Align: ${label}`, () => setFloorBackdropAlign(id), state.floorBackdropAlign === id ? 'Current' : '');
+        });
+    }
 
     presetButtons.forEach(button => add('Lighting & Paint', `Preset: ${button.textContent.trim()}`, () => button.click()));
     WALL_PAINTS.forEach(paint => {
@@ -1361,12 +1400,18 @@ function releasePaletteFocus() {
     if (!commandPalette.open && commandPalette.contains(document.activeElement)) document.activeElement.blur();
 }
 
+// The search field lets go of focus in the same task that shuts the dialog, so a shortcut pressed right
+// after the close can never land in the hidden field while the queued close event is still on its way
+function closeCommandPalette() {
+    commandPalette.close();
+    commandSearchInput.blur();
+}
+
 // The palette closes first, so a command that opens a dialog of its own finds no modal in the way
 function runCommand(index) {
     const command = palette.matches[index];
     if (!command) return;
-    commandPalette.close();
-    releasePaletteFocus();
+    closeCommandPalette();
     command.run();
 }
 
@@ -1381,7 +1426,7 @@ export function openCommandPalette() {
 }
 
 export function toggleCommandPalette() {
-    if (commandPalette.open) commandPalette.close();
+    if (commandPalette.open) closeCommandPalette();
     else openCommandPalette();
 }
 
@@ -1514,6 +1559,11 @@ export function bindInspectorEvents() {
         if (option) runCommand(Number(option.dataset.index));
     });
 
+    // Escape still closes through the native cancel step; the field just lets go of focus first
+    commandPalette.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !e.isComposing) commandSearchInput.blur();
+    });
+    commandPalette.addEventListener('cancel', () => { commandSearchInput.blur(); });
     commandPalette.addEventListener('close', releasePaletteFocus);
     commandPaletteBtn.addEventListener('click', toggleCommandPalette);
 

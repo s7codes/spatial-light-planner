@@ -1,7 +1,7 @@
 import {
-    CATALOG_DRAG_THRESHOLD_PX, clamp, CM_STEP_PX, csvField, DEFAULT_NOTE_TEXT, escapeHtml, FEATURE_TYPES, getBounds,
-    isFormField, isTextEntry, MARQUEE_THRESHOLD_PX, minSizeCm, NUDGE_KEYS, OBSTACLE_TYPES, PRESS_TRAVEL_PX, quantize,
-    SCALE, SNAP_STEP_PX, toCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM
+    CATALOG_DRAG_THRESHOLD_PX, clamp, CM_STEP_PX, csvField, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, escapeHtml,
+    FEATURE_TYPES, getBounds, isFormField, isTextEntry, MARQUEE_THRESHOLD_PX, minSizeCm, NUDGE_KEYS, OBSTACLE_TYPES,
+    PRESS_TRAVEL_PX, quantize, SCALE, SNAP_STEP_PX, toCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM
 } from './core/constants.js';
 import {
     accentColorPicker, alignLayer, atticSlopeToggle, atticZone, brightnessSlider, canvasArea, catalogItems,
@@ -379,7 +379,8 @@ function mountCatalogItem(catalogEl, left, top) {
         rotation: 0,
         groupId: null,
         hidden: false,
-        ...(catalogEl.dataset.type === 'note' && { text: DEFAULT_NOTE_TEXT })
+        ...(catalogEl.dataset.type === 'note' && { text: DEFAULT_NOTE_TEXT }),
+        ...(catalogEl.dataset.type === 'poster' && { posterArt: DEFAULT_POSTER_ART })
     };
 
     // Doors, windows and sockets belong to the wall itself, so they start beneath the furniture
