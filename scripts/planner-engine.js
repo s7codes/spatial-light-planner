@@ -1,11 +1,11 @@
 import {
     CATALOG_DRAG_THRESHOLD_PX, clamp, CM_STEP_PX, csvField, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, escapeHtml,
-    FEATURE_TYPES, getBounds, isFormField, isTextEntry, MARQUEE_THRESHOLD_PX, minSizeCm, NUDGE_KEYS, OBSTACLE_TYPES,
+    FEATURE_TYPES, getBounds, isFormField, isTextEntry, ITEM_DEPTH_CM, MARQUEE_THRESHOLD_PX, minSizeCm, NUDGE_KEYS, OBSTACLE_TYPES,
     PRESS_TRAVEL_PX, quantize, SCALE, SNAP_STEP_PX, toCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM
 } from './core/constants.js';
 import {
     accentColorPicker, alignLayer, atticSlopeToggle, atticZone, brightnessSlider, canvasArea, catalogItems,
-    commandPalette, cornerColorPicker, exportPngBtn, getItemElement, ioStatus, isModalOpen, marqueeBox,
+    commandPalette, cornerColorPicker, enterStudioBtn, exportPngBtn, splashScreen, getItemElement, ioStatus, isModalOpen, marqueeBox,
     newProjectName, redoBtn, resetWallBtn, rulers, rulerX, scaleNote, selectionBounds, shortcutsModal,
     snapGridToggle, specModal, undoBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallWidthInput
 } from './core/dom.js';
@@ -373,6 +373,7 @@ function mountCatalogItem(catalogEl, left, top) {
         top,
         width: parseFloat(catalogEl.dataset.width),
         height: parseFloat(catalogEl.dataset.height),
+        depth: ITEM_DEPTH_CM[catalogEl.dataset.type] ?? 0,
         finish: catalogEl.dataset.finish || null,
         ledEnabled: !FEATURE_TYPES.includes(catalogEl.dataset.type),
         locked: false,
@@ -690,6 +691,15 @@ function exposeConsoleBindings() {
 bindViewportEvents();
 bindInspectorEvents();
 bindProjectSpecEvents();
+
+// The splash shows once per page load; after the fade it leaves the layout entirely
+const SPLASH_FADE_MS = 400;
+enterStudioBtn?.addEventListener('click', () => {
+    if (splashScreen.classList.contains('fade-out')) return;
+    splashScreen.classList.add('fade-out');
+    enterStudioBtn.blur();
+    setTimeout(() => { splashScreen.hidden = true; }, SPLASH_FADE_MS);
+});
 
 document.addEventListener('mousedown', () => { focusFromPointer = true; }, true);
 

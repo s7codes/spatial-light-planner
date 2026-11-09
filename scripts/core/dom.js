@@ -1,4 +1,4 @@
-import { isHexColor } from './constants.js';
+import { isHexColor, ITEM_DEPTH_CM } from './constants.js';
 
 export const wallCanvas = document.getElementById('wall');
 export const canvasArea = document.querySelector('.canvas-area');
@@ -84,7 +84,24 @@ export const appShell = document.querySelector('.app-shell');
 export const modeEngineerBtn = document.getElementById('mode-engineer-btn');
 export const modeCreatorBtn = document.getElementById('mode-creator-btn');
 
-export const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open || commandPalette.open;
+export const splashScreen = document.getElementById('splash-screen');
+export const enterStudioBtn = document.getElementById('enter-studio-btn');
+export const generateQuoteBtn = document.getElementById('generate-quote-btn');
+export const quoteModal = document.getElementById('quote-modal');
+export const quoteBody = document.getElementById('quote-body');
+export const quoteDate = document.getElementById('quote-date');
+export const quoteNumber = document.getElementById('quote-number');
+export const quoteNet = document.getElementById('quote-net');
+export const quoteVat = document.getElementById('quote-vat');
+export const quoteGross = document.getElementById('quote-gross');
+export const printQuoteBtn = document.getElementById('print-quote-btn');
+export const closeQuoteBtn = document.getElementById('close-quote-btn');
+
+// A fading splash already lets pointer events through, so only a fully shown one blocks the studio
+export const isSplashShown = () => Boolean(splashScreen) && !splashScreen.hidden && !splashScreen.classList.contains('fade-out');
+
+export const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open || commandPalette.open ||
+    quoteModal.open || isSplashShown();
 
 export const accentColorPicker = document.getElementById('accent-color-picker');
 export const accentHexCode = document.getElementById('accent-hex-code');
@@ -125,7 +142,8 @@ export const CATALOG_DEFAULTS = Object.fromEntries([...catalogItems].map(el => [
     price: parseFloat(el.dataset.price),
     width: parseFloat(el.dataset.width),
     height: parseFloat(el.dataset.height),
-    finish: el.dataset.finish || null
+    finish: el.dataset.finish || null,
+    depth: ITEM_DEPTH_CM[el.dataset.type] ?? 0
 }]));
 
 export const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-item[data-id="${itemId}"]`);

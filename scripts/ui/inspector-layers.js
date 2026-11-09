@@ -1014,6 +1014,10 @@ function renderItemInspector(item) {
                     <label for="edit-height-cm">Height (cm)</label>
                     <input type="number" id="edit-height-cm" class="dim-input" min="${minHeightCm}" max="${state.wallHeightCm}" value="${toCm(item.height)}" ${lockedAttr}>
                 </div>
+                <div class="inspector-field depth-field">
+                    <label for="edit-depth-cm">Depth (cm)</label>
+                    <input type="number" id="edit-depth-cm" class="dim-input depth-input" value="${item.depth ?? 0}" readonly aria-readonly="true" tabindex="-1" title="Wall-to-front extrusion, reserved for the 3D view">
+                </div>
             </div>
             ${centerWallFieldHtml()}
             ${feature ? featureNote : furnitureFields}

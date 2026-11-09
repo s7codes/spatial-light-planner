@@ -31,7 +31,7 @@ export const PROJECT_LAYOUT_PREFIX = 'spatial_studio_project_v1_';
 export const PROJECT_ID_PATTERN = /^project-[a-z0-9-]{1,40}$/i;
 export const MAX_PROJECTS = 24;
 export const PROJECT_NAME_LENGTH = 60;
-export const EXPORT_VERSION = '1.7';
+export const EXPORT_VERSION = '1.8';
 export const EXPORT_FILENAME = 'spatial-studio-layout.json';
 export const CSV_FILENAME = 'spatial-studio-specs.csv';
 export const PNG_FILENAME = 'spatial-studio-plan.png';
@@ -94,6 +94,15 @@ export const OBSTACLE_TYPES = ['socket', 'door', 'window'];
 export const FEATURE_TYPES = [...OBSTACLE_TYPES, 'note'];
 export const ITEM_TYPES = ['shelf', 'cube', 'storage', 'poster', 'spotlight', 'corner-lamp', ...FEATURE_TYPES];
 export const ROTATIONS = [0, 90, 180, 270];
+
+// Wall-to-front extrusion in cm, kept for the future 3D viewport. Room features sit flush in the wall.
+export const ITEM_DEPTH_CM = {
+    shelf: 25, cube: 35, storage: 38, poster: 3, spotlight: 5, 'corner-lamp': 15,
+    socket: 0, door: 0, window: 0, note: 0
+};
+export const MAX_DEPTH_CM = 100;
+
+export const QUOTE_VAT_RATE = 0.27; // Hungarian standard VAT rate
 export const DEFAULT_NOTE_TEXT = 'Double-click to edit';
 export const NOTE_MAX_LENGTH = 160;
 export const SAFE_ID_PATTERN = /^item-[a-z0-9-]{1,40}$/i;
@@ -132,8 +141,8 @@ export const NUDGE_KEYS = {
 export const NON_TEXT_INPUT_TYPES = ['checkbox', 'radio', 'range', 'color', 'button', 'submit', 'reset', 'file'];
 
 export const defaultItems = [
-    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false },
-    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false, posterArt: 'noir' }
+    { id: 'item-1', type: 'shelf', name: 'Floating Shelf', price: 45, left: 120, top: 380, width: 275, height: 20, depth: 25, finish: 'walnut', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false },
+    { id: 'item-2', type: 'poster', name: 'Poster Frame', price: 25, left: 195, top: 140, width: 125, height: 175, depth: 3, finish: 'black', ledEnabled: true, locked: false, itemLedColor: null, rotation: 0, groupId: null, hidden: false, posterArt: 'noir' }
 ];
 
 export const templateItem = (type, leftCm, topCm, finish) => ({ type, left: leftCm * SCALE, top: topCm * SCALE, finish });

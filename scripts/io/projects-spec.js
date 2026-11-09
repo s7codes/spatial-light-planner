@@ -3,13 +3,15 @@ import {
     defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, formatMoney, fromBase64Url, isFeature, isLedOn,
     isQuarterTurn, LAYOUT_TEMPLATES, LEGACY_STORAGE_KEY, markdownCell, MAX_IMPORT_BYTES, MAX_PROJECTS,
     MAX_SHARE_CHARS, MOUNTING_NOTE, PROJECT_ID_PATTERN, PROJECT_INDEX_KEY, PROJECT_LAYOUT_PREFIX,
-    PROJECT_NAME_LENGTH, SCALE, SHARE_HASH_PREFIX, SHARE_LABEL, toBase64Url, toCm, toFiniteNumber, wallPaintById
+    PROJECT_NAME_LENGTH, QUOTE_VAT_RATE, SCALE, SHARE_HASH_PREFIX, SHARE_LABEL, toBase64Url, toCm, toFiniteNumber,
+    wallPaintById
 } from '../core/constants.js';
 import {
     accentColorPicker, atticSlopeToggle, bomBody, bomFoot, brightnessSlider, closeProjectsBtn, closeShortcutsBtn,
-    closeSpecBtn, commandPalette, copyMarkdownBtn, copyShareLinkBtn, cornerColorPicker, exportCsvBtn, exportJsonBtn,
-    importFileInput, importJsonBtn, ioStatus, isModalOpen, kitLedStrip, kitPowerDraw, kitWallAnchors, mountingBody,
-    newProjectForm, newProjectName,
+    closeQuoteBtn, closeSpecBtn, commandPalette, copyMarkdownBtn, copyShareLinkBtn, cornerColorPicker, exportCsvBtn,
+    exportJsonBtn, generateQuoteBtn, importFileInput, importJsonBtn, ioStatus, isModalOpen, kitLedStrip, kitPowerDraw,
+    kitWallAnchors, mountingBody, newProjectForm, newProjectName, printQuoteBtn, quoteBody, quoteDate, quoteGross,
+    quoteModal, quoteNet, quoteNumber, quoteVat,
     projectLimitNote, projectList, projectsBtn, projectsModal, projectsSubtitle, saveProjectBtn, shortcutsBtn,
     shortcutsModal, specModal, specNote, specSubtitle, templateButtons, viewSpecBtn
 } from '../core/dom.js';
@@ -511,6 +513,43 @@ export function openSpecSheet() {
     specModal.showModal();
 }
 
+// Money is summed in whole cents so the VAT line and the gross total always add up to the cent
+export function quoteTotals(net = totalPrice()) {
+    const netCents = Math.round(net * 100);
+    const vatCents = Math.round(netCents * QUOTE_VAT_RATE);
+    return { net: netCents / 100, vat: vatCents / 100, gross: (netCents + vatCents) / 100 };
+}
+
+export function renderQuote(now = new Date()) {
+    const rows = buildBomRows();
+    const { net, vat, gross } = quoteTotals();
+    const pad = (value) => String(value).padStart(2, '0');
+
+    quoteDate.textContent = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    quoteNumber.textContent = `LUM-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    quoteBody.innerHTML = rows.length
+        ? rows.map(row => `
+            <tr>
+                <td>${escapeHtml(row.name)}<span class="quote-dims">${row.widthCm} x ${row.heightCm} cm</span></td>
+                <td>${finishLabel(row.finish)}</td>
+                <td class="num">${row.qty}</td>
+                <td class="num">${formatMoney(row.price)}</td>
+                <td class="num">${formatMoney(row.price * row.qty)}</td>
+            </tr>`).join('')
+        : '<tr><td colspan="5" class="quote-empty">No billable items on the wall yet.</td></tr>';
+
+    quoteNet.textContent = formatMoney(net);
+    quoteVat.textContent = formatMoney(vat);
+    quoteGross.textContent = formatMoney(gross);
+}
+
+export function openQuote() {
+    if (isModalOpen() || isPointerBusy()) return;
+    renderQuote();
+    quoteModal.showModal();
+}
+
 function buildSpecCsv() {
     const count = furnitureItems().length;
     const lines = [
@@ -796,6 +835,10 @@ export function bindProjectSpecEvents() {
     copyMarkdownBtn.addEventListener('click', copySpecMarkdown);
     exportCsvBtn.addEventListener('click', exportSpecCsv);
 
+    generateQuoteBtn.addEventListener('click', openQuote);
+    closeQuoteBtn.addEventListener('click', () => quoteModal.close());
+    printQuoteBtn.addEventListener('click', () => window.print());
+
     projectList.addEventListener('click', (e) => {
         const button = e.target.closest('button[data-action]');
         const card = e.target.closest('.project-card');
@@ -832,6 +875,7 @@ export function bindProjectSpecEvents() {
     closeProjectsBtn.addEventListener('click', () => projectsModal.close());
 
     closeOnBackdropClick(specModal);
+    closeOnBackdropClick(quoteModal);
     closeOnBackdropClick(shortcutsModal);
     closeOnBackdropClick(projectsModal);
     closeOnBackdropClick(commandPalette);

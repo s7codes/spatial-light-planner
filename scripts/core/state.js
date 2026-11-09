@@ -1,7 +1,7 @@
 import {
     clamp, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
     FEATURE_TYPES, FINISH_IDS, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isFeature, isHexColor, isLedOn,
-    ITEM_TYPES, MAX_GUIDES,
+    ITEM_TYPES, MAX_DEPTH_CM, MAX_GUIDES,
     MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, POSTER_ART_IDS, ROTATIONS,
     SAFE_ID_PATTERN, SCALE, toCmGrid, toFiniteNumber, toWallCm, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS, WALL_WIDTH_LIMITS_CM
 } from './constants.js';
@@ -228,6 +228,11 @@ export function sanitizeItem(raw, usedIds, bounds) {
     const width = toCmGrid(toFiniteNumber(raw.width) ?? defaults.width, minWidthCm, bounds.width / SCALE);
     const height = toCmGrid(toFiniteNumber(raw.height) ?? defaults.height, minHeightCm, bounds.height / SCALE);
     const price = toFiniteNumber(raw.price);
+    // Files from before v2.4 carry no depth, so every item takes its catalog extrusion
+    const rawDepth = toFiniteNumber(raw.depth);
+    const depth = !feature && rawDepth !== null && rawDepth >= 0
+        ? Math.min(Math.round(rawDepth), MAX_DEPTH_CM)
+        : defaults.depth;
     const name = typeof raw.name === 'string' && raw.name.trim()
         ? raw.name.trim().slice(0, MAX_NAME_LENGTH)
         : defaults.name;
@@ -241,6 +246,7 @@ export function sanitizeItem(raw, usedIds, bounds) {
         top: toCmGrid(toFiniteNumber(raw.top) ?? 0, 0, (bounds.height - height) / SCALE),
         width,
         height,
+        depth,
         finish: feature ? null : (FINISH_IDS.includes(raw.finish) ? raw.finish : defaults.finish),
         ledEnabled: !feature && (typeof raw.ledEnabled === 'boolean' ? raw.ledEnabled : true),
         locked: raw.locked === true,

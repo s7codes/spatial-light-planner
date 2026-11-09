@@ -307,7 +307,7 @@ test.describe('curated poster artworks', () => {
     await artButton(page, 'botanical').click();
 
     const payload = await page.evaluate(() => layoutPayload());
-    expect(payload.version).toBe('1.7');
+    expect(payload.version).toBe('1.8');
     expect(payload.wallItems.find((item) => item.id === 'item-p').posterArt).toBe('botanical');
 
     await page.reload();

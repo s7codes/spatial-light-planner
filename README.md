@@ -23,6 +23,10 @@ framework, no bundler, no build step, no runtime dependencies.
 - **Ergonomic hints** for eye-level posters and clearance above a bed, desk or sofa drawn to scale on the floor.
 - **Power routing and spec sheet.** Orthogonal cable runs to the nearest socket, a BOM with drilling
   coordinates, an LED strip, power and wall anchor estimate, Markdown copy and CSV export.
+- **Lumen branded quotes.** A printable invoice-style quote with net subtotal, 27% Hungarian VAT and gross
+  total in USD, plus a Lumen splash screen on launch.
+- **Z-depth foundation.** Every item carries a wall-to-front depth in cm (read-only in the Inspector), saved
+  in layout files and ready for a future 3D viewport.
 - **Multi-project storage and permalinks.** Named projects with autosave, JSON import / export with a strict
   sanitizer, and share links that carry a whole wall in the URL hash.
 
@@ -111,7 +115,7 @@ npm install
 npm run serve
 ```
 
-Then open `http://localhost:4173`. To run the end-to-end suite (388 tests in 32 specs, Chromium):
+Then open `http://localhost:4173`. To run the end-to-end suite (398 tests in 33 specs, Chromium):
 
 ```bash
 npx playwright install chromium

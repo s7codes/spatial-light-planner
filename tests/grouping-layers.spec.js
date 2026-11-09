@@ -265,7 +265,7 @@ test.describe('grouping', () => {
 
     const { buffer } = await downloadFrom(page, '#export-json-btn');
     const file = JSON.parse(buffer.toString('utf8'));
-    expect(file.version).toBe('1.7');
+    expect(file.version).toBe('1.8');
     expect(file.wallItems.find((item) => item.id === 'item-c')).toMatchObject({ groupId: 'g1', hidden: false });
 
     await page.reload();

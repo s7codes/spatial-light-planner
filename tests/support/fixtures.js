@@ -14,14 +14,26 @@ export const expect = baseExpect.extend({
   },
 });
 
-// Every test starts on a freshly loaded planner and fails on any uncaught exception or console error
+// Every test starts on a freshly loaded planner and fails on any uncaught exception or console error.
+// The Lumen splash is skipped on every load in the context (reloads and extra tabs too) unless a spec
+// opts in with test.use({ splash: true }).
 export const test = base.extend({
-  page: async ({ page }, use) => {
+  splash: [false, { option: true }],
+  page: async ({ page, splash }, use) => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => {
       if (message.type() === 'error') errors.push(message.text());
     });
+
+    if (!splash) {
+      await page.context().addInitScript(() => {
+        document.addEventListener('DOMContentLoaded', () => {
+          const screen = document.getElementById('splash-screen');
+          if (screen) screen.hidden = true;
+        });
+      });
+    }
 
     await page.goto('/');
     await use(page);
