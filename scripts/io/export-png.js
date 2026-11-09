@@ -423,7 +423,7 @@ export function paintNoteText(ctx, item, el, label, style) {
         if (!rect.height) continue;
         const line = lines.at(-1);
         if (line && Math.abs(rect.top - line.top) < 1) line.text += node.data[index];
-        else lines.push({ top: rect.top, middle: (rect.top + rect.bottom) / 2, text: node.data[index] });
+        else lines.push({ top: rect.top, text: node.data[index] });
     }
 
     ctx.save();
@@ -433,9 +433,11 @@ export function paintNoteText(ctx, item, el, label, style) {
     ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
     ctx.fillStyle = style.color;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textBaseline = 'alphabetic';
+    // A glyph rect starts at the font ascent above the baseline, so this matches CSS for any font's metrics
+    const ascent = ctx.measureText(lines[0]?.text || 'M').fontBoundingBoxAscent;
     lines.forEach(line => {
-        ctx.fillText(line.text.trimEnd(), item.left + item.width / 2, item.top + (line.middle - origin) / state.viewScale);
+        ctx.fillText(line.text.trimEnd(), item.left + item.width / 2, item.top + (line.top - origin) / state.viewScale + ascent);
     });
     ctx.restore();
 }
