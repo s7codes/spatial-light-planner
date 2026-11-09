@@ -10,7 +10,7 @@ export const wallItem = (id, type, left, top, extra = {}) => ({ id, type, left, 
 
 export const itemLocator = (page, id) => page.locator(`.wall-item[data-id="${id}"]`);
 
-// The engine is a classic script, so its top-level bindings are reachable from page.evaluate
+// The module entry republishes the engine's v2.0 globals on window, so page.evaluate reaches them by name
 export const loadLayout = (page, layout) =>
   page.evaluate((data) => {
     importLayoutText(JSON.stringify(data));

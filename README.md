@@ -6,7 +6,7 @@ Live Demo: https://s7codes.github.io/spatial-light-planner/
 
 A to-scale 2D wall planner for shelving, framed art, and ambient RGB lighting. Mount items from a catalog, place, turn, mirror, align, and distribute them with centimeter precision against reference guides, or type exact coordinates, zoomed in as close as the detail needs, check them against overlaps, doors, windows, sockets, and a sloped attic ceiling, trace every cable run to the nearest socket, preview the backlighting in a dark room on a choice of wall paints, drive all of it from a `Ctrl + K` command palette, and hand off a bill of materials, drilling coordinates, a spreadsheet-ready CSV, or a high-resolution image of the finished plan. Every wall is kept as a named project in the browser, and any wall can be sent to someone else as a single link. Engineer Mode keeps every drafting tool in view, a decluttered Creator Mode clears them away for arranging and lighting, and a bed or desk sketched on the floor line shows how high everything really hangs.
 
-Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build step, no runtime dependencies. Playwright is the only dev dependency, and it powers the end-to-end suite.
+Built with vanilla HTML, CSS, and JavaScript (ES2020), split into native ES modules the browser loads directly. No framework, no bundler, no build step, no runtime dependencies. Playwright is the only dev dependency, and it powers the end-to-end suite.
 
 ## Highlights
 
@@ -43,9 +43,31 @@ Built with vanilla HTML, CSS, and JavaScript (ES2020). No framework, no build st
 - **Project gallery:** Keep up to 24 walls as named projects. The My Projects dialog shows each one with a schematic thumbnail, its last edited date, and Load, Rename, and Delete, and the open project saves itself after every change.
 - **Handoff:** A grouped bill of materials, floor-referenced drilling coordinates (copyable as Markdown or downloadable as one CSV file), JSON export/import, and a 2x HiDPI PNG snapshot.
 - **Studio interface:** An obsidian, hairline-divided workspace with tactile catalog cards, a centered wall-size control, and an isometric brand mark that takes on the live lighting colors.
-- **Tested end to end:** 351 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
+- **Tested end to end:** 364 Playwright tests cover every feature above and run in GitHub Actions on each push and pull request.
 
 ## Architecture
+
+### ES6 Module Architecture
+Since v2.1 the engine is a tree of native ES modules. `index.html` loads one entry with `<script type="module">`, and the browser resolves the rest; there is still no bundler or build step.
+
+| Module | Responsibility |
+| --- | --- |
+| `scripts/core/constants.js` | Scale, limits, storage keys, catalog tables, templates and floor references, plus pure helpers (`clamp`, `toCm`, `getBounds`, `escapeHtml`, Base64URL, CSV and Markdown cells). Imports nothing. |
+| `scripts/core/dom.js` | Every static element reference, the gap ruler table, catalog fallbacks read from the markup, `isModalOpen`, `getItemElement`, `ledColorOf`. Imports only constants. |
+| `scripts/core/state.js` | The shared `state` object, idle factories for each pointer interaction, id generators, selection and group queries, the layout sanitizer, guarded `localStorage`, and undo / redo history. |
+| `scripts/core/geometry.js` | AABB and attic slope collisions, gap and magnetic alignment solvers, the Alt-hover measurement solver, power routing, and rotation, arrange, mirror and nudge math. Reads state, never the UI. |
+| `scripts/ui/viewport-rulers.js` | Wall sizing, fit, zoom and pan, CAD edge rulers and crosshairs, reference guides, distance rulers, the measurement overlay, cable runs, floor references, studio modes, wall paint and lighting. |
+| `scripts/ui/inspector-layers.js` | `renderPlanner`, labels and grips, selection and item actions, inline note editing, the Layer Explorer, the Inspector, the context menu and the command palette. |
+| `scripts/io/export-png.js` | The 2x Canvas 2D PNG renderer and its CSS parsing helpers. |
+| `scripts/io/projects-spec.js` | Project gallery and autosave, legacy migration, `#plan=` share links, JSON import and export, templates, the spec sheet with Markdown and CSV, and the shortcuts dialog. |
+| `scripts/planner-engine.js` | The entry: item drag, grip resize, catalog drag and drop, the selection box, keyboard shortcuts, event binding and the startup sequence. |
+
+How the modules stay safe to wire together:
+
+- **No writes to imported bindings:** an `export let` is read-only in every importing module, so any binding that more than one module reassigns lives on the exported `state` object in `core/state.js` (wall size, items, selection, guides, history, zoom and pan, the pointer interaction states, the clipboard). A binding only one module touches stays a private `let` in that module.
+- **No load-time traps:** module cycles exist (history restore re-renders the UI, the UI saves through the projects module), but no module reads an imported value while it is being evaluated. Top-level code in every module only declares functions and local constants, functions are hoisted across cycles, and the only top-level calls are in the entry, which the browser evaluates last.
+- **Listener order preserved:** feature modules expose `bindViewportEvents()`, `bindInspectorEvents()` and `bindProjectSpecEvents()`, and the entry calls them before binding its own pointer and keyboard listeners. The viewport binder goes first so the crosshair and Alt-hover listeners still see each `mousemove` before a drag frame is scheduled, exactly as in v2.0.
+- **Console bridge:** v2.0 was a classic script whose top-level bindings were globals, reachable from DevTools and from the end-to-end suite. The entry republishes that read surface on `window` (live getters for state such as `wallItems`, `viewScale` and `historyIndex`, plain values for functions like `importLayoutText` and for element references), while everything else stays module-private.
 
 ### Coordinate Space
 The wall is modeled at `1 cm = 2.5 px`. Item geometry is stored in wall pixels, but every value is kept to a multiple of `2.5`, i.e. whole centimeters.
@@ -414,11 +436,11 @@ cd spatial-light-planner
 python3 -m http.server 8000
 ```
 
-Then open `http://localhost:8000`. Any static server works (VS Code Live Server, `npx serve`, or `npm run serve` on port 4173), and opening `index.html` directly from disk works too.
+Then open `http://localhost:8000`. Any static server works (VS Code Live Server, `npx serve`, or `npm run serve` on port 4173). Browsers only load ES modules over HTTP, so opening `index.html` straight from disk (`file://`) is no longer enough since v2.1.
 
 ## Testing
 
-The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 351 tests in 29 spec files, one per feature area.
+The end-to-end suite drives the real app in Chromium with [Playwright](https://playwright.dev): 364 tests in 30 spec files, one per feature area.
 
 ```bash
 npm install
@@ -458,6 +480,7 @@ npm test
 | `zoom-clipboard-share` | HUD steps, limits and exact reset of the resting geometry, fitted walls, `Ctrl + Wheel` about the pointer, `Space` and middle-button panning with no item drags, selections or deselecting clicks, `Escape` mid-pan; drags with hairline readouts, selection boxes, catalog drops and parked-ruler guide pulls at 150% and panned; copy and cascading pastes, fresh ids, unlocked copies, new independent groups, cut with locked items, edge clamping, the slope slide, field and text-selection guards; Flip Horizontally with rotation swap, rigid groups, locked anchors and the slope stop, Mirror Across Wall and its centered no-op; share links copied, opened in a first-time browser, opened as a new project, opened in place by a hash change, broken and truncated links, and a full gallery |
 | `commands-coords-power` | Left X and Top Y fields with wall limits, typed moves with readout, rulers and ruler band, clamping, rounding, empty and unchanged values, single-step undo and redo, live sync through drags, nudges and grip resizes without a rebuild or lost focus, locked items; Center H and Center V for single items with half-centimeter rounding, rigid multi-selection blocks with locked units held, the attic slope stop; the palette from `Ctrl + K`, `Cmd + K` and the HUD, closing paths, no stacking on other dialogs, grouped commands and selection-only entries, word filtering across labels and groups, the empty state, wrap-around arrows with `aria-activedescendant`, hover, click and `Enter`, mounting like a catalog click, commands driving view toggles, paint, guides, selection edits, exports and dialogs, and focus released after a command; the routing switch, the no-socket warning, exact orthogonal paths and Manhattan lengths, live updates through socket drags, nudges, LED switches, rotations and hidden sockets, nearest-socket choice, long-run flags, and a PNG export identical with the overlay on |
 | `studio-mode-backdrop` | Engineer Mode on startup with the segmented switch outside the Inspector; Creator Mode hiding rulers, guides, cable runs, layers, room features and coordinate fields while finishes, LED controls, centering and rotation keep working, with the layout and history untouched and a full restore in Engineer Mode; palette and `Alt + M` switching with field and dialog guards; hidden rulers and guides that no longer pull or snap; bed and desk silhouettes standing on the floor line at true size on any wall, presses passing through, no history, payload or PNG change, palette commands and a reset on reload; small-item grips outside the face, center drags that move a socket without resizing it, Inspector and outside-grip resizes, straddling grips on larger pieces, and grips stepping aside at a wall edge |
+| `modular-architecture` | The single `type="module"` entry and the v2.1 badge, all nine modules fetched once as JavaScript with an error-free boot, internals kept off `window` while the console bridge reads live state, dynamic imports returning the entry's own instances, cross-module writes; catalog mounting, snapped drags with rulers, zoom with ruler and band sync, Inspector edits, spec sheet Markdown and CSV, PNG export, entry shortcuts reaching every module, and autosave across a reload |
 | `app-shell` | Zero failed requests, favicon, live-tinted logo, shortcuts guide, `Escape`, accessibility audit, topbar centering, responsive layout |
 
 How the suite is built:
@@ -466,7 +489,7 @@ How the suite is built:
 - Every test starts in a fresh browser context with clean storage, and fails on any uncaught exception or console error.
 - The group drag, per-item color, and ruler hairline tests tag elements first and check the tags afterwards, which proves those updates write inline styles instead of rebuilding the DOM.
 - Storage tests seed `localStorage` the way a returning visitor would have left it, including broken JSON, and reload the app on top of it.
-- The engine is a classic script, so helpers read its state through `page.evaluate` instead of adding test hooks to the app.
+- Helpers read engine state through `page.evaluate` by name. v2.0 exposed those names as classic-script globals; since v2.1 the entry's console bridge republishes the same surface on `window`, so the helpers and specs did not change.
 - Gap ruler readouts are compared with an independent implementation across 40 seeded random layouts.
 - PNG exports are decoded in the browser and sampled pixel by pixel through a custom `toBeNearColor` matcher.
 - Layout checks pass with Inter, DejaVu Sans, Liberation Sans, and FreeSans, so the result does not depend on the fonts installed on the CI runner.
@@ -483,11 +506,17 @@ index.html                    App shell, catalog, inspector, studio mode switch,
 styles/studio-workspace.css   Design tokens, layout, finish themes, lighting layers, rulers, guides, cable runs,
                               floor references, Creator Mode rules, dialogs, the command palette, and the
                               project gallery
-scripts/planner-engine.js     State, selection model, history, project storage and share links, sanitizer,
-                              viewport zoom and pan, studio modes, drag and selection-box engine, alignment,
-                              align, distribute, wall centering and mirror, clipboard, reference guides, wall
-                              paint, power routing, floor references, collision checks, context menu, command
-                              palette, spec sheet with CSV export, and the Canvas 2D PNG renderer
+scripts/planner-engine.js     ES module entry: pointer interactions (item drag, grip resize, catalog drag and drop,
+                              selection box), keyboard shortcuts, event binding, console bridge, and startup
+scripts/core/constants.js     Constants, catalog tables, templates, floor references, and pure helpers
+scripts/core/dom.js           Static element references and DOM lookups
+scripts/core/state.js         Shared state object, ids, selection and groups, sanitizer, storage, undo / redo
+scripts/core/geometry.js      Collisions, alignment and gap solvers, measuring, power routing, transform math
+scripts/ui/viewport-rulers.js Zoom and pan, rulers, guides, overlays, studio modes, paint and lighting
+scripts/ui/inspector-layers.js
+                              Rendering, selection actions, notes, Layer Explorer, Inspector, context menu, palette
+scripts/io/export-png.js      HiDPI Canvas 2D PNG renderer
+scripts/io/projects-spec.js   Projects, share links, JSON import / export, templates, spec sheet, shortcuts dialog
 tests/*.spec.js               Playwright end-to-end specs, one per feature area
 tests/support/                Fixtures, shared helpers, and the zero-dependency static server
 playwright.config.js          Chromium project, local web server, and CI reporters
