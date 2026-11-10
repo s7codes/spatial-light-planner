@@ -1,9 +1,10 @@
 import {
     ATTIC_SIZE_LIMITS_CM, clamp, DEFAULT_ATTIC_HEIGHT_CM, DEFAULT_ATTIC_WIDTH_CM, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
     FEATURE_TYPES, FINISH_IDS, formatCurrency, GROUP_ID_PATTERN, GUIDE_ID_PATTERN, HISTORY_LIMIT, isFeature, isHexColor, isLedOn,
-    ITEM_TYPES, MAX_DEPTH_CM, MAX_GUIDES,
+    ITEM_TYPES, MAX_DEPTH_CM, MAX_GUIDES, MAX_JSON_CHARS, MAX_JSON_DEPTH,
     MAX_IMPORT_ITEMS, MAX_NAME_LENGTH, MERGE_WINDOW_MS, minSizeCm, NOTE_MAX_LENGTH, POSTER_ART_IDS, ROTATIONS,
-    SAFE_ID_PATTERN, SCALE, toCmGrid, toFiniteNumber, toWallCm, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS, WALL_WIDTH_LIMITS_CM
+    SAFE_ID_PATTERN, SCALE, toCmGrid, toFiniteNumber, toWallCm, UNSAFE_JSON_KEYS, WALL_HEIGHT_LIMITS_CM, WALL_PAINTS,
+    WALL_WIDTH_LIMITS_CM
 } from './constants.js';
 import { atticSlopeToggle, CATALOG_DEFAULTS, redoBtn, undoBtn } from './dom.js';
 import { applyAtticSlope, applyWallPaint, renderGuides, setWallDimensions } from '../ui/viewport-rulers.js';
@@ -225,6 +226,36 @@ export function storageRemove(key) {
 
 export const createProjectId = () => `project-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
 
+// Brackets inside strings do not count, so the scan tracks quotes and skips escaped characters
+function exceedsJsonDepth(text, maxDepth) {
+    let depth = 0;
+    let inString = false;
+    for (let i = 0; i < text.length; i++) {
+        const code = text.charCodeAt(i);
+        if (inString) {
+            if (code === 92) i++;
+            else if (code === 34) inString = false;
+        } else if (code === 34) {
+            inString = true;
+        } else if (code === 123 || code === 91) {
+            if (++depth > maxDepth) return true;
+        } else if (code === 125 || code === 93) {
+            depth--;
+        }
+    }
+    return false;
+}
+
+// Every file, save, share link and history snapshot is parsed here. Size and nesting are checked on the raw
+// text first, and keys that could reach an object prototype are dropped, so a later spread or assign
+// can never re-parent an object.
+export function safeJsonParse(text, { maxChars = MAX_JSON_CHARS, maxDepth = MAX_JSON_DEPTH } = {}) {
+    if (typeof text !== 'string') throw new TypeError('Expected JSON text.');
+    if (text.length > maxChars) throw new RangeError('JSON text is too large.');
+    if (exceedsJsonDepth(text, maxDepth)) throw new RangeError('JSON text is nested too deeply.');
+    return JSON.parse(text, (key, value) => (UNSAFE_JSON_KEYS.includes(key) ? undefined : value));
+}
+
 export function sanitizeItem(raw, usedIds, bounds) {
     if (!raw || typeof raw !== 'object' || !ITEM_TYPES.includes(raw.type)) return null;
 
@@ -411,7 +442,7 @@ export function restoreHistoryStep(step) {
     state.historyIndex = target;
     lastHistoryPush = { mergeKey: null, time: 0 };
 
-    const snapshot = JSON.parse(state.historyStack[state.historyIndex]);
+    const snapshot = safeJsonParse(state.historyStack[state.historyIndex]);
     setWallDimensions(snapshot.wallWidthCm, snapshot.wallHeightCm);
     state.wallItems = snapshot.items;
     atticSlopeToggle.checked = snapshot.atticSlope;

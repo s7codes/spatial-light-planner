@@ -1,7 +1,7 @@
 import {
     ATTIC_SIZE_LIMITS_CM, CATALOG_DRAG_THRESHOLD_PX, clamp, CM_STEP_PX, csvField, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, escapeHtml,
     FEATURE_TYPES, getBounds, isFormField, isTextEntry, ITEM_DEPTH_CM, MARQUEE_THRESHOLD_PX, minSizeCm, NUDGE_KEYS, OBSTACLE_TYPES,
-    PRESS_TRAVEL_PX, quantize, SCALE, SNAP_STEP_PX, toCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM
+    parseWholeCm, PRESS_TRAVEL_PX, quantize, SCALE, SNAP_STEP_PX, toCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM
 } from './core/constants.js';
 import {
     accentColorPicker, alignLayer, atticHeightInput, atticSlopeToggle, atticWidthInput, atticZone, brightnessSlider, canvasArea, catalogItems,
@@ -12,7 +12,7 @@ import {
 import {
     commitLayoutChange, createIdleCatalogDrag, createIdleDragState, createIdleMarquee, createIdleResizeState,
     createItemId, expandGroups, getSelectedItem, getSelectedItems, isCreatorMode, isPointerBusy, isSelected,
-    pushHistory, redo, state, undo
+    pushHistory, redo, sanitizeItem, state, undo
 } from './core/state.js';
 import {
     collectAlignLines, getAlignTargets, hasOverlap, intrudesAtticSlope, isOverlapping, nudgeSelection,
@@ -629,7 +629,7 @@ function handleEscape(e) {
 }
 
 function readWallInput(input, [min, max], current) {
-    const value = parseInt(input.value, 10);
+    const value = parseWholeCm(input.value);
     return Number.isFinite(value) ? clamp(value, min, max) : current;
 }
 
@@ -671,6 +671,8 @@ function handleAtticResize() {
 
 // v2.0 ran as a classic script, so DevTools and the end-to-end suite could read its top-level bindings
 // by name. The module build republishes that surface on window, with live getters for mutable state.
+// Every binding is non-configurable and read-only, so window.wallItems = null or a delete from DevTools
+// changes nothing; the app itself never reads these globals.
 function exposeConsoleBindings() {
     const live = {
         wallItems: () => state.wallItems,
@@ -697,13 +699,22 @@ function exposeConsoleBindings() {
         brightnessSlider, wallWidthInput, wallHeightInput, scaleNote, undoBtn, redoBtn, rulerX, ioStatus,
         newProjectName, specModal, shortcutsModal, commandPalette, currentBrandStamp, buildSceneObj
     };
-    Object.entries(live).forEach(([name, get]) => Object.defineProperty(window, name, { get, configurable: true }));
-    Object.entries(fixed).forEach(([name, value]) => Object.defineProperty(window, name, { value, configurable: true }));
-    // The clipboard test empties the clipboard by assigning to it, so this one binding also takes writes
+    Object.entries(live).forEach(([name, get]) => Object.defineProperty(window, name, { get, configurable: false }));
+    Object.entries(fixed).forEach(([name, value]) => Object.defineProperty(window, name, { value, writable: false, configurable: false }));
+    // The clipboard test empties the clipboard by assigning to it, so this one binding also takes writes.
+    // Whatever is assigned goes through the import sanitizer, so a paste can only place real items.
     Object.defineProperty(window, 'clipboardState', {
         get: () => state.clipboardState,
-        set: (value) => { state.clipboardState = value; },
-        configurable: true
+        set: (value) => {
+            if (!value || !Array.isArray(value.items)) return;
+            const usedIds = new Set();
+            const bounds = { width: state.wallWidthPx, height: state.wallHeightPx };
+            state.clipboardState = {
+                items: value.items.map(raw => sanitizeItem(raw, usedIds, bounds)).filter(Boolean),
+                pasteCount: 0
+            };
+        },
+        configurable: false
     });
 }
 

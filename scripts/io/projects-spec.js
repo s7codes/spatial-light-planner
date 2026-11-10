@@ -19,8 +19,8 @@ import {
     shortcutsModal, specModal, specNote, specSubtitle, templateButtons, viewSpecBtn
 } from '../core/dom.js';
 import {
-    commitLayoutChange, createProjectId, formatMoney, isPointerBusy, normalizeLayout, pushHistory, state, storageGet,
-    storageRemove, storageSet
+    commitLayoutChange, createProjectId, formatMoney, isPointerBusy, normalizeLayout, pushHistory, safeJsonParse, state,
+    storageGet, storageRemove, storageSet
 } from '../core/state.js';
 import {
     applyAtticSlope, applyWallPaint, renderGuides, setBrightness, setWallDimensions, updateAccentColor,
@@ -65,7 +65,7 @@ const writeProjectLayout = (id, layout = currentLayoutData()) =>
 
 function readProjectLayout(id) {
     try {
-        return JSON.parse(storageGet(PROJECT_LAYOUT_PREFIX + id));
+        return safeJsonParse(storageGet(PROJECT_LAYOUT_PREFIX + id));
     } catch {
         return null;
     }
@@ -84,7 +84,7 @@ export function saveState() {
 function readProjectIndex() {
     let data;
     try {
-        data = JSON.parse(storageGet(PROJECT_INDEX_KEY));
+        data = safeJsonParse(storageGet(PROJECT_INDEX_KEY));
     } catch {
         return null;
     }
@@ -112,7 +112,7 @@ function migrateLegacyState() {
 
     if (!state.projects.length) {
         try {
-            normalizeLayout(JSON.parse(raw));
+            normalizeLayout(safeJsonParse(raw));
             const project = { id: createProjectId(), name: 'Default Project', timestamp: Date.now() };
             if (storageSet(PROJECT_LAYOUT_PREFIX + project.id, raw)) {
                 state.projects.push(project);
@@ -128,8 +128,11 @@ function migrateLegacyState() {
 // Returns the raw layout from a #plan= link, or null. The hash is cleared either way, so a reload or a
 // bookmark of the cleaned address never applies the same link twice.
 function takeSharedPlan() {
-    if (!window.location.hash.startsWith(SHARE_HASH_PREFIX)) return null;
-    const encoded = window.location.hash.slice(SHARE_HASH_PREFIX.length);
+    const { hash } = window.location;
+    if (!hash.startsWith(SHARE_HASH_PREFIX)) return null;
+    // Measured first, so an oversized link is never sliced, decoded or parsed
+    const tooLong = hash.length - SHARE_HASH_PREFIX.length > MAX_SHARE_CHARS;
+    const encoded = tooLong ? '' : hash.slice(SHARE_HASH_PREFIX.length);
     try {
         history.replaceState(null, '', window.location.pathname + window.location.search);
     } catch {
@@ -137,8 +140,8 @@ function takeSharedPlan() {
     }
 
     try {
-        if (encoded.length > MAX_SHARE_CHARS) throw new Error('Too long.');
-        const data = JSON.parse(fromBase64Url(encoded));
+        if (tooLong) throw new Error('Too long.');
+        const data = safeJsonParse(fromBase64Url(encoded));
         normalizeLayout(data);
         return data;
     } catch {
@@ -278,9 +281,9 @@ export function downloadBlob(blob, filename) {
 export function importLayoutText(text) {
     let data;
     try {
-        data = JSON.parse(text);
-    } catch {
-        throw new Error('That file is not valid JSON.');
+        data = safeJsonParse(text);
+    } catch (err) {
+        throw new Error(err instanceof RangeError ? 'That file is too large or too deeply nested.' : 'That file is not valid JSON.');
     }
 
     // Validation finishes before anything is applied, so a bad file never leaves a half-loaded wall
@@ -928,7 +931,14 @@ function flashShareLabel(text) {
 }
 
 export async function copyShareLink() {
-    const url = `${window.location.href.split('#')[0]}${SHARE_HASH_PREFIX}${toBase64Url(JSON.stringify(layoutPayload()))}`;
+    const encoded = toBase64Url(JSON.stringify(layoutPayload()));
+    // A link the planner would refuse to open is never handed out
+    if (encoded.length > MAX_SHARE_CHARS) {
+        flashShareLabel('Too large');
+        showIoStatus('This wall is too large for a share link. Export it as JSON instead.', 'error');
+        return;
+    }
+    const url = `${window.location.href.split('#')[0]}${SHARE_HASH_PREFIX}${encoded}`;
     const copied = await copyText(url, projectsModal, copyShareLinkBtn);
     flashShareLabel(copied ? 'Link Copied' : 'Copy failed');
     showIoStatus(copied ? 'Share link copied. It opens this exact wall in any browser.' : 'The share link could not be copied.', copied ? 'success' : 'error');
@@ -953,7 +963,7 @@ export function openShortcuts() {
 }
 
 export function loadTemplate(key) {
-    const template = LAYOUT_TEMPLATES[key];
+    const template = Object.hasOwn(LAYOUT_TEMPLATES, key) ? LAYOUT_TEMPLATES[key] : null;
     if (!template || isPointerBusy()) return;
 
     // Templates run through the same sanitizer as imports, which fills in catalog sizes, names and prices.

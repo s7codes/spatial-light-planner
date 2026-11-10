@@ -1,5 +1,5 @@
 import {
-    CORNER_GLOW_ALPHA, DAYLIGHT_GRID_PX, isLedOn, isNote, isoDate, isQuarterTurn, PNG_FILENAME,
+    clamp, CORNER_GLOW_ALPHA, DAYLIGHT_GRID_PX, finiteOr, isLedOn, isNote, isoDate, isQuarterTurn, MAX_CANVAS_PX, PNG_FILENAME,
     PNG_PIXEL_RATIO, SCALE, SHADOW_SHIFT_PX, SPOTLIGHT_CONE_FADE, wallPaintById
 } from '../core/constants.js';
 import {
@@ -608,8 +608,9 @@ export async function exportPng() {
     const arts = await loadPosterArt(visible);
 
     const canvas = document.createElement('canvas');
-    canvas.width = Math.round(state.wallWidthPx * PNG_PIXEL_RATIO);
-    canvas.height = Math.round(state.wallHeightPx * PNG_PIXEL_RATIO);
+    // The wall size is clamped long before this, so the cap only ever bites on a tampered state
+    canvas.width = clamp(Math.round(finiteOr(state.wallWidthPx * PNG_PIXEL_RATIO, 1)), 1, MAX_CANVAS_PX);
+    canvas.height = clamp(Math.round(finiteOr(state.wallHeightPx * PNG_PIXEL_RATIO, 1)), 1, MAX_CANVAS_PX);
     const ctx = canvas.getContext('2d');
     if (!ctx) {
         showIoStatus('PNG export failed: canvas is unavailable.', 'error');

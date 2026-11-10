@@ -23,7 +23,8 @@ export const ZOOM_WHEEL_STEP = 0.1;
 export const PAN_KEEP_PX = 80; // this much of the wall always stays inside the canvas
 export const RULER_PIN_PX = 4; // a ruler whose wall edge has left the canvas parks this far inside it
 export const SHARE_HASH_PREFIX = '#plan=';
-export const MAX_SHARE_CHARS = 2 * 1024 * 1024;
+// A 200-item wall encodes to well under this; a multi-megabyte hash would stall the page in base64 decoding
+export const MAX_SHARE_CHARS = 128 * 1024;
 export const SHARE_LABEL = 'Copy Share Link';
 
 // Before v1.6 a single layout lived under the legacy key. Projects now keep a small index plus one
@@ -74,6 +75,12 @@ export const MERGE_WINDOW_MS = 600;
 export const MAX_IMPORT_BYTES = 1024 * 1024;
 export const MAX_IMPORT_ITEMS = 200;
 export const MAX_NAME_LENGTH = 40;
+// Layouts, saves and history snapshots nest three levels deep and stay far below 2 MB
+export const MAX_JSON_CHARS = 2 * 1024 * 1024;
+export const MAX_JSON_DEPTH = 16;
+export const UNSAFE_JSON_KEYS = ['__proto__', 'constructor', 'prototype'];
+// Browsers fail or crash past roughly 16k px per side or large total areas, so exports stay well inside
+export const MAX_CANVAS_PX = 4096;
 
 export const LABEL_GAP_PX = 3;
 export const LABEL_SLIDE_STEP_PX = 4;
@@ -213,6 +220,12 @@ export const LAYOUT_TEMPLATES = {
 };
 
 export const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
+// Render code writes item fields into class names, attributes and inline styles, so it only takes listed
+// tokens and finite numbers, whatever a tampered state might hold
+export const listedOr = (value, list, fallback) => (list.includes(value) ? value : fallback);
+export const finiteOr = (value, fallback = 0) => (Number.isFinite(value) ? value : fallback);
+// Truncates like parseInt but reads exponent notation, so a typed 1e3 is 1000 cm instead of 1
+export const parseWholeCm = (text) => Math.trunc(parseFloat(text));
 export const quantize = (px, step) => Math.round(px / step) * step;
 export const toCm = (px) => Math.round(px / SCALE);
 export const isWholeCm = (px) => Math.abs(px / SCALE - Math.round(px / SCALE)) < EPSILON;

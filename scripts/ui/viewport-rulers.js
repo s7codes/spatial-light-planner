@@ -1,8 +1,9 @@
 import {
-    BACKDROP_ALIGNS, CANVAS_PADDING_PX, clamp, EPSILON, FLOOR_BACKDROPS, getBounds, GUIDE_TAG_ROOM_PX, LABEL_GAP_PX,
-    LABEL_SLIDE_STEP_PX, MAX_GUIDES, PAN_KEEP_PX, POWER_IDLE_TEXT, RULER_GAP_PX, RULER_LABEL_CM, RULER_LABEL_ROOM_PX,
-    RULER_PIN_PX, RULER_SIZE_PX, RULER_TICK_CM, SCALE, SNAP_STEP_PX, STUDIO_MODES, toCm, WALL_BORDER_PX,
-    wallPaintById, ZOOM_BUTTON_STEP, ZOOM_LIMITS, ZOOM_WHEEL_STEP
+    BACKDROP_ALIGNS, CANVAS_PADDING_PX, clamp, EPSILON, escapeHtml, finiteOr, FLOOR_BACKDROPS, getBounds, GUIDE_TAG_ROOM_PX,
+    isHexColor, LABEL_GAP_PX, LABEL_SLIDE_STEP_PX, MAX_GUIDES, PAN_KEEP_PX, POWER_IDLE_TEXT, RULER_GAP_PX, RULER_LABEL_CM,
+    RULER_LABEL_ROOM_PX, RULER_PIN_PX, RULER_SIZE_PX, RULER_TICK_CM, SCALE, SNAP_STEP_PX, STUDIO_MODES, toCm, toFiniteNumber,
+    toWallCm, WALL_BORDER_PX, WALL_HEIGHT_LIMITS_CM, WALL_WIDTH_LIMITS_CM, wallPaintById, ZOOM_BUTTON_STEP, ZOOM_LIMITS,
+    ZOOM_WHEEL_STEP
 } from '../core/constants.js';
 import {
     accentColorPicker, accentHexCode, appShell, atticHeightInput, atticSizeFields, atticSlopeToggle, atticWidthInput,
@@ -33,7 +34,10 @@ let fittedCanvasSize = '';
 
 let labelMetrics = { single: 34, digit: 6, height: 18 };
 
+// The one gate every wall size passes, so NaN, Infinity or 1e100 can never reach the canvas or the PNG
 export function setWallDimensions(widthCm, heightCm) {
+    widthCm = toWallCm(widthCm, WALL_WIDTH_LIMITS_CM, state.wallWidthCm);
+    heightCm = toWallCm(heightCm, WALL_HEIGHT_LIMITS_CM, state.wallHeightCm);
     state.wallWidthCm = widthCm;
     state.wallHeightCm = heightCm;
     state.wallWidthPx = widthCm * SCALE;
@@ -95,8 +99,8 @@ export function applyWallTransform() {
 export function clampPan() {
     const reachX = Math.max(0, (canvasArea.clientWidth + (state.wallWidthPx + WALL_BORDER_PX * 2) * state.viewScale) / 2 - PAN_KEEP_PX);
     const reachY = Math.max(0, (canvasArea.clientHeight + (state.wallHeightPx + WALL_BORDER_PX * 2) * state.viewScale) / 2 - PAN_KEEP_PX);
-    state.panX = Math.round(clamp(state.panX, -reachX, reachX));
-    state.panY = Math.round(clamp(state.panY, -reachY, reachY));
+    state.panX = Math.round(clamp(finiteOr(state.panX), -reachX, reachX));
+    state.panY = Math.round(clamp(finiteOr(state.panY), -reachY, reachY));
 }
 
 export function syncZoomHud() {
@@ -111,14 +115,15 @@ export function syncZoomHud() {
 // so holding that sum steady while s changes gives pan' = q - (s' / s) * (q - pan), q measured from
 // the canvas center, which is also the wall's transform origin.
 export function zoomTo(nextZoom, clientX, clientY) {
+    if (!Number.isFinite(nextZoom)) return;
     const zoom = clamp(Math.round(nextZoom * 1000) / 1000, ZOOM_LIMITS[0], ZOOM_LIMITS[1]);
     if (zoom === state.userZoom || isPointerBusy() || isModalOpen()) return;
 
     const canvasRect = canvasArea.getBoundingClientRect();
     const centerX = canvasRect.left + canvasRect.width / 2;
     const centerY = canvasRect.top + canvasRect.height / 2;
-    const qx = (clientX ?? centerX) - centerX;
-    const qy = (clientY ?? centerY) - centerY;
+    const qx = finiteOr(clientX, centerX) - centerX;
+    const qy = finiteOr(clientY, centerY) - centerY;
     const ratio = zoom / state.userZoom;
     state.panX = qx - ratio * (qx - state.panX);
     state.panY = qy - ratio * (qy - state.panY);
@@ -320,11 +325,17 @@ const guideLimitPx = (guide) => (guide.axis === 'x' ? state.wallWidthPx : state.
 const isGuideTagFlipped = (guide) => guide.cm * SCALE > guideLimitPx(guide) - GUIDE_TAG_ROOM_PX;
 
 export function renderGuides() {
-    guideHitLayer.innerHTML = state.wallGuides.map(guide => `
-        <div class="guide-hit axis-${guide.axis}" data-guide-id="${guide.id}" style="${guideStart(guide)}: ${guide.cm * SCALE}px"></div>`).join('');
-    guideLineLayer.innerHTML = state.wallGuides.map(guide => `
-        <div class="wall-guide axis-${guide.axis}${isGuideTagFlipped(guide) ? ' is-flipped' : ''}" data-guide-id="${guide.id}" style="${guideStart(guide)}: ${guide.cm * SCALE}px">
-            <span class="wall-guide-tag" data-guide-id="${guide.id}" title="Drag to move this guide, drag it off the wall or double-click to remove it">${guide.cm} cm</span>
+    const guides = state.wallGuides.map(guide => ({
+        guide,
+        axis: guide.axis === 'x' ? 'x' : 'y',
+        id: escapeHtml(guide.id),
+        cm: finiteOr(guide.cm)
+    }));
+    guideHitLayer.innerHTML = guides.map(({ guide, axis, id, cm }) => `
+        <div class="guide-hit axis-${axis}" data-guide-id="${id}" style="${guideStart(guide)}: ${cm * SCALE}px"></div>`).join('');
+    guideLineLayer.innerHTML = guides.map(({ guide, axis, id, cm }) => `
+        <div class="wall-guide axis-${axis}${isGuideTagFlipped(guide) ? ' is-flipped' : ''}" data-guide-id="${id}" style="${guideStart(guide)}: ${cm * SCALE}px">
+            <span class="wall-guide-tag" data-guide-id="${id}" title="Drag to move this guide, drag it off the wall or double-click to remove it">${cm} cm</span>
         </div>`).join('');
 }
 
@@ -337,7 +348,8 @@ export function pruneGuides() {
 }
 
 export function startGuideDrag(guide, isNew, e) {
-    const elements = [...wallCanvas.querySelectorAll(`.guide-hit[data-guide-id="${guide.id}"], .wall-guide[data-guide-id="${guide.id}"]`)];
+    const id = CSS.escape(String(guide.id));
+    const elements = [...wallCanvas.querySelectorAll(`.guide-hit[data-guide-id="${id}"], .wall-guide[data-guide-id="${id}"]`)];
     state.guideDrag = {
         ...createIdleGuideDrag(),
         active: true,
@@ -692,7 +704,8 @@ function floorBackdropMarkup({ name, widthCm, heightCm, art }) {
 }
 
 export function setFloorBackdrop(kind) {
-    const backdrop = FLOOR_BACKDROPS[kind];
+    // An own-key check, since FLOOR_BACKDROPS.constructor or __proto__ would otherwise pass as a backdrop
+    const backdrop = Object.hasOwn(FLOOR_BACKDROPS, kind) ? FLOOR_BACKDROPS[kind] : null;
     state.floorBackdrop = backdrop ? kind : 'none';
     backdropButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.backdrop === state.floorBackdrop)));
     floorBackdropLayer.dataset.kind = state.floorBackdrop;
@@ -754,6 +767,7 @@ export function toggleAmbientMode() {
 }
 
 export function updateAccentColor(hexColor, shouldSave = true) {
+    if (!isHexColor(hexColor)) return;
     document.documentElement.style.setProperty('--accent-led', hexColor);
     accentHexCode.textContent = hexColor.toUpperCase();
     accentColorPicker.value = hexColor;
@@ -762,6 +776,7 @@ export function updateAccentColor(hexColor, shouldSave = true) {
 }
 
 export function updateCornerColor(hexColor, shouldSave = true) {
+    if (!isHexColor(hexColor)) return;
     document.documentElement.style.setProperty('--corner-led', hexColor);
     cornerHexCode.textContent = hexColor.toUpperCase();
     cornerColorPicker.value = hexColor;
@@ -769,7 +784,9 @@ export function updateCornerColor(hexColor, shouldSave = true) {
     if (shouldSave) saveState();
 }
 
-export function setBrightness(percent) {
+export function setBrightness(rawPercent) {
+    const parsed = toFiniteNumber(rawPercent);
+    const percent = parsed === null ? Number(brightnessSlider.value) : clamp(Math.round(parsed), 0, 100);
     brightnessSlider.value = percent;
     document.documentElement.style.setProperty('--led-opacity', percent / 100);
     brightnessValue.textContent = `${percent}%`;

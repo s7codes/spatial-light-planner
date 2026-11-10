@@ -1,8 +1,8 @@
 # Spatial Studio
 
-[![E2E Tests](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml/badge.svg)](https://github.com/s7codes/spatial-light-planner/actions/workflows/e2e.yml)
+[![Playwright E2E Tests](https://github.com/s7codes/spatial-studio/actions/workflows/e2e.yml/badge.svg)](https://github.com/s7codes/spatial-studio/actions/workflows/e2e.yml)
 
-**Live demo:** https://s7codes.github.io/spatial-light-planner/
+**Live demo:** https://s7codes.github.io/spatial-studio/ | **Repository:** https://github.com/s7codes/spatial-studio
 
 **Spatial Studio** (by Lumen) is a zero-dependency ES module configurator for wall elevations, shelving and
 ambient RGB lighting, with a 3D room preview on top. Everything is drawn at `1 cm = 2.5 px` and snapped to
@@ -105,7 +105,18 @@ boxes as geometry.
 layout and the index, so scrubbing a slider never re-serializes the whole gallery. A full or blocked store
 degrades to a status message instead of an exception.
 
-**465 Playwright end-to-end tests.** Thirty-nine specs, organized by domain, drive the real app in Chromium. A
+**Security and input hardening.** Nothing a file, link or field carries is trusted:
+
+- A strict Content Security Policy allows only same-origin scripts, so no inline script, injected handler or
+  `eval` can run, and `connect-src 'none'` means the planner makes no network requests at all.
+- Files, saves, `#plan=` permalinks and undo snapshots all go through one prototype-pollution-safe JSON reader
+  that caps size and nesting and drops `__proto__`, `constructor` and `prototype` keys before the sanitizer
+  whitelists every field. Share links are capped at 128K characters before any decoding.
+- User text reaches the page only escaped or through `textContent`, and selectors are built with `CSS.escape`.
+- The CSV export quotes fields per RFC 4180 and prefixes formula triggers (`=`, `+`, `-`, `@`) with an apostrophe.
+- Coordinates, dimensions, sliders, zoom and canvas sizes are clamped to finite, whole-centimeter bounds.
+
+**484 Playwright end-to-end tests.** Forty specs, organized by domain, drive the real app in Chromium. A
 shared fixture fails any test that logs a console error or throws, exported PNG pixels are compared against
 screen pixels, and CI runs the suite on every push to `main` and on every pull request.
 

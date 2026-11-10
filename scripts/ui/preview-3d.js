@@ -1,4 +1,4 @@
-import { clamp, isFeature, isLedOn, OBJ_FILENAME, SCALE, wallPaintById } from '../core/constants.js';
+import { clamp, finiteOr, isFeature, isLedOn, MAX_CANVAS_PX, OBJ_FILENAME, SCALE, wallPaintById } from '../core/constants.js';
 import {
     atticSlopeToggle, brightnessSlider, close3dBtn, exportObjBtn, isModalOpen, ledColorOf, orbitPitchSlider, orbitPitchValue,
     orbitYawSlider, orbitYawValue, preview3dBtn, preview3dCanvas, preview3dModal, reset3dCameraBtn, wireframe3dToggle
@@ -15,6 +15,7 @@ const FLOOR_DEPTH_CM = 80;
 const FLOOR_GRID_CM = 20;
 const DRAG_DEG_PER_PX = 0.35;
 const FIT_PADDING_PX = 28;
+const PREVIEW_SIZE = [760, 460];
 // Light comes from the upper left, slightly in front of the wall
 const LIGHT = normalize([-0.45, 0.8, 0.55]);
 
@@ -199,9 +200,18 @@ function drawGlow(ctx, projector, item, color) {
     ctx.restore();
 }
 
-const itemColor = (item) => (isFeature(item) ? FEATURE_COLORS[item.type] : FINISH_COLORS[item.finish]) || '#94a3b8';
+const ownColor = (table, key) => (Object.hasOwn(table, key) ? table[key] : null);
+const itemColor = (item) => (isFeature(item) ? ownColor(FEATURE_COLORS, item.type) : ownColor(FINISH_COLORS, item.finish)) || '#94a3b8';
+
+// A canvas resized from DevTools past what a GPU can back goes back to its shipped 760 x 460
+function guardPreviewSize() {
+    const fits = (size) => Number.isInteger(size) && size > 0 && size <= MAX_CANVAS_PX;
+    if (fits(preview3dCanvas.width) && fits(preview3dCanvas.height)) return;
+    [preview3dCanvas.width, preview3dCanvas.height] = PREVIEW_SIZE;
+}
 
 export function renderPreview3d() {
+    guardPreviewSize();
     const ctx = preview3dCanvas.getContext('2d');
     const { width, height } = preview3dCanvas;
     const ambient = state.isAmbientMode;
@@ -248,8 +258,8 @@ function syncCameraControls() {
 }
 
 function setCamera(yaw, pitch) {
-    camera.yaw = clamp(Math.round(yaw), ...YAW_LIMITS);
-    camera.pitch = clamp(Math.round(pitch), ...PITCH_LIMITS);
+    camera.yaw = clamp(Math.round(finiteOr(yaw, camera.yaw)), ...YAW_LIMITS);
+    camera.pitch = clamp(Math.round(finiteOr(pitch, camera.pitch)), ...PITCH_LIMITS);
     syncCameraControls();
     renderPreview3d();
 }
@@ -266,7 +276,9 @@ export function togglePreview3d() {
     else openPreview3d();
 }
 
-const formatObjNumber = (value) => String(Number(value.toFixed(2)) + 0);
+const formatObjNumber = (value) => String(Number(finiteOr(value).toFixed(2)) + 0);
+// Object names are single tokens, so a crafted id can never start a new line or statement in the file
+const objToken = (value) => String(value).replace(/[^A-Za-z0-9_-]/g, '_');
 
 // Vertices 1-4 sit on the back plane and 5-8 on the front; faces wind counter-clockwise seen from outside
 const BOX_FACES = [[1, 4, 3, 2], [5, 6, 7, 8], [1, 2, 6, 5], [4, 8, 7, 3], [1, 5, 8, 4], [2, 3, 7, 6]];
@@ -283,21 +295,23 @@ function objBox(lines, name, { x0, x1, y0, y1, z0, z1 }, offset) {
 export function buildSceneObj({ wallWidthCm, wallHeightCm, items } = {
     wallWidthCm: state.wallWidthCm, wallHeightCm: state.wallHeightCm, items: state.wallItems
 }) {
+    wallWidthCm = finiteOr(wallWidthCm, state.wallWidthCm);
+    wallHeightCm = finiteOr(wallHeightCm, state.wallHeightCm);
     const lines = [
         '# Spatial Studio 3D export',
         `# Wall ${wallWidthCm} x ${wallHeightCm} cm, units in cm, Y up, Z out of the wall`
     ];
     let offset = objBox(lines, 'Wall', { x0: 0, x1: wallWidthCm, y0: 0, y1: wallHeightCm, z0: -WALL_SLAB_CM, z1: 0 }, 0);
-    items.filter(item => !item.hidden).forEach(item => {
+    (Array.isArray(items) ? items : []).filter(item => item && !item.hidden).forEach(item => {
         const xCm = item.left / SCALE;
         const yCm = item.top / SCALE;
-        offset = objBox(lines, `Item_${item.id}_${item.type}`, {
+        offset = objBox(lines, `Item_${objToken(item.id)}_${objToken(item.type)}`, {
             x0: xCm,
             x1: xCm + item.width / SCALE,
             y0: wallHeightCm - (yCm + item.height / SCALE),
             y1: wallHeightCm - yCm,
             z0: 0,
-            z1: Math.max(1, item.depth ?? 0)
+            z1: Math.max(1, finiteOr(item.depth))
         }, offset);
     });
     return `${lines.join('\n')}\n`;

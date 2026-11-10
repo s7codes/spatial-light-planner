@@ -1,12 +1,12 @@
 {
-  "name": "spatial-light-planner",
+  "name": "spatial-studio",
   "version": "1.0.0",
   "private": true,
   "description": "To-scale 2D wall planner for shelving, framed art, and ambient RGB lighting.",
-  "homepage": "https://s7codes.github.io/spatial-light-planner/",
+  "homepage": "https://s7codes.github.io/spatial-studio/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/s7codes/spatial-light-planner.git"
+    "url": "git+https://github.com/s7codes/spatial-studio.git"
   },
   "license": "MIT",
   "type": "module",

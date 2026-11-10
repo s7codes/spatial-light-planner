@@ -183,7 +183,10 @@ export const CATALOG_DEFAULTS = Object.fromEntries([...catalogItems].map(el => [
     depth: ITEM_DEPTH_CM[el.dataset.type] ?? 0
 }]));
 
-export const getItemElement = (itemId) => wallItemsLayer.querySelector(`.wall-item[data-id="${itemId}"]`);
+// Escaped, so an id typed into the console or carried by a crafted file can never break the selector
+export const getItemElement = (itemId) => (itemId === null || itemId === undefined
+    ? null
+    : wallItemsLayer.querySelector(`.wall-item[data-id="${CSS.escape(String(itemId))}"]`));
 
 export const ledColorOf = (item) => (isHexColor(item.itemLedColor)
     ? item.itemLedColor

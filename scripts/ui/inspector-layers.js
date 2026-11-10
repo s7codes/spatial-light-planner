@@ -1,9 +1,9 @@
 import {
     ARRANGE_ACTIONS, BACKDROP_ALIGNS, clamp, CM_STEP_PX, countLabel, CURRENCY_STORAGE_KEY, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEPTH_LIMITS_CM,
-    DUPLICATE_OFFSET_PX, EPSILON, escapeHtml, FEATURE_TYPES, FINISHES, FLOOR_BACKDROPS, formatFootprint, formatOffset,
-    formatPrice, getBounds, isCurrencyCode, isFeature, isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX, LOCK_ICON_HTML,
-    MENU_EDGE_PX, minSizeCm, NOTE_MAX_LENGTH, POSTER_ARTS, quantize, RESIZE_HANDLES_HTML, SCALE, TINY_ITEM_PX, toCm,
-    WALL_PAINTS
+    DUPLICATE_OFFSET_PX, EPSILON, escapeHtml, FEATURE_TYPES, finiteOr, FINISH_IDS, FINISHES, FLOOR_BACKDROPS, formatFootprint,
+    formatOffset, formatPrice, getBounds, isCurrencyCode, isFeature, isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX,
+    ITEM_TYPES, listedOr, LOCK_ICON_HTML, MENU_EDGE_PX, minSizeCm, NOTE_MAX_LENGTH, parseWholeCm, POSTER_ART_IDS, POSTER_ARTS, quantize,
+    RESIZE_HANDLES_HTML, ROTATIONS, SCALE, TINY_ITEM_PX, toCm, WALL_PAINTS
 } from '../core/constants.js';
 import {
     atticSlopeToggle, brightnessSlider, catalogItems, commandEmpty, currencySelector, illumStatus, commandList, commandPalette, commandPaletteBtn, commandSearchInput,
@@ -39,9 +39,9 @@ export function renderPlanner() {
     wallItemsLayer.innerHTML = state.wallItems.map(item => {
         const finishClass = isFeature(item)
             ? `feature${isObstacle(item) ? ' obstacle' : ''}`
-            : `finish-${item.finish || 'walnut'}`;
+            : `finish-${listedOr(item.finish, FINISH_IDS, 'walnut')}`;
         const classes = [
-            'wall-item', item.type, finishClass, `rot-${item.rotation || 0}`,
+            'wall-item', listedOr(item.type, ITEM_TYPES, ''), finishClass, `rot-${listedOr(item.rotation, ROTATIONS, 0)}`,
             isSelected(item.id) && 'selected',
             !isFeature(item) && !isLedOn(item) && 'led-off',
             item.locked && 'locked',
@@ -52,11 +52,11 @@ export function renderPlanner() {
         const label = isNote(item)
             ? `<span class="item-label note-text">${escapeHtml(item.text)}</span>`
             : `<span class="item-label">${item.locked ? LOCK_ICON_HTML : ''}${escapeHtml(item.name)}</span>`;
-        const art = item.type === 'poster' ? ` data-art="${escapeHtml(item.posterArt || DEFAULT_POSTER_ART)}"` : '';
+        const art = item.type === 'poster' ? ` data-art="${listedOr(item.posterArt, POSTER_ART_IDS, DEFAULT_POSTER_ART)}"` : '';
         return `
             <div class="${classes}"
                  data-id="${escapeHtml(item.id)}"${art}
-                 style="left: ${item.left}px; top: ${item.top}px; width: ${item.width}px; height: ${item.height}px;${ledColor}">
+                 style="left: ${finiteOr(item.left)}px; top: ${finiteOr(item.top)}px; width: ${finiteOr(item.width)}px; height: ${finiteOr(item.height)}px;${ledColor}">
                 ${label}
             </div>
         `;
@@ -250,7 +250,7 @@ export function syncItemSize(item, el) {
 }
 
 export function setSelection(ids) {
-    const unique = [...new Set(ids)];
+    const unique = [...new Set(Array.isArray(ids) ? ids : [])];
     state.selectedItemIds = unique.filter(id => state.wallItems.some(item => item.id === id));
 
     wallItemsLayer.querySelectorAll('.wall-item').forEach(el => {
@@ -759,7 +759,7 @@ function layerToggles(name, hidden, locked) {
 
 function itemRowHtml(item, groupId) {
     const name = escapeHtml(layerName(item));
-    const swatch = isFeature(item) ? item.type : item.finish;
+    const swatch = isFeature(item) ? item.type : listedOr(item.finish, FINISH_IDS, 'walnut');
     const classes = ['layer-row', groupId && 'is-child', item.hidden && 'is-hidden', item.locked && 'is-locked'].filter(Boolean).join(' ');
     return `
         <li class="${classes}" role="treeitem" aria-level="${groupId ? 2 : 1}" aria-selected="false" draggable="true"
@@ -835,11 +835,11 @@ function resolveLayerDrop(e) {
     }
 
     const head = row.classList.contains('is-child')
-        ? layerList.querySelector(`[data-layer="group:${row.dataset.group}"]`)
+        ? layerList.querySelector(`[data-layer="${CSS.escape(`group:${row.dataset.group}`)}"]`)
         : row;
     if (!head || head.dataset.layer === layerDrag.key) return null;
 
-    const block = [head, ...layerList.querySelectorAll(`.is-child[data-group="${head.dataset.groupId}"]`)];
+    const block = [head, ...layerList.querySelectorAll(`.is-child[data-group="${CSS.escape(head.dataset.groupId ?? '')}"]`)];
     const top = block[0].getBoundingClientRect().top;
     const bottom = block.at(-1).getBoundingClientRect().bottom;
     const place = e.clientY < (top + bottom) / 2 ? 'above' : 'below';
@@ -924,7 +924,8 @@ function posterArtFieldHtml(posters, disabled = false) {
 
 // The print only changes the data-art hook, so the item element is updated in place rather than rebuilt
 function applyPosterArt(art) {
-    const targets = getSelectedItems().filter(item => item.type === 'poster' && !item.locked && item.posterArt !== art);
+    if (!POSTER_ART_IDS.includes(art)) return;
+    const targets =getSelectedItems().filter(item => item.type === 'poster' && !item.locked && item.posterArt !== art);
     if (!targets.length) return;
 
     targets.forEach(item => {
@@ -936,7 +937,8 @@ function applyPosterArt(art) {
 }
 
 function applyFinish(finish) {
-    const targets = getSelectedItems().filter(item => !item.locked && !isFeature(item) && item.finish !== finish);
+    if (!FINISH_IDS.includes(finish)) return;
+    const targets =getSelectedItems().filter(item => !item.locked && !isFeature(item) && item.finish !== finish);
     if (!targets.length) return;
 
     targets.forEach(item => { item.finish = finish; });
@@ -1082,8 +1084,8 @@ function renderItemInspector(item) {
                 <div class="inspector-field depth-field">
                     <label for="edit-depth-cm">Depth (cm)</label>
                     ${feature
-                        ? `<input type="number" id="edit-depth-cm" class="dim-input depth-input" value="${item.depth ?? 0}" readonly aria-readonly="true" tabindex="-1" title="Room features keep their fixed depth">`
-                        : `<input type="number" id="edit-depth-cm" class="dim-input depth-input" min="${DEPTH_LIMITS_CM[0]}" max="${DEPTH_LIMITS_CM[1]}" value="${item.depth}" title="Wall-to-front extrusion used by the 3D preview and OBJ export" ${lockedAttr}>`}
+                        ? `<input type="number" id="edit-depth-cm" class="dim-input depth-input" value="${finiteOr(item.depth)}" readonly aria-readonly="true" tabindex="-1" title="Room features keep their fixed depth">`
+                        : `<input type="number" id="edit-depth-cm" class="dim-input depth-input" min="${DEPTH_LIMITS_CM[0]}" max="${DEPTH_LIMITS_CM[1]}" value="${finiteOr(item.depth)}" title="Wall-to-front extrusion used by the 3D preview and OBJ export" ${lockedAttr}>`}
                 </div>
             </div>
             ${centerWallFieldHtml()}
@@ -1091,7 +1093,7 @@ function renderItemInspector(item) {
             ${item.type === 'poster' ? posterArtFieldHtml([item], locked) : ''}
             ${feature ? '' : styleFieldHtml(locked)}
 
-            ${rotationFieldHtml(`${item.rotation} deg`, [item])}
+            ${rotationFieldHtml(`${listedOr(item.rotation, ROTATIONS, 0)} deg`, [item])}
             ${symmetryFieldHtml([item])}
             ${layerFieldHtml(`${layerIndex + 1} of ${state.wallItems.length}`)}
             ${WARNINGS_HTML}
@@ -1110,8 +1112,8 @@ function renderItemInspector(item) {
     function applyDimensionChange() {
         if (item.locked) return;
 
-        const rawW = parseInt(widthInput.value, 10) || toCm(item.width);
-        const rawH = parseInt(heightInput.value, 10) || toCm(item.height);
+        const rawW = parseWholeCm(widthInput.value) || toCm(item.width);
+        const rawH = parseWholeCm(heightInput.value) || toCm(item.height);
 
         const clampedW = clamp(rawW, minWidthCm, state.wallWidthCm);
         const clampedH = clamp(rawH, minHeightCm, state.wallHeightCm);

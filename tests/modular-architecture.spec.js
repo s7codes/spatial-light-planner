@@ -26,15 +26,16 @@ const MODULES = [
 
 const viewScale = (page) => page.evaluate(() => viewScale);
 
-// Resolves a module the way the entry imported it, so the browser hands back the already-evaluated instance
-const fromModule = (page, file, read) =>
-  page.evaluate(
-    async ({ path, body }) => {
-      const mod = await import(new URL(path, document.baseURI).href);
-      return new Function('mod', `return (${body})(mod);`)(mod);
-    },
-    { path: file, body: read.toString() },
-  );
+// Resolves a module the way the entry imported it, so the browser hands back the already-evaluated instance.
+// The namespace travels as a handle, since the page CSP refuses to compile strings with new Function.
+const fromModule = async (page, file, read) => {
+  const mod = await page.evaluateHandle((path) => import(new URL(path, document.baseURI).href), file);
+  try {
+    return await mod.evaluate(read);
+  } finally {
+    await mod.dispose();
+  }
+};
 
 test.describe('module entry', () => {
   test('index.html loads the engine as a single ES module and shows v3.0', async ({ page, request }) => {
