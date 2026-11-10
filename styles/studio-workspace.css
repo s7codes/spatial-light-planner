@@ -4545,16 +4545,18 @@ kbd {
 
 /* Lumen splash: shown once per page load above every panel */
 .splash-screen {
+    --splash-accent-x: 30%;
+    --splash-accent-y: 25%;
+    --splash-corner-x: 75%;
+    --splash-corner-y: 80%;
     position: fixed;
     inset: 0;
     z-index: 10000;
     display: grid;
     place-items: center;
     padding: 24px;
-    background:
-        radial-gradient(60% 50% at 30% 25%, rgba(255, 157, 66, 0.16), transparent 70%),
-        radial-gradient(55% 45% at 75% 80%, rgba(139, 92, 246, 0.18), transparent 70%),
-        var(--bg-app);
+    overflow: hidden;
+    background: var(--bg-app);
     opacity: 1;
     transition: opacity 400ms var(--ease-out);
 }
@@ -4564,7 +4566,36 @@ kbd {
     pointer-events: none;
 }
 
+/* The two light pools sit on the custom properties above; the engine eases them toward the pointer */
+.splash-orb {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate3d(-50%, -50%, 0);
+    mix-blend-mode: screen;
+}
+
+.splash-orb-accent {
+    left: var(--splash-accent-x);
+    top: var(--splash-accent-y);
+    width: 78vmax;
+    height: 78vmax;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--accent-led) 26%, transparent),
+        color-mix(in srgb, var(--accent-led) 9%, transparent) 55%, transparent);
+}
+
+.splash-orb-corner {
+    left: var(--splash-corner-x);
+    top: var(--splash-corner-y);
+    width: 70vmax;
+    height: 70vmax;
+    background: radial-gradient(closest-side, color-mix(in srgb, var(--corner-led) 30%, transparent),
+        color-mix(in srgb, var(--corner-led) 10%, transparent) 55%, transparent);
+}
+
 .splash-card {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -4586,10 +4617,33 @@ kbd {
 .splash-wordmark {
     font-size: 40px;
     font-weight: 300;
+    line-height: 1.1;
     letter-spacing: 0.32em;
     margin-right: -0.32em;
     text-transform: uppercase;
     color: var(--text-main);
+}
+
+.splash-product {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: -4px;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-main);
+}
+
+.splash-badge {
+    padding: 2px 8px;
+    border: 1px solid rgba(255, 157, 66, 0.45);
+    border-radius: 999px;
+    background-color: rgba(255, 157, 66, 0.1);
+    color: var(--accent-led);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
 }
 
 .splash-tagline {
@@ -4599,25 +4653,44 @@ kbd {
     color: var(--text-muted);
 }
 
+/* The gradient stops at the padding box, so the antialiased radius never blends it with the border tint */
 .splash-enter-btn {
     margin-top: 10px;
     height: 40px;
     padding: 0 28px;
-    border: 1px solid rgba(255, 157, 66, 0.6);
+    border: 1px solid rgba(255, 157, 66, 0.55);
     border-radius: 999px;
+    background-color: transparent;
     background-image: linear-gradient(135deg, var(--accent-led), var(--corner-led));
-    box-shadow: 0 10px 30px -10px var(--accent-led);
+    background-origin: padding-box;
+    background-clip: padding-box;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.24),
+        0 0 0 4px rgba(255, 157, 66, 0.06),
+        0 10px 28px -12px rgba(255, 157, 66, 0.75),
+        0 4px 18px -8px rgba(139, 92, 246, 0.55);
     color: #ffffff;
     font-size: 13px;
     font-weight: 600;
     letter-spacing: 0.06em;
     cursor: pointer;
-    transition: transform var(--motion), box-shadow var(--motion);
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    transition: transform var(--motion), box-shadow var(--motion), border-color var(--motion);
 }
 
 .splash-enter-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 14px 34px -10px var(--accent-led);
+    border-color: rgba(255, 157, 66, 0.75);
+    transform: translate3d(0, -1px, 0);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.3),
+        0 0 0 5px rgba(255, 157, 66, 0.08),
+        0 14px 34px -12px rgba(255, 157, 66, 0.85),
+        0 6px 22px -8px rgba(139, 92, 246, 0.65);
+}
+
+.splash-enter-btn:active {
+    transform: translate3d(0, 0, 0) scale(0.98);
 }
 
 .splash-footnote {

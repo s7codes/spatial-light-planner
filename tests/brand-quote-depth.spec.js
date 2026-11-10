@@ -12,6 +12,21 @@ const QUOTE_LAYOUT = {
   ],
 };
 
+const SPLASH_GLOW_REST = [30, 25, 75, 80];
+
+// Accent x / y, then corner x / y, in % of the splash
+const splashGlow = (page) =>
+  page.locator('#splash-screen').evaluate((el) => {
+    const style = getComputedStyle(el);
+    return ['accent-x', 'accent-y', 'corner-x', 'corner-y'].map((key) => parseFloat(style.getPropertyValue(`--splash-${key}`)));
+  });
+
+const orbCenterX = (page, selector) =>
+  page.locator(selector).evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    return rect.left + rect.width / 2;
+  });
+
 test.describe('Lumen splash screen', () => {
   test.use({ splash: true });
 
@@ -19,6 +34,11 @@ test.describe('Lumen splash screen', () => {
     const splash = page.locator('#splash-screen');
     await expect(splash).toBeVisible();
     await expect(splash.locator('.splash-wordmark')).toHaveText('Lumen');
+    await expect(splash.locator('.splash-product')).toHaveText('Spatial Studio v3.0');
+    await expect(splash.locator('.splash-badge')).toHaveText('v3.0');
+    await expect(splash.locator('.splash-footnote')).toHaveText('Lumen Spatial Studio Kft.');
+    await expect(page.getByRole('dialog', { name: 'Lumen Spatial Studio v3.0' })).toBeVisible();
+    await expect(page.locator('.badge')).toHaveCount(1);
     await expect(splash).toContainText('Professional Spatial Lighting & Shelving Planner');
     expect(await page.evaluate(() => document.body.firstElementChild.id)).toBe('splash-screen');
 
@@ -36,6 +56,71 @@ test.describe('Lumen splash screen', () => {
     await page.click('.catalog-item[data-type="cube"]');
     expect(await page.evaluate(() => wallItems.length)).toBe(3);
   });
+
+  test('drifts the amber and violet light pools against each other with the pointer', async ({ page }) => {
+    const splash = page.locator('#splash-screen');
+    await expect(splash.locator('.splash-orb')).toHaveCount(2);
+    await expect(splash.locator('.splash-orb[aria-hidden="true"]')).toHaveCount(2);
+    expect(await splashGlow(page)).toEqual(SPLASH_GLOW_REST);
+    const restAccentX = await orbCenterX(page, '.splash-orb-accent');
+    const restCornerX = await orbCenterX(page, '.splash-orb-corner');
+
+    // Toward the bottom-right corner the amber pool follows the pointer and the violet one backs away
+    await page.mouse.move(700, 410);
+    await page.mouse.move(1390, 810, { steps: 8 });
+    await expect
+      .poll(async () => {
+        const [accentX, accentY, cornerX, cornerY] = await splashGlow(page);
+        return accentX > 40 && accentY > 35 && cornerX < 68 && cornerY < 73;
+      })
+      .toBe(true);
+    expect(await orbCenterX(page, '.splash-orb-accent')).toBeGreaterThan(restAccentX + 100);
+    expect(await orbCenterX(page, '.splash-orb-corner')).toBeLessThan(restCornerX - 60);
+
+    // Leaving the window eases both pools back to their rest spots
+    await splash.dispatchEvent('mouseleave');
+    await expect.poll(() => splashGlow(page)).toEqual(SPLASH_GLOW_REST);
+
+    // Once Enter Studio is pressed the pointer no longer moves them (reaching the button may nudge them first)
+    await page.click('#enter-studio-btn');
+    const frozen = await splashGlow(page);
+    await page.mouse.move(60, 60, { steps: 4 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await splashGlow(page)).toEqual(frozen);
+    await expect(splash).toBeHidden();
+    await page.click('.catalog-item[data-type="cube"]');
+    expect(await page.evaluate(() => wallItems.length)).toBe(3);
+  });
+
+  test('keeps the light pools still under prefers-reduced-motion', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.mouse.move(100, 100);
+    await page.mouse.move(1300, 700, { steps: 6 });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(await splashGlow(page)).toEqual(SPLASH_GLOW_REST);
+  });
+
+  test('paints Enter Studio inside its padding box behind a crisp amber hairline', async ({ page }) => {
+    const button = await page.locator('#enter-studio-btn').evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        clip: style.backgroundClip,
+        origin: style.backgroundOrigin,
+        fill: style.backgroundColor,
+        border: `${style.borderTopWidth} ${style.borderTopStyle} ${style.borderTopColor}`,
+        layered: style.transform !== 'none',
+        insetHighlight: style.boxShadow.includes('inset'),
+      };
+    });
+    expect(button).toEqual({
+      clip: 'padding-box',
+      origin: 'padding-box',
+      fill: 'rgba(0, 0, 0, 0)',
+      border: '1px solid rgba(255, 157, 66, 0.55)',
+      layered: true,
+      insetHighlight: true,
+    });
+  });
 });
 
 test.describe('branded quote', () => {
@@ -47,7 +132,9 @@ test.describe('branded quote', () => {
     const modal = page.locator('#quote-modal');
     await expect(modal).toBeVisible();
     await expect(modal.locator('#quote-modal-title')).toHaveText('Official Quote');
-    await expect(modal.locator('.quote-company')).toHaveText('Lumen Spatial Design Kft.');
+    await expect(modal.locator('.quote-company')).toHaveText('Lumen Spatial Studio Kft.');
+    await expect(modal.locator('.quote-address')).toContainText('1052 Budapest, Fenyiv utca 14, Hungary');
+    await expect(modal.locator('.quote-address')).not.toContainText('Andrassy');
 
     const today = await page.evaluate(() =>
       new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),

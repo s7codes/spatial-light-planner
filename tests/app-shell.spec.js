@@ -50,7 +50,7 @@ test.describe('page shell', () => {
   });
 
   test('ships a title and an inline SVG favicon that decodes', async ({ page }) => {
-    await expect(page).toHaveTitle('Spatial & Ambient Light Planner');
+    await expect(page).toHaveTitle('Spatial Studio');
 
     const icon = await page.evaluate(async () => {
       const link = document.querySelector('link[rel="icon"]');

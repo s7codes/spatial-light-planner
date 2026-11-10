@@ -5,7 +5,7 @@ import {
 } from './core/constants.js';
 import {
     accentColorPicker, alignLayer, atticHeightInput, atticSlopeToggle, atticWidthInput, atticZone, brightnessSlider, canvasArea, catalogItems,
-    commandPalette, cornerColorPicker, enterStudioBtn, exportPngBtn, splashScreen, getItemElement, ioStatus, isModalOpen, marqueeBox,
+    commandPalette, cornerColorPicker, enterStudioBtn, exportPngBtn, splashScreen, getItemElement, ioStatus, isModalOpen, isSplashShown, marqueeBox,
     newProjectName, preview3dModal, redoBtn, resetWallBtn, rulers, rulerX, scaleNote, selectionBounds, shortcutsModal,
     snapGridToggle, specModal, undoBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallWidthInput
 } from './core/dom.js';
@@ -716,9 +716,71 @@ bindPreview3dEvents();
 
 // The splash shows once per page load; after the fade it leaves the layout entirely
 const SPLASH_FADE_MS = 400;
+// Rest spots of the two light pools in % of the splash. The amber pool follows the pointer and the
+// violet one drifts against it, which reads as parallax.
+const SPLASH_GLOW_REST = { accentX: 30, accentY: 25, cornerX: 75, cornerY: 80 };
+const SPLASH_ACCENT_DRIFT = 14;
+const SPLASH_CORNER_DRIFT = -10;
+const SPLASH_GLOW_EASE_MS = 220;
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const splashGlow = { x: 0, y: 0, targetX: 0, targetY: 0, frameId: 0, lastTime: 0 };
+
+function paintSplashGlow() {
+    const { x, y } = splashGlow;
+    const style = splashScreen.style;
+    style.setProperty('--splash-accent-x', `${(SPLASH_GLOW_REST.accentX + x * SPLASH_ACCENT_DRIFT).toFixed(2)}%`);
+    style.setProperty('--splash-accent-y', `${(SPLASH_GLOW_REST.accentY + y * SPLASH_ACCENT_DRIFT).toFixed(2)}%`);
+    style.setProperty('--splash-corner-x', `${(SPLASH_GLOW_REST.cornerX + x * SPLASH_CORNER_DRIFT).toFixed(2)}%`);
+    style.setProperty('--splash-corner-y', `${(SPLASH_GLOW_REST.cornerY + y * SPLASH_CORNER_DRIFT).toFixed(2)}%`);
+}
+
+function applySplashGlowFrame(time) {
+    const dt = splashGlow.lastTime ? time - splashGlow.lastTime : 16;
+    splashGlow.lastTime = time;
+    // Exponential easing keeps the drift speed independent of the display refresh rate
+    const k = 1 - Math.exp(-dt / SPLASH_GLOW_EASE_MS);
+    splashGlow.x += (splashGlow.targetX - splashGlow.x) * k;
+    splashGlow.y += (splashGlow.targetY - splashGlow.y) * k;
+    const settled = Math.abs(splashGlow.targetX - splashGlow.x) < 0.001 && Math.abs(splashGlow.targetY - splashGlow.y) < 0.001;
+    if (settled) {
+        splashGlow.x = splashGlow.targetX;
+        splashGlow.y = splashGlow.targetY;
+        splashGlow.lastTime = 0;
+    }
+    paintSplashGlow();
+    splashGlow.frameId = settled ? 0 : requestAnimationFrame(applySplashGlowFrame);
+}
+
+function aimSplashGlow(x, y) {
+    splashGlow.targetX = x;
+    splashGlow.targetY = y;
+    if (reducedMotion.matches) {
+        cancelAnimationFrame(splashGlow.frameId);
+        Object.assign(splashGlow, { x, y, frameId: 0, lastTime: 0 });
+        paintSplashGlow();
+        return;
+    }
+    if (!splashGlow.frameId) splashGlow.frameId = requestAnimationFrame(applySplashGlowFrame);
+}
+
+splashScreen?.addEventListener('mousemove', (e) => {
+    if (!isSplashShown() || reducedMotion.matches) return;
+    // The splash covers the viewport, so the window size stands in for its rect without a layout read
+    aimSplashGlow(
+        clamp((e.clientX / window.innerWidth) * 2 - 1, -1, 1),
+        clamp((e.clientY / window.innerHeight) * 2 - 1, -1, 1)
+    );
+});
+
+splashScreen?.addEventListener('mouseleave', () => {
+    if (isSplashShown() && (splashGlow.targetX || splashGlow.targetY)) aimSplashGlow(0, 0);
+});
+
 enterStudioBtn?.addEventListener('click', () => {
     if (splashScreen.classList.contains('fade-out')) return;
     splashScreen.classList.add('fade-out');
+    cancelAnimationFrame(splashGlow.frameId);
+    splashGlow.frameId = 0;
     enterStudioBtn.blur();
     setTimeout(() => { splashScreen.hidden = true; }, SPLASH_FADE_MS);
 });

@@ -284,7 +284,7 @@ export function buildSceneObj({ wallWidthCm, wallHeightCm, items } = {
     wallWidthCm: state.wallWidthCm, wallHeightCm: state.wallHeightCm, items: state.wallItems
 }) {
     const lines = [
-        '# Spatial & Ambient Light Planner 3D export',
+        '# Spatial Studio 3D export',
         `# Wall ${wallWidthCm} x ${wallHeightCm} cm, units in cm, Y up, Z out of the wall`
     ];
     let offset = objBox(lines, 'Wall', { x0: 0, x1: wallWidthCm, y0: 0, y1: wallHeightCm, z0: -WALL_SLAB_CM, z1: 0 }, 0);
