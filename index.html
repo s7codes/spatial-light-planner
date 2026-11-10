@@ -47,7 +47,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v2.8</span></h1>
+            <h1>Spatial Studio <span class="badge">v2.9</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -269,6 +269,7 @@
                 <button type="button" id="zoom-in-btn" class="zoom-btn" aria-label="Zoom in" title="Zoom in (Ctrl+=)">+</button>
                 <span class="zoom-hud-divider" aria-hidden="true"></span>
                 <button type="button" id="tape-measure-btn" class="zoom-btn tape-measure-btn" aria-pressed="false" aria-label="Tape Measure (T)" title="Tape Measure (T): drag across the wall to measure"><span class="tape-icon" aria-hidden="true"></span></button>
+                <button type="button" id="preview-3d-btn" class="zoom-btn preview-3d-btn" aria-haspopup="dialog" title="3D Room Preview (V)">3D</button>
                 <button type="button" id="command-palette-btn" class="zoom-btn command-trigger" aria-label="Command Palette (Ctrl+K)" aria-haspopup="dialog" title="Command Palette (Ctrl+K)">Ctrl+K</button>
             </div>
         </section>
@@ -665,6 +666,43 @@
                         LED color and poster print) and <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>V</kbd> pastes it onto every
                         unlocked piece of furniture in the selection.
                     </p>
+                    <p>
+                        <kbd>V</kbd> opens the 3D Room Preview and closes it again. Drag the view or use the sliders to orbit,
+                        and export the scene as a Wavefront .OBJ mesh from there.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </dialog>
+
+    <dialog id="preview-3d-modal" class="app-modal preview-3d-modal" aria-labelledby="preview-3d-title">
+        <div class="modal-panel">
+            <header class="modal-header">
+                <div>
+                    <h2 id="preview-3d-title">3D Room Preview</h2>
+                    <p class="modal-subtitle">Axonometric view of the wall with every visible item extruded by its depth. Drag to orbit.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="export-obj-btn" class="btn-accent" title="Download the scene as a Wavefront .OBJ mesh in cm">Export 3D .OBJ</button>
+                    <button type="button" id="close-3d-btn" class="btn-secondary">Close</button>
+                </div>
+            </header>
+
+            <div class="modal-body preview-3d-body">
+                <canvas id="preview-3d-canvas" class="preview-3d-canvas" width="760" height="460" role="img" aria-label="3D preview of the wall layout"></canvas>
+                <div class="preview-3d-controls">
+                    <label class="orbit-control" for="orbit-yaw-slider">
+                        <span>Yaw <output id="orbit-yaw-value" for="orbit-yaw-slider">-28 deg</output></span>
+                        <input type="range" id="orbit-yaw-slider" min="-60" max="60" value="-28" step="1">
+                    </label>
+                    <label class="orbit-control" for="orbit-pitch-slider">
+                        <span>Pitch <output id="orbit-pitch-value" for="orbit-pitch-slider">22 deg</output></span>
+                        <input type="range" id="orbit-pitch-slider" min="10" max="45" value="22" step="1">
+                    </label>
+                    <div class="preview-3d-buttons">
+                        <button type="button" id="reset-3d-camera-btn" class="btn-secondary">Reset View</button>
+                        <button type="button" id="wireframe-3d-toggle" class="btn-secondary wireframe-toggle" aria-pressed="false">Wireframe</button>
+                    </div>
                 </div>
             </div>
         </div>

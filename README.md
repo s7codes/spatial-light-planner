@@ -7,7 +7,7 @@
 A to-scale 2D wall elevation planner for shelving, framed art and ambient RGB lighting. Everything is drawn at
 `2.5 px = 1 cm` and snapped to whole centimeters, so the plan on screen is the plan you drill from. Lay out a
 wall, check it against doors, sockets and a sloped attic ceiling, preview the backlighting in a dark room, then
-export a bill of materials, drilling coordinates and a high-resolution PNG. Plain HTML, CSS and ES modules: no
+export a bill of materials, drilling coordinates, a high-resolution PNG and a 3D .OBJ mesh. Plain HTML, CSS and ES modules: no
 framework, no bundler, no build step, no runtime dependencies.
 
 ## Core Capabilities
@@ -42,8 +42,9 @@ framework, no bundler, no build step, no runtime dependencies.
   trade codes (`LUMEN10`, `TRADE15`, `STUDIO20`) that come off the net before VAT, rounded to the cent or forint.
 - **Stock and lead time.** The Inspector shows how many units of a piece are in stock as you place them, and
   the quote and spec sheet flag backorders (+5 business days) for the whole wall.
-- **Z-depth foundation.** Every item carries a wall-to-front depth in cm (read-only in the Inspector), saved
-  in layout files and ready for a future 3D viewport.
+- **Editable depth and 3D preview.** Set each piece's wall-to-front depth (2-60 cm) in the Inspector, then press
+  `V` or the HUD `3D` button for an axonometric room preview you can orbit by dragging or with sliders, shaded
+  or as a wireframe, and export the scene as a Wavefront `.obj` mesh in centimeters.
 - **Multi-project storage and permalinks.** Named projects with autosave, JSON import / export with a strict
   sanitizer (or drop a `.json` layout straight onto the canvas), and share links that carry a whole wall in
   the URL hash.
@@ -94,7 +95,7 @@ styles/
 scripts/
   planner-engine.js         Entry: pointer interactions, shortcuts, startup
   core/                     constants, dom, state (undo / redo, sanitizer), geometry
-  ui/                       viewport-rulers, inspector-layers
+  ui/                       viewport-rulers, inspector-layers, preview-3d (3D view, OBJ export)
   io/                       export-png, projects-spec
 tests/
   *.spec.js                 Playwright end-to-end specs, one per domain
@@ -111,6 +112,7 @@ tests/
 | `Alt` while pointing / dragging | Measure to an item, or bypass magnetic alignment |
 | `R` / `L` | Rotate 90 degrees / lock or unlock |
 | `T` | Tape measure on or off |
+| `V` | 3D Room Preview |
 | `]` / `[` | Bring to front / send to back |
 | `Ctrl + G` / `Ctrl + Shift + G` | Group / ungroup |
 | `Ctrl + C`, `X`, `V`, `D` | Copy, cut, paste, duplicate |
@@ -135,7 +137,7 @@ npm install
 npm run serve
 ```
 
-Then open `http://localhost:4173`. To run the end-to-end suite (454 tests in 38 specs, Chromium):
+Then open `http://localhost:4173`. To run the end-to-end suite (462 tests in 39 specs, Chromium):
 
 ```bash
 npx playwright install chromium

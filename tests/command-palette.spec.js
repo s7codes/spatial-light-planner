@@ -346,7 +346,7 @@ test.describe('command palette', () => {
 
     // The category counts too: every Project & Export command matches "export"
     await page.fill('#command-search-input', 'EXPORT');
-    expect(await optionLabels(page)).toHaveLength(5);
+    expect(await optionLabels(page)).toHaveLength(7);
     await expect(options(page).first()).toHaveAttribute('aria-selected', 'true');
 
     await page.fill('#command-search-input', 'lamp mount');

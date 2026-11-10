@@ -19,6 +19,7 @@ const MODULES = [
   'scripts/core/geometry.js',
   'scripts/ui/viewport-rulers.js',
   'scripts/ui/inspector-layers.js',
+  'scripts/ui/preview-3d.js',
   'scripts/io/export-png.js',
   'scripts/io/projects-spec.js',
 ];
@@ -36,7 +37,7 @@ const fromModule = (page, file, read) =>
   );
 
 test.describe('module entry', () => {
-  test('index.html loads the engine as a single ES module and shows v2.8', async ({ page, request }) => {
+  test('index.html loads the engine as a single ES module and shows v2.9', async ({ page, request }) => {
     const html = await (await request.get('/index.html')).text();
     expect(html).toContain('<script type="module" src="scripts/planner-engine.js"></script>');
     expect(html).not.toMatch(/<script[^>]*\bdefer\b/);
@@ -45,7 +46,7 @@ test.describe('module entry', () => {
       [...document.scripts].map((script) => ({ type: script.type, src: script.getAttribute('src') })),
     );
     expect(scripts).toEqual([{ type: 'module', src: 'scripts/planner-engine.js' }]);
-    await expect(page.locator('.badge')).toHaveText('v2.8');
+    await expect(page.locator('.badge')).toHaveText('v2.9');
   });
 
   test('fetches every module of the tree once as JavaScript and boots without a single error', async ({ context }) => {

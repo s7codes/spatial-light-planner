@@ -108,6 +108,8 @@ export const ITEM_DEPTH_CM = {
     socket: 0, door: 0, window: 0, tv: 8, note: 0
 };
 export const MAX_DEPTH_CM = 100;
+export const DEPTH_LIMITS_CM = [2, 60]; // the range the Inspector lets furniture be set to
+export const OBJ_FILENAME = 'spatial-studio-model.obj';
 
 export const QUOTE_VAT_RATE = 0.27; // Hungarian standard VAT rate
 export const QUOTE_CLIENT_LENGTH = 60;

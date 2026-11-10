@@ -60,7 +60,7 @@ const CATALOG = [
 
 test.describe('starter wall', () => {
   test('renders the 300 x 250 cm wall at 1 cm = 2.5 px with the starter layout', async ({ page }) => {
-    await expect(page.locator('.badge')).toHaveText('v2.8');
+    await expect(page.locator('.badge')).toHaveText('v2.9');
     expect(await wallState(page)).toMatchObject({
       widthCm: 300,
       heightCm: 250,

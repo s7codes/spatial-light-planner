@@ -122,12 +122,23 @@ export const tapeMeasureLine = tapeMeasureLayer.querySelector('.tape-measure-lin
 export const tapeMeasureReadout = tapeMeasureLayer.querySelector('.tape-measure-readout');
 export const currencySelector = document.getElementById('currency-selector');
 export const illumStatus = document.getElementById('illum-status');
+export const preview3dBtn = document.getElementById('preview-3d-btn');
+export const preview3dModal = document.getElementById('preview-3d-modal');
+export const preview3dCanvas = document.getElementById('preview-3d-canvas');
+export const orbitYawSlider = document.getElementById('orbit-yaw-slider');
+export const orbitYawValue = document.getElementById('orbit-yaw-value');
+export const orbitPitchSlider = document.getElementById('orbit-pitch-slider');
+export const orbitPitchValue = document.getElementById('orbit-pitch-value');
+export const reset3dCameraBtn = document.getElementById('reset-3d-camera-btn');
+export const wireframe3dToggle = document.getElementById('wireframe-3d-toggle');
+export const exportObjBtn = document.getElementById('export-obj-btn');
+export const close3dBtn = document.getElementById('close-3d-btn');
 
 // A fading splash already lets pointer events through, so only a fully shown one blocks the studio
 export const isSplashShown = () => Boolean(splashScreen) && !splashScreen.hidden && !splashScreen.classList.contains('fade-out');
 
 export const isModalOpen = () => specModal.open || shortcutsModal.open || projectsModal.open || commandPalette.open ||
-    quoteModal.open || isSplashShown();
+    quoteModal.open || preview3dModal.open || isSplashShown();
 
 export const accentColorPicker = document.getElementById('accent-color-picker');
 export const accentHexCode = document.getElementById('accent-hex-code');

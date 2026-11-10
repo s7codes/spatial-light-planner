@@ -1,5 +1,5 @@
 import {
-    ARRANGE_ACTIONS, BACKDROP_ALIGNS, clamp, CM_STEP_PX, countLabel, CURRENCY_STORAGE_KEY, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART,
+    ARRANGE_ACTIONS, BACKDROP_ALIGNS, clamp, CM_STEP_PX, countLabel, CURRENCY_STORAGE_KEY, DEFAULT_NOTE_TEXT, DEFAULT_POSTER_ART, DEPTH_LIMITS_CM,
     DUPLICATE_OFFSET_PX, EPSILON, escapeHtml, FEATURE_TYPES, FINISHES, FLOOR_BACKDROPS, formatFootprint, formatOffset,
     formatPrice, getBounds, isCurrencyCode, isFeature, isHexColor, isLedOn, isNote, isObstacle, ITEM_LABEL_INSET_PX, LOCK_ICON_HTML,
     MENU_EDGE_PX, minSizeCm, NOTE_MAX_LENGTH, POSTER_ARTS, quantize, RESIZE_HANDLES_HTML, SCALE, TINY_ITEM_PX, toCm,
@@ -30,6 +30,7 @@ import {
 } from './viewport-rulers.js';
 import { exportPng } from '../io/export-png.js';
 import { exportLayout, exportSpecCsv, openProjects, openSpecSheet, showIoStatus } from '../io/projects-spec.js';
+import { exportSceneObj, openPreview3d } from './preview-3d.js';
 import { spawnFromCatalog, startDrag, startResize } from '../planner-engine.js';
 
 let itemLabelSizes = new Map();
@@ -1080,7 +1081,9 @@ function renderItemInspector(item) {
                 </div>
                 <div class="inspector-field depth-field">
                     <label for="edit-depth-cm">Depth (cm)</label>
-                    <input type="number" id="edit-depth-cm" class="dim-input depth-input" value="${item.depth ?? 0}" readonly aria-readonly="true" tabindex="-1" title="Wall-to-front extrusion, reserved for the 3D view">
+                    ${feature
+                        ? `<input type="number" id="edit-depth-cm" class="dim-input depth-input" value="${item.depth ?? 0}" readonly aria-readonly="true" tabindex="-1" title="Room features keep their fixed depth">`
+                        : `<input type="number" id="edit-depth-cm" class="dim-input depth-input" min="${DEPTH_LIMITS_CM[0]}" max="${DEPTH_LIMITS_CM[1]}" value="${item.depth}" title="Wall-to-front extrusion used by the 3D preview and OBJ export" ${lockedAttr}>`}
                 </div>
             </div>
             ${centerWallFieldHtml()}
@@ -1157,6 +1160,20 @@ function renderItemInspector(item) {
 
     leftInput.addEventListener('change', applyPositionChange);
     topInput.addEventListener('change', applyPositionChange);
+
+    const depthInput = document.getElementById('edit-depth-cm');
+    if (!feature) {
+        depthInput.addEventListener('change', () => {
+            if (item.locked) return;
+            const typed = Math.round(parseFloat(depthInput.value));
+            const depth = Number.isFinite(typed) ? clamp(typed, ...DEPTH_LIMITS_CM) : item.depth;
+            depthInput.value = depth;
+            if (depth === item.depth) return;
+            item.depth = depth;
+            updateInspectorLive();
+            commitLayoutChange();
+        });
+    }
     document.getElementById('select-group-btn')?.addEventListener('click', () => selectWithGroups(item.id));
 
     // Typing previews on the wall at once; leaving the field saves the cleaned text as one step
@@ -1462,6 +1479,8 @@ function buildCommands() {
     add('Project & Export', 'Export Layout JSON', exportLayout);
     add('Project & Export', 'Export Plan PNG', exportPng);
     add('Project & Export', 'Export Spec Sheet CSV', exportSpecCsv);
+    add('Project & Export', 'Open 3D Room Preview', openPreview3d, 'V');
+    add('Project & Export', 'Export 3D Mesh (.OBJ)', exportSceneObj);
 
     return commands;
 }

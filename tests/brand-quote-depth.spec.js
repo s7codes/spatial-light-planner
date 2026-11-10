@@ -122,7 +122,7 @@ test.describe('branded quote', () => {
 });
 
 test.describe('z-depth foundation', () => {
-  test('a mounted Floating Shelf carries 25 cm of depth, shown read-only in the Inspector', async ({ page }) => {
+  test('a mounted Floating Shelf carries 25 cm of depth, editable in the Inspector', async ({ page }) => {
     await page.click('.catalog-item[data-type="shelf"]');
 
     const shelf = await selectedItem(page);
@@ -130,9 +130,12 @@ test.describe('z-depth foundation', () => {
 
     const depthInput = page.locator('.inspector-content #edit-depth-cm');
     await expect(depthInput).toHaveValue('25');
-    await expect(depthInput).toHaveAttribute('readonly', '');
-    await expect(depthInput).not.toBeEditable();
+    await expect(depthInput).toBeEditable();
     await expect(page.locator('label[for="edit-depth-cm"]')).toHaveText('Depth (cm)');
+
+    await depthInput.fill('30');
+    await depthInput.press('Enter');
+    expect((await selectedItem(page)).depth).toBe(30);
   });
 
   test('every catalog type has its default depth and room features stay flush', async ({ page }) => {

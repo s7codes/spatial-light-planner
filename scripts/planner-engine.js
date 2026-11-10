@@ -6,7 +6,7 @@ import {
 import {
     accentColorPicker, alignLayer, atticHeightInput, atticSlopeToggle, atticWidthInput, atticZone, brightnessSlider, canvasArea, catalogItems,
     commandPalette, cornerColorPicker, enterStudioBtn, exportPngBtn, splashScreen, getItemElement, ioStatus, isModalOpen, marqueeBox,
-    newProjectName, redoBtn, resetWallBtn, rulers, rulerX, scaleNote, selectionBounds, shortcutsModal,
+    newProjectName, preview3dModal, redoBtn, resetWallBtn, rulers, rulerX, scaleNote, selectionBounds, shortcutsModal,
     snapGridToggle, specModal, undoBtn, wallCanvas, wallHeightInput, wallItemsLayer, wallWidthInput
 } from './core/dom.js';
 import {
@@ -32,6 +32,7 @@ import {
     toggleCommandPalette, toggleInSelection, toggleSelectedLock, ungroupSelection, updateInspectorPanel
 } from './ui/inspector-layers.js';
 import { currentBrandStamp, exportPng } from './io/export-png.js';
+import { bindPreview3dEvents, buildSceneObj, togglePreview3d } from './ui/preview-3d.js';
 import {
     applyDefaultLayout, bindProjectSpecEvents, importLayoutText, layoutPayload, loadState, openShortcuts,
     openSpecSheet, saveState
@@ -694,7 +695,7 @@ function exposeConsoleBindings() {
         getSelectedItem, getItemElement, csvField, hasOverlap, isOverlapping, intrudesAtticSlope, rulers, rulerBands,
         wallCanvas, wallItemsLayer, alignLayer, atticZone, atticSlopeToggle, atticWidthInput, atticHeightInput, accentColorPicker, cornerColorPicker,
         brightnessSlider, wallWidthInput, wallHeightInput, scaleNote, undoBtn, redoBtn, rulerX, ioStatus,
-        newProjectName, specModal, shortcutsModal, commandPalette, currentBrandStamp
+        newProjectName, specModal, shortcutsModal, commandPalette, currentBrandStamp, buildSceneObj
     };
     Object.entries(live).forEach(([name, get]) => Object.defineProperty(window, name, { get, configurable: true }));
     Object.entries(fixed).forEach(([name, value]) => Object.defineProperty(window, name, { value, configurable: true }));
@@ -711,6 +712,7 @@ function exposeConsoleBindings() {
 bindViewportEvents();
 bindInspectorEvents();
 bindProjectSpecEvents();
+bindPreview3dEvents();
 
 // The splash shows once per page load; after the fade it leaves the layout entirely
 const SPLASH_FADE_MS = 400;
@@ -930,6 +932,15 @@ window.addEventListener('keydown', (e) => {
     if (e.key === '?' && !isFormField(e.target)) {
         handleShortcutsKey(e);
         return;
+    }
+
+    // V opens the 3D preview, or closes it again unless something is being typed. Read by physical key.
+    if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        if (preview3dModal.open ? !isTextEntry(e.target) : !isFormField(e.target) && !isModalOpen() && !isPointerBusy()) {
+            e.preventDefault();
+            if (!e.repeat) togglePreview3d();
+            return;
+        }
     }
 
     // An open dialog is modal, so nothing behind it may react to shortcuts
