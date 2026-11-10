@@ -38,6 +38,10 @@ framework, no bundler, no build step, no runtime dependencies.
 - **Lumen branding.** A printable invoice-style quote with net subtotal, 27% Hungarian VAT and gross total in
   the selected currency, a Lumen splash screen on launch, and PNG exports signed with the project name and date
   in a free corner.
+- **Quote personalization and promo codes.** A "Prepared for" client line on the printed quote, plus promo and
+  trade codes (`LUMEN10`, `TRADE15`, `STUDIO20`) that come off the net before VAT, rounded to the cent or forint.
+- **Stock and lead time.** The Inspector shows how many units of a piece are in stock as you place them, and
+  the quote and spec sheet flag backorders (+5 business days) for the whole wall.
 - **Z-depth foundation.** Every item carries a wall-to-front depth in cm (read-only in the Inspector), saved
   in layout files and ready for a future 3D viewport.
 - **Multi-project storage and permalinks.** Named projects with autosave, JSON import / export with a strict
@@ -131,7 +135,7 @@ npm install
 npm run serve
 ```
 
-Then open `http://localhost:4173`. To run the end-to-end suite (443 tests in 37 specs, Chromium):
+Then open `http://localhost:4173`. To run the end-to-end suite (454 tests in 38 specs, Chromium):
 
 ```bash
 npx playwright install chromium

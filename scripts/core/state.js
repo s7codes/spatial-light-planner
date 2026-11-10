@@ -147,7 +147,11 @@ export const state = {
     powerRoutingOn: false,
 
     // A display preference kept in its own storage key, never in the layout, the history or the JSON
-    currency: 'USD'
+    currency: 'USD',
+
+    // Quote session details: in memory only, never in the layout, the history, the JSON or a share link
+    promoCode: null,
+    quoteClient: ''
 };
 
 // Prices are stored in USD and shown in the picked currency

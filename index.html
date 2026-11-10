@@ -47,7 +47,7 @@
                 <path class="logo-beam" d="M16 10 L16 22" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="16" cy="15" r="1.5" fill="#ffffff" />
             </svg>
-            <h1>Spatial Studio <span class="badge">v2.7</span></h1>
+            <h1>Spatial Studio <span class="badge">v2.8</span></h1>
         </div>
 
         <div class="wall-dimensions-display">
@@ -459,6 +459,7 @@
                             <span class="kit-detail">Screws and plugs for every mounted piece</span>
                         </div>
                     </div>
+                    <p id="kit-lead-time" class="lead-time-summary" data-stock-status="in-stock"></p>
                 </section>
             </div>
         </div>
@@ -469,6 +470,22 @@
             <div class="quote-toolbar">
                 <button type="button" id="print-quote-btn" class="quote-print-btn" title="Print or save this quote as PDF">Print Quote</button>
                 <button type="button" id="close-quote-btn" class="quote-close-btn">Close</button>
+            </div>
+
+            <div class="quote-controls">
+                <div class="quote-control">
+                    <label for="quote-client-input">Prepared for</label>
+                    <input type="text" id="quote-client-input" maxlength="60" placeholder="Client or project name" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="quote-control">
+                    <label for="quote-promo-input">Promo code</label>
+                    <div class="quote-promo-bar">
+                        <input type="text" id="quote-promo-input" placeholder="Promo code (e.g. LUMEN10)" autocomplete="off" spellcheck="false">
+                        <button type="button" id="apply-promo-btn" class="btn-secondary">Apply</button>
+                        <button type="button" id="clear-promo-btn" class="btn-secondary" hidden>Clear</button>
+                    </div>
+                    <p id="quote-promo-status" class="quote-promo-status" role="status" hidden></p>
+                </div>
             </div>
 
             <header class="quote-header">
@@ -496,9 +513,10 @@
                 <div class="quote-meta">
                     <h2 id="quote-modal-title">Official Quote</h2>
                     <dl>
+                        <div id="quote-client-row" class="quote-row" hidden><dt>Prepared for</dt><dd id="quote-client-display"></dd></div>
                         <dt>Date</dt><dd id="quote-date"></dd>
                         <dt>Quote No.</dt><dd id="quote-number"></dd>
-                        <dt>Currency</dt><dd>USD</dd>
+                        <dt>Currency</dt><dd id="quote-currency">USD</dd>
                     </dl>
                 </div>
             </header>
@@ -519,13 +537,19 @@
             <div class="quote-totals">
                 <dl>
                     <dt>Subtotal (Net)</dt><dd id="quote-net">$0.00</dd>
+                    <div id="quote-discount-row" class="quote-row quote-discount-row" hidden>
+                        <dt id="quote-discount-label">Discount</dt><dd id="quote-discount">-$0.00</dd>
+                        <dt>Discounted Net</dt><dd id="quote-net-discounted">$0.00</dd>
+                    </div>
                     <dt>VAT (27%)</dt><dd id="quote-vat">$0.00</dd>
                     <dt class="quote-gross-label">Total (Gross)</dt><dd id="quote-gross" class="quote-gross">$0.00</dd>
                 </dl>
             </div>
 
+            <p id="lead-time-summary" class="lead-time-summary" data-stock-status="in-stock"></p>
+
             <footer class="quote-footer">
-                Prices in USD including 27% Hungarian VAT. This quote is valid for 30 days from the date above.
+                Prices in <span id="quote-footer-currency">USD</span> including 27% Hungarian VAT. This quote is valid for 30 days from the date above.
                 Installation, wiring and delivery are quoted separately.
             </footer>
         </div>

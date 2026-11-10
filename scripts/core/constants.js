@@ -110,6 +110,20 @@ export const ITEM_DEPTH_CM = {
 export const MAX_DEPTH_CM = 100;
 
 export const QUOTE_VAT_RATE = 0.27; // Hungarian standard VAT rate
+export const QUOTE_CLIENT_LENGTH = 60;
+export const PROMO_CODES = {
+    LUMEN10: { code: 'LUMEN10', percent: 10, label: 'Lumen Welcome (10%)' },
+    TRADE15: { code: 'TRADE15', percent: 15, label: 'Trade Partner (15%)' },
+    STUDIO20: { code: 'STUDIO20', percent: 20, label: 'Studio Bundle (20%)' }
+};
+export const findPromoCode = (raw) => {
+    const code = String(raw ?? '').trim().toUpperCase();
+    return Object.hasOwn(PROMO_CODES, code) ? PROMO_CODES[code] : null;
+};
+
+// Units the warehouse holds per furniture type; anything placed past that waits for a restock
+export const ITEM_STOCK_LIMITS = { shelf: 4, cube: 6, storage: 2, poster: 4, spotlight: 4, 'corner-lamp': 2, lightbar: 3 };
+export const BACKORDER_LEAD_DAYS = 5;
 export const DEFAULT_NOTE_TEXT = 'Double-click to edit';
 export const NOTE_MAX_LENGTH = 160;
 export const SAFE_ID_PATTERN = /^item-[a-z0-9-]{1,40}$/i;

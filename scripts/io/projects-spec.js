@@ -1,7 +1,7 @@
 import {
     COPY_LABEL, CSV_FILENAME, CSV_LABEL, csvRow, DEFAULT_ATTIC_HEIGHT_CM, DEFAULT_ATTIC_WIDTH_CM, DEFAULT_WALL_HEIGHT_CM, DEFAULT_WALL_PAINT, DEFAULT_WALL_WIDTH_CM,
     convertMoney, currencyFactor, defaultItems, escapeHtml, EXPORT_FILENAME, EXPORT_VERSION, finishLabel, fixedAmount,
-    formatAmount, fromBase64Url, isFeature, isLedOn,
+    findPromoCode, formatAmount, fromBase64Url, isFeature, isLedOn, QUOTE_CLIENT_LENGTH,
     isQuarterTurn, LAYOUT_TEMPLATES, LEGACY_STORAGE_KEY, markdownCell, MAX_IMPORT_BYTES, MAX_PROJECTS,
     MAX_SHARE_CHARS, MOUNTING_NOTE, PROJECT_ID_PATTERN, PROJECT_INDEX_KEY, PROJECT_LAYOUT_PREFIX,
     PROJECT_NAME_LENGTH, QUOTE_VAT_RATE, SCALE, SHARE_HASH_PREFIX, SHARE_LABEL, toBase64Url, toCm, toFiniteNumber,
@@ -12,7 +12,9 @@ import {
     closeQuoteBtn, closeSpecBtn, commandPalette, copyMarkdownBtn, copyShareLinkBtn, cornerColorPicker, exportCsvBtn,
     exportJsonBtn, generateQuoteBtn, importFileInput, importJsonBtn, ioStatus, isModalOpen, kitLedStrip, kitPowerDraw,
     kitWallAnchors, mountingBody, newProjectForm, newProjectName, printQuoteBtn, quoteBody, quoteDate, quoteGross,
-    quoteModal, quoteNet, quoteNumber, quoteVat,
+    quoteModal, quoteNet, quoteNumber, quoteVat, applyPromoBtn, clearPromoBtn, kitLeadTime, leadTimeSummary,
+    quoteClientDisplay, quoteClientInput, quoteClientRow, quoteCurrency, quoteDiscount, quoteDiscountLabel,
+    quoteDiscountRow, quoteFooterCurrency, quoteNetDiscounted, quotePromoInput, quotePromoStatus,
     projectLimitNote, projectList, projectsBtn, projectsModal, projectsSubtitle, saveProjectBtn, shortcutsBtn,
     shortcutsModal, specModal, specNote, specSubtitle, templateButtons, viewSpecBtn
 } from '../core/dom.js';
@@ -24,6 +26,7 @@ import {
     applyAtticSlope, applyWallPaint, renderGuides, setBrightness, setWallDimensions, updateAccentColor,
     updateCornerColor
 } from '../ui/viewport-rulers.js';
+import { summarizeWallStock } from '../core/geometry.js';
 import { renderPlanner, updateInspectorPanel } from '../ui/inspector-layers.js';
 
 let ioStatusTimer = 0;
@@ -449,6 +452,13 @@ function renderHardwareKit() {
     kitLedStrip.textContent = `${ledMeters.toFixed(1)} m`;
     kitPowerDraw.textContent = watts ? `${watts} W (24V PSU)` : '0 W';
     kitWallAnchors.textContent = `${anchors} ${anchors === 1 ? 'anchor' : 'anchors'}`;
+    renderLeadTime(kitLeadTime);
+}
+
+function renderLeadTime(target) {
+    const { status, text } = summarizeWallStock();
+    target.textContent = text;
+    target.dataset.stockStatus = status;
 }
 
 export function renderSpecSheet() {
@@ -582,17 +592,86 @@ export function openSpecSheet() {
 
 // Money is summed in the currency's smallest unit (cents, or whole forints) so the VAT line and the
 // gross total always add up. The totals come back in that currency, already converted from USD.
-export function quoteTotals(net = totalPrice(), currency = state.currency) {
+// A promo comes off the net first, rounded to that same unit, and VAT is charged on what is left.
+export function quoteTotals(net = totalPrice(), currency = state.currency, percent = activePromo()?.percent ?? 0) {
     const factor = currencyFactor(currency);
     const netUnits = Math.round(convertMoney(net, currency) * factor);
-    const vatUnits = Math.round(netUnits * QUOTE_VAT_RATE);
-    return { net: netUnits / factor, vat: vatUnits / factor, gross: (netUnits + vatUnits) / factor };
+    const discountUnits = Math.round((netUnits * percent) / 100);
+    const discountedUnits = netUnits - discountUnits;
+    const vatUnits = Math.round(discountedUnits * QUOTE_VAT_RATE);
+    return {
+        net: netUnits / factor,
+        discount: discountUnits / factor,
+        netAfterDiscount: discountedUnits / factor,
+        vat: vatUnits / factor,
+        gross: (discountedUnits + vatUnits) / factor
+    };
+}
+
+const activePromo = () => findPromoCode(state.promoCode);
+
+function renderQuoteTotals() {
+    const promo = activePromo();
+    const { net, discount, netAfterDiscount, vat, gross } = quoteTotals();
+    const money = (amount) => formatAmount(amount, state.currency);
+
+    quoteNet.textContent = money(net);
+    quoteDiscountRow.hidden = !promo;
+    if (promo) {
+        quoteDiscountLabel.textContent = `Discount (${promo.code}, ${promo.percent}%)`;
+        quoteDiscount.textContent = `-${money(discount)}`;
+        quoteNetDiscounted.textContent = money(netAfterDiscount);
+    }
+    quoteVat.textContent = money(vat);
+    quoteGross.textContent = money(gross);
+    clearPromoBtn.hidden = !promo;
+}
+
+function showPromoStatus(text, tone) {
+    quotePromoStatus.textContent = text;
+    quotePromoStatus.dataset.tone = tone;
+    quotePromoStatus.hidden = false;
+}
+
+// An unknown code keeps whatever promo was already applied
+export function applyPromoCode(raw = quotePromoInput.value) {
+    const promo = findPromoCode(raw);
+    if (!promo) {
+        showPromoStatus('Invalid promo code.', 'error');
+        return false;
+    }
+    state.promoCode = promo.code;
+    quotePromoInput.value = promo.code;
+    renderQuoteTotals();
+    showPromoStatus(`Promo ${promo.code} applied: ${promo.label}.`, 'success');
+    return true;
+}
+
+export function clearPromoCode() {
+    state.promoCode = null;
+    quotePromoInput.value = '';
+    renderQuoteTotals();
+    showPromoStatus('Promo code removed.', 'info');
+    quotePromoInput.focus();
+}
+
+export function setQuoteClient(raw) {
+    state.quoteClient = String(raw ?? '').replace(/\s+/g, ' ').trim().slice(0, QUOTE_CLIENT_LENGTH);
+    quoteClientDisplay.textContent = state.quoteClient;
+    quoteClientRow.hidden = !state.quoteClient;
 }
 
 export function renderQuote(now = new Date()) {
     const rows = buildBomRows();
-    const { net, vat, gross } = quoteTotals();
     const pad = (value) => String(value).padStart(2, '0');
+
+    quoteCurrency.textContent = state.currency;
+    quoteFooterCurrency.textContent = state.currency;
+    quoteClientInput.value = state.quoteClient;
+    setQuoteClient(state.quoteClient);
+    quotePromoInput.value = state.promoCode || '';
+    quotePromoStatus.hidden = true;
+    renderLeadTime(leadTimeSummary);
 
     quoteDate.textContent = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
     quoteNumber.textContent = `LUM-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
@@ -608,9 +687,7 @@ export function renderQuote(now = new Date()) {
             </tr>`).join('')
         : '<tr><td colspan="5" class="quote-empty">No billable items on the wall yet.</td></tr>';
 
-    quoteNet.textContent = formatAmount(net, state.currency);
-    quoteVat.textContent = formatAmount(vat, state.currency);
-    quoteGross.textContent = formatAmount(gross, state.currency);
+    renderQuoteTotals();
 }
 
 export function openQuote() {
@@ -910,6 +987,14 @@ export function bindProjectSpecEvents() {
     generateQuoteBtn.addEventListener('click', openQuote);
     closeQuoteBtn.addEventListener('click', () => quoteModal.close());
     printQuoteBtn.addEventListener('click', () => window.print());
+    applyPromoBtn.addEventListener('click', () => applyPromoCode());
+    clearPromoBtn.addEventListener('click', clearPromoCode);
+    quotePromoInput.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        applyPromoCode();
+    });
+    quoteClientInput.addEventListener('input', () => setQuoteClient(quoteClientInput.value));
 
     projectList.addEventListener('click', (e) => {
         const button = e.target.closest('button[data-action]');

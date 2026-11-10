@@ -19,8 +19,8 @@ import {
 } from '../core/state.js';
 import {
     ALIGN_EDGES, arrangeUnits, axisKeys, blocksRoomFeature, canAlignSelection, canCenterSelection,
-    canDistributeSelection, canFlipSelection, canRotateSelection, canRotateUnit, describeErgonomics, estimateIllumination,
-    intrudesAtticSlope, mirrorUnits,
+    canDistributeSelection, canFlipSelection, canRotateSelection, canRotateUnit, describeErgonomics, describeItemStock,
+    estimateIllumination, intrudesAtticSlope, mirrorUnits,
     overlapsFurniture, rotateGroup, rotateItem, rotationUnits, slopeClearOffset, slopeSafeOffset,
     updateCollisionStates
 } from '../core/geometry.js';
@@ -124,6 +124,15 @@ export function updateInspectorLive() {
     document.getElementById('warning-feature').hidden = !selected.some(blocksRoomFeature);
     document.getElementById('warning-attic').hidden = !selected.some(intrudesAtticSlope);
     syncErgonomicHint(selected.length === 1 ? selected[0] : null);
+    syncStockBadge(selected.length === 1 ? selected[0] : null);
+}
+
+function syncStockBadge(item) {
+    const badge = document.getElementById('inspector-stock-badge');
+    const stock = describeItemStock(item);
+    if (!badge || !stock) return;
+    if (badge.textContent !== stock.text) badge.textContent = stock.text;
+    badge.dataset.stockStatus = stock.status;
 }
 
 function syncErgonomicHint(item) {
@@ -1048,6 +1057,7 @@ function renderItemInspector(item) {
             </div>
             <span class="tech-readout">Offset: <strong id="inspector-pos-readout">${formatOffset(item)}</strong></span>
             ${feature ? '' : '<p id="ergonomic-hint" class="ergonomic-hint" aria-live="polite"></p>'}
+            ${feature ? '' : '<div id="inspector-stock-badge" class="stock-badge" role="status" data-stock-status="in-stock"></div>'}
             ${locked ? `<p class="lock-note" id="lock-note">${lockedParts} are locked. Press L or Unlock Item to edit.</p>` : ''}
             ${groupNote}
 

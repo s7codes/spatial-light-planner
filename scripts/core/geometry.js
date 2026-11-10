@@ -1,6 +1,6 @@
 import {
-    ALIGN_THRESHOLD_PX, clamp, CM_STEP_PX, EPSILON, escapeHtml, FLOOR_BACKDROPS, getBounds,
-    isFeature, isLedOn, isObstacle, isQuarterTurn, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
+    ALIGN_THRESHOLD_PX, BACKORDER_LEAD_DAYS, clamp, CM_STEP_PX, EPSILON, escapeHtml, FLOOR_BACKDROPS, getBounds,
+    isFeature, ITEM_STOCK_LIMITS, isLedOn, isObstacle, isQuarterTurn, isSolid, isWholeCm, LONG_RUN_CM, SCALE, toCm
 } from './constants.js';
 import { alignLayer, atticSlopeToggle, wallItemsLayer } from './dom.js';
 import { getSelectedItems, groupMembers, isCreatorMode, isSelected, state } from './state.js';
@@ -519,6 +519,28 @@ export function floorBackdropSpan() {
             ? state.wallWidthPx - BACKDROP_EDGE_INSET_PX - width
             : (state.wallWidthPx - width) / 2;
     return { backdrop, left, right: left + width };
+}
+
+const placedOfType = (type) => state.wallItems.filter(item => item.type === type && !item.hidden).length;
+
+export function describeItemStock(item) {
+    if (!item || isFeature(item) || !Object.hasOwn(ITEM_STOCK_LIMITS, item.type)) return null;
+    const limit = ITEM_STOCK_LIMITS[item.type];
+    const placed = placedOfType(item.type);
+    if (placed < limit) return { status: 'in-stock', placed, limit, text: `In Stock (${placed} of ${limit} used)` };
+    if (placed === limit) return { status: 'low-stock', placed, limit, text: `Last Unit in Stock (${placed} of ${limit})` };
+    return {
+        status: 'backorder', placed, limit,
+        text: `Backorder: +${BACKORDER_LEAD_DAYS} business days (${placed} placed, ${limit} in stock)`
+    };
+}
+
+export function summarizeWallStock() {
+    const backordered = Object.entries(ITEM_STOCK_LIMITS)
+        .reduce((sum, [type, limit]) => sum + Math.max(0, placedOfType(type) - limit), 0);
+    return backordered
+        ? { status: 'backorder', backordered, text: `Availability: ${backordered} item(s) on backorder (ships in 5-7 business days)` }
+        : { status: 'in-stock', backordered, text: 'Availability: All items in stock (ships in 1-2 business days)' };
 }
 
 export function describeErgonomics(item) {
